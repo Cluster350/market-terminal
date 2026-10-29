@@ -42,6 +42,8 @@ interface Step {
   q: UseQueryResult<unknown> | null;
   ok: (data: never) => string;
   fixed?: string;
+  /** Schritt kann noch nicht beginnen (z. B. Watchlist vor dem Datenmodus) */
+  waiting?: boolean;
 }
 
 export function Boot({ onDone }: { onDone: () => void }) {
@@ -73,6 +75,8 @@ export function Boot({ onDone }: { onDone: () => void }) {
       q: ws.state.watchlist.length ? (watch as UseQueryResult<unknown>) : null,
       ok: (d: { last: number | null }[]) => `${d.filter((r) => r.last !== null).length} Werte mit Kurs`,
       fixed: "leer",
+      // Die Standard-Watchlist kommt erst mit dem Datenmodus; vorher wäre "leer" nur ein Zwischenstand
+      waiting: !ws.state.mode,
     },
     {
       label: "Wirtschaftskalender",
@@ -86,7 +90,7 @@ export function Boot({ onDone }: { onDone: () => void }) {
     },
   ];
 
-  const settled = steps.map((s) => !s.q || s.q.isSuccess || s.q.isError);
+  const settled = steps.map((s) => !s.waiting && (!s.q || s.q.isSuccess || s.q.isError));
   const shown = settled.findIndex((x) => !x);
   const visible = shown < 0 ? steps.length : shown;
   const allDone = shown < 0;
@@ -135,15 +139,17 @@ export function Boot({ onDone }: { onDone: () => void }) {
         {steps.slice(0, Math.min(visible + 1, steps.length)).map((s, i) => {
           const done = settled[i];
           const err = s.q?.isError ? s.q.error : null;
-          const text = !s.q
-            ? s.fixed ?? ""
-            : err
-              ? err instanceof ApiError
-                ? err.message
-                : "Fehler"
-              : done
-                ? s.ok(s.q.data as never)
-                : "lädt";
+          const text = s.waiting
+            ? "lädt"
+            : !s.q
+              ? s.fixed ?? ""
+              : err
+                ? err instanceof ApiError
+                  ? err.message
+                  : "Fehler"
+                : done
+                  ? s.ok(s.q.data as never)
+                  : "lädt";
           return (
             <div key={s.label} className="boot-line">
               <span className="boot-label">› {s.label}</span>

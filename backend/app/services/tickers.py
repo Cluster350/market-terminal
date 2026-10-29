@@ -30,6 +30,13 @@ INDEX_ALIASES = {
     "NKY": "N225", "HSI": "HSI", "AS51": "AXJO", "VIX": "VIX",
 }
 
+# Bloomberg-Generika (erster Kontrakt) -> Rohstoffcode (nur zusammen mit "COMDTY")
+COMDTY_ALIASES = {
+    "CL1": "WTI", "CO1": "BRENT", "GC1": "GOLD", "SI1": "SILVER", "NG1": "NATGAS", "HG1": "COPPER",
+    "W1": "WHEAT", "C1": "CORN", "S1": "SOY", "KC1": "COFFEE", "SB1": "SUGAR", "PL1": "PLAT",
+    "PA1": "PALL", "LA1": "ALU",
+}
+
 _VALID = re.compile(r"^[A-Z0-9][A-Z0-9\-_=^&]{0,24}\.[A-Z0-9]{1,10}$")
 
 
@@ -43,6 +50,8 @@ def normalize(raw: str, default_exchange: str = "US") -> str:
         code, key = m.groups()
         if key == "INDEX":
             code = INDEX_ALIASES.get(code, code)
+        elif key == "COMDTY":
+            code = COMDTY_ALIASES.get(code, code)
         exch = "CC" if key == "CURNCY" and "-" in code else YELLOW_KEYS[key]
         s = f"{code}.{exch}"
     parts = s.split()

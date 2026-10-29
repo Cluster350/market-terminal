@@ -55,6 +55,18 @@ export function fmtRatio(x: number | null | undefined, digits = 1): string {
   return isNum(x) ? `${nf(digits, digits).format(z(x * 100, digits))} %` : DASH;
 }
 
+/** Gewinn je Aktie: unter 1 mit drei Stellen, sonst verdeckt die Rundung die Abweichung. */
+export function fmtEps(x: number | null | undefined): string {
+  return fmt(x, isNum(x) && Math.abs(x) < 1 ? 3 : 2);
+}
+
+/** Beträge je Aktie (Dividenden): zwei Stellen, bei krummen Beträgen bis zu vier. */
+export function fmtPerShare(x: number | null | undefined): string {
+  if (!isNum(x)) return DASH;
+  for (const d of [2, 3]) if (Math.abs(x * 10 ** d - Math.round(x * 10 ** d)) < 1e-6) return fmt(x, d);
+  return fmt(x, 4);
+}
+
 /** Basispunkte aus Prozentpunkten (0.05 -> +5 bp). */
 export function fmtBp(x: number | null | undefined, fromPercent = true): string {
   if (!isNum(x)) return DASH;
@@ -78,8 +90,10 @@ export function fmtInt(x: number | null | undefined): string {
 }
 
 /** Vorzeichen-Klasse für Kursfarben. */
-export function tone(x: number | null | undefined): "up" | "down" | "flat" {
+/** Farbe einer Veränderung; mit ``digits`` gilt ein auf null gerundeter Wert als unverändert. */
+export function tone(x: number | null | undefined, digits?: number): "up" | "down" | "flat" {
   if (!isNum(x) || x === 0) return "flat";
+  if (digits !== undefined && Math.round(Math.abs(x) * 10 ** digits) === 0) return "flat";
   return x > 0 ? "up" : "down";
 }
 
@@ -149,6 +163,17 @@ export function fmtStamp(x: string | null | undefined, now = Date.now()): string
   const d = toDate(x);
   if (Number.isNaN(d.getTime())) return DASH;
   return d.toDateString() === new Date(now).toDateString() ? timeFmt.format(d) : shortDateFmt.format(d);
+}
+
+/**
+ * Ist der letzte Tagesbalken (Datum ``lastDate``) noch im Entstehen? Ja, wenn der Kurs gerade
+ * aktualisiert wird (Zeitstempel jünger als 30 Minuten) und vom selben Tag stammt.
+ */
+export function isLiveBar(lastDate: string | undefined, quoteTs: string | null | undefined, now = Date.now()): boolean {
+  if (!lastDate || !quoteTs) return false;
+  const ts = new Date(quoteTs);
+  if (Number.isNaN(ts.getTime())) return false;
+  return now - ts.getTime() < 30 * 60_000 && ts.toISOString().slice(0, 10) === lastDate;
 }
 
 /** "vor 5 Min." / "14:32" / "28.10." je nach Alter. */

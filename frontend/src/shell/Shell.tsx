@@ -3,10 +3,10 @@
 import { Component, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { dataHealth, IS_STATIC } from "../lib/api";
 import { FN, FUNCTIONS, type FnCode } from "../lib/commands";
-import { displayTicker, fmtPct, fmtPrice, fmtTime, tone } from "../lib/format";
+import { displayTicker, fmt, fmtBp, fmtPct, fmtPrice, fmtTime, tone } from "../lib/format";
 import { useIndices, useQuotes, useStatus } from "../lib/queries";
 import { SCREENS } from "../screens";
-import { LAYOUTS, openWindow, PAGES, useWorkspace } from "../state/workspace";
+import { isSolo, LAYOUTS, openWindow, PAGES, useWorkspace } from "../state/workspace";
 import { useNow } from "../components/ui";
 import { CommandLine } from "./CommandLine";
 
@@ -59,27 +59,32 @@ function WindowTools() {
   const ws = useWorkspace();
   const [blocked, setBlocked] = useState(false);
   const layout = ws.state.pages[ws.state.page].layout;
+  const solo = isSolo(ws.state.window);
   return (
     <div className="win-tools">
-      <div className="seg" role="group" aria-label="Layout">
-        {LAYOUTS.map((l) => (
-          <button key={l.value} type="button" aria-pressed={layout === l.value} title={`${l.title} (Alt+L wechselt)`} onClick={() => ws.setLayout(l.value)}>
-            {l.label}
-          </button>
-        ))}
-      </div>
-      <button
-        type="button"
-        className="key small-key"
-        title="Diese Seite in einem neuen Fenster öffnen – z. B. für einen zweiten Monitor"
-        onClick={() => {
-          const ok = openWindow({ page: ws.state.page });
-          setBlocked(!ok);
-          if (!ok) setTimeout(() => setBlocked(false), 4000);
-        }}
-      >
-        ⧉ FENSTER
-      </button>
+      {!solo && (
+        <div className="seg" role="group" aria-label="Layout">
+          {LAYOUTS.map((l) => (
+            <button key={l.value} type="button" aria-pressed={layout === l.value} title={`${l.title} (Alt+L wechselt)`} onClick={() => ws.setLayout(l.value)}>
+              {l.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {!solo && (
+        <button
+          type="button"
+          className="key small-key"
+          title="Diese Seite in einem neuen Fenster öffnen – z. B. für einen zweiten Monitor"
+          onClick={() => {
+            const ok = openWindow({ page: ws.state.page });
+            setBlocked(!ok);
+            if (!ok) setTimeout(() => setBlocked(false), 4000);
+          }}
+        >
+          ⧉ <span className="wt-label">FENSTER</span>
+        </button>
+      )}
       <button
         type="button"
         className="key small-key"
@@ -102,14 +107,16 @@ export function TopBar() {
         <span className="brand-mark">MT</span>
         <span className="brand-name">{ws.state.window === "main" ? "MARKET TERMINAL" : `FENSTER ${ws.state.window.replace(/^solo-/, "").toUpperCase()}`}</span>
       </div>
-      <nav className="keys" aria-label="Seiten">
-        {PAGES.map((p) => (
-          <button key={p.id} type="button" className="key" aria-pressed={ws.state.page === p.id} onClick={() => ws.setPage(p.id)} title={`Alt+${p.key}`}>
-            <span className="n">{p.key}</span>
-            {p.label}
-          </button>
-        ))}
-      </nav>
+      {!isSolo(ws.state.window) && (
+        <nav className="keys" aria-label="Seiten">
+          {PAGES.map((p) => (
+            <button key={p.id} type="button" className="key" aria-pressed={ws.state.page === p.id} onClick={() => ws.setPage(p.id)} title={`Alt+${p.key}`}>
+              <span className="n">{p.key}</span>
+              {p.label}
+            </button>
+          ))}
+        </nav>
+      )}
       <WindowTools />
       <CommandLine />
       <Clocks />
@@ -201,7 +208,15 @@ function PanelTitle({ fn, ticker }: { fn: FnCode; ticker: string | null }) {
           {quote?.last !== null && quote?.last !== undefined && (
             <>
               {" "}
-              <b>{fmtPrice(quote.last, ticker)}</b> <span className={tone(quote.changePct)}>{fmtPct(quote.changePct)}</span>{" "}
+              {ticker.endsWith(".GBOND") ? (
+                <>
+                  <b>{fmt(quote.last, 3)} %</b> <span className={tone(quote.change, 2)}>{fmtBp(quote.change)}</span>
+                </>
+              ) : (
+                <>
+                  <b>{fmtPrice(quote.last, ticker)}</b> <span className={tone(quote.changePct, 2)}>{fmtPct(quote.changePct)}</span>
+                </>
+              )}{" "}
               <Provenance delayed={quote.delayed} />
             </>
           )}

@@ -14,8 +14,8 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { ErrorState, Loading, Seg } from "../components/ui";
-import { api } from "../lib/api";
-import { normalizeTicker } from "../lib/commands";
+import { api, ApiError } from "../lib/api";
+import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
 import { displayTicker, fmt, fmtBig, fmtDate, fmtPct, fmtPrice, fmtTime, isNum, shiftMonths, tone } from "../lib/format";
 import { retry, useHistory, useIntraday } from "../lib/queries";
 import type { History, Intraday } from "../lib/types";
@@ -426,12 +426,26 @@ export default function GP({ ticker }: ScreenProps) {
     }
   }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi]);
 
-  function addCompare(raw: string) {
-    const t = normalizeTicker(raw);
+  // Vergleichswerte erst nach Prüfung übernehmen: ein Tippfehler soll keinen leeren Chip erzeugen
+  const [checkingCompare, setCheckingCompare] = useState(false);
+  async function addCompare(raw: string) {
+    const base = ticker;
+    let t = normalizeTicker(raw);
     if (!t) return setCompareErr("Ticker nicht erkannt.");
     if (t === ticker || compare.includes(t)) return setCompareErr("Bereits im Chart.");
     if (compare.length >= 4) return setCompareErr("Höchstens vier Vergleichswerte.");
-    setCompare((c) => [...c, t]);
+    setCheckingCompare(true);
+    try {
+      t = (await api.resolve(t)).ticker;
+    } catch (e) {
+      setCompareErr(e instanceof ApiError && e.status === 404 ? unknownSecurityMessage(raw, t, e.message) : "Ticker konnte nicht geprüft werden.");
+      return;
+    } finally {
+      setCheckingCompare(false);
+    }
+    if (tickerRef.current !== base) return; // inzwischen anderes Wertpapier
+    const added = t;
+    setCompare((c) => (c.includes(added) || added === ticker || c.length >= 4 ? c : [...c, added]));
     setCompareInput("");
     setCompareErr(null);
   }
@@ -490,12 +504,22 @@ export default function GP({ ticker }: ScreenProps) {
               style={{ display: "inline-flex", gap: 4, alignItems: "center" }}
               onSubmit={(e) => {
                 e.preventDefault();
-                addCompare(compareInput);
+                if (!checkingCompare) void addCompare(compareInput);
               }}
             >
-              <input className="field" style={{ width: 96 }} placeholder="Vergleich +" aria-label="Vergleichswert hinzufügen" value={compareInput} onChange={(e) => setCompareInput(e.target.value)} />
+              <input
+                className="field"
+                style={{ width: 96 }}
+                placeholder="Vergleich +"
+                aria-label="Vergleichswert hinzufügen"
+                value={compareInput}
+                onChange={(e) => {
+                  setCompareInput(e.target.value);
+                  setCompareErr(null);
+                }}
+              />
               {!compare.includes(benchmark) && benchmark !== ticker && (
-                <button type="button" className="btn" onClick={() => addCompare(benchmark)} title={`Mit ${displayTicker(benchmark)} vergleichen`}>
+                <button type="button" className="btn" disabled={checkingCompare} onClick={() => void addCompare(benchmark)} title={`Mit ${displayTicker(benchmark)} vergleichen`}>
                   Index
                 </button>
               )}

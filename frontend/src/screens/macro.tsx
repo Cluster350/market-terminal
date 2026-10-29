@@ -31,11 +31,11 @@ function MarketTable({ rows, grouped, digits }: { rows: MarketRow[]; grouped?: b
         },
         { key: "chg", label: "Veränd.", num: true, sort: (r) => r.change, render: (r) => <Change value={r.change} pct={false} digits={r.ticker.endsWith(".FOREX") && isNum(r.last) && Math.abs(r.last) < 20 ? 4 : 2} /> },
         { key: "chgp", label: "%", num: true, sort: (r) => r.changePct, render: (r) => <Change value={r.changePct} arrowSign /> },
-        { key: "w", label: "1W %", num: true, sort: (r) => r.chg1w, render: (r) => <Change value={r.chg1w} /> },
+        { key: "w", label: "1W %", num: true, sort: (r) => r.chg1w, render: (r) => <Change value={r.chg1w} />, className: "col-opt2" },
         { key: "m", label: "1M %", num: true, sort: (r) => r.chg1m, render: (r) => <Change value={r.chg1m} /> },
         { key: "ytd", label: "YTD %", num: true, sort: (r) => r.chgYtd, render: (r) => <Change value={r.chgYtd} /> },
-        { key: "spark", label: "30 Tage", num: true, render: (r) => <Spark data={r.spark} /> },
-        { key: "time", label: "Stand", num: true, render: (r) => <span className="muted" title={r.asOf ?? undefined}>{fmtStamp(r.asOf)}</span> },
+        { key: "spark", label: "30 Tage", num: true, render: (r) => <Spark data={r.spark} />, className: "col-opt1" },
+        { key: "time", label: "Stand", num: true, render: (r) => <span className="muted" title={r.asOf ?? undefined}>{fmtStamp(r.asOf)}</span>, className: "col-opt1" },
       ]}
     />
   );
@@ -211,6 +211,20 @@ export function GC(_: ScreenProps) {
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Steilheit zuerst: bleibt bei kleiner Panelhöhe ohne Scrollen sichtbar */}
+                    <tr className="em">
+                      <td title="10 Jahre minus 2 Jahre">2s10s</td>
+                      {curves.map((c) => {
+                        const y2 = c.points.find((p) => p.tenor === "2Y")?.y;
+                        const y10 = c.points.find((p) => p.tenor === "10Y")?.y;
+                        const v = isNum(y10) && isNum(y2) ? y10 - y2 : null;
+                        return (
+                          <td key={c.country} className={`num ${tone(v)}`}>
+                            {v === null ? DASH : fmtBp(v)}
+                          </td>
+                        );
+                      })}
+                    </tr>
                     {(curves[0]?.points ?? []).map((pt, i) => (
                       <tr key={pt.tenor}>
                         <td className="lbl">{pt.tenor.replace("Y", "J")}</td>
@@ -227,19 +241,6 @@ export function GC(_: ScreenProps) {
                         })}
                       </tr>
                     ))}
-                    <tr className="em">
-                      <td title="10 Jahre minus 2 Jahre">2s10s</td>
-                      {curves.map((c) => {
-                        const y2 = c.points.find((p) => p.tenor === "2Y")?.y;
-                        const y10 = c.points.find((p) => p.tenor === "10Y")?.y;
-                        const v = isNum(y10) && isNum(y2) ? y10 - y2 : null;
-                        return (
-                          <td key={c.country} className={`num ${tone(v)}`}>
-                            {v === null ? DASH : fmtBp(v)}
-                          </td>
-                        );
-                      })}
-                    </tr>
                   </tbody>
                 </table>
               </div>

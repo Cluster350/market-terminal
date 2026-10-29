@@ -44,5 +44,18 @@ describe("toCsv", () => {
     expect(cells[4]).toBe("'@SUM");
     expect(cells[6]).toBe("12,3457");
     expect(cells[7]).toBe("-1,5"); // negative Zahlen bleiben Zahlen
+    expect(cells[8]).toBe("1500000000"); // Marktkap. ohne Nachkommastellen
+  });
+
+  it("Bloomberg-Kürzel und deutsche Sektoren wie in der Oberfläche", () => {
+    const row = {
+      ticker: "LMRE.PA", name: "Lumière", exchange: "PA", sector: "Technology", industry: "Software", currency: "EUR",
+      price: 10, chg1d: 0, chg5d: null, marketCap: 1234567.89, marketCapLocal: 1e6, eps: null, pe: null, divYield: null,
+      avgVol: null, perf1m: null, perf3m: null, perf12m: null, rsi14: null, vol1y: null, dist52wHigh: null,
+    };
+    const cells = toCsv([row]).split("\n")[1].split(";");
+    expect(cells.slice(0, 4)).toEqual(["LMRE FP", "Lumière", "FP", "Technologie"]);
+    expect(cells[8]).toBe("1234568");
+    expect(cells[cells.length - 1]).toBe("LMRE.PA");
   });
 });

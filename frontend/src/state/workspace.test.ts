@@ -137,3 +137,13 @@ describe("Layouts und mehrere Fenster", () => {
     expect(s.pages.equity.panels).toEqual(["GP", "DES", "ERN", "CN"]);
   });
 });
+
+describe("Einzelfunktions-Fenster", () => {
+  it("bleiben bei ihrer Funktion: kein Seiten- oder Layoutwechsel", () => {
+    const s0 = base({ window: "solo-GP" });
+    expect(reducer(s0, { type: "page", page: "macro" })).toBe(s0);
+    expect(reducer(s0, { type: "layout", layout: "quad" })).toBe(s0);
+    const main = base();
+    expect(reducer(main, { type: "page", page: "macro" }).page).toBe("macro");
+  });
+});

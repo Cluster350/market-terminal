@@ -52,10 +52,11 @@ export function Q<T>({ q, children, rows }: { q: UseQueryResult<T>; children: (d
 }
 
 export function Change({ value, pct = true, digits = 2, arrowSign = false }: { value: number | null | undefined; pct?: boolean; digits?: number; arrowSign?: boolean }) {
-  const t = tone(value);
+  // Gerundet auf 0,00 heißt unverändert: weder rot noch Pfeil
+  const t = tone(value, digits);
   return (
     <span className={t}>
-      {arrowSign && isNum(value) && value !== 0 && <span aria-hidden="true">{arrow(value)} </span>}
+      {arrowSign && t !== "flat" && <span aria-hidden="true">{arrow(value)} </span>}
       {pct ? fmtPct(value, digits) : fmtSigned(value, digits)}
     </span>
   );
@@ -181,7 +182,7 @@ export function Table<R>({
             return (
               <th
                 key={c.key}
-                className={`${c.num ? "num" : ""} ${c.sort ? "sortable" : ""} ${active ? "sorted" : ""}`}
+                className={`${c.num ? "num" : ""} ${c.sort ? "sortable" : ""} ${active ? "sorted" : ""} ${c.className || ""}`}
                 title={c.title}
                 aria-sort={active ? (sort!.desc ? "descending" : "ascending") : undefined}
                 onClick={c.sort ? () => setSort(active ? { key: c.key, desc: !sort!.desc } : { key: c.key, desc: !!c.num }) : undefined}

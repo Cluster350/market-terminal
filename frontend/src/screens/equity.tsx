@@ -1,18 +1,21 @@
 // Aktien-Funktionen: DES, HP, FA, ERN, DVD, ANR
 
 import { useState, type ReactNode } from "react";
-import { Change, Empty, Kv, Q, Seg, Spark, Table } from "../components/ui";
+import { Change, Empty, Kv, Q, Seg, Spark, Table, useNow } from "../components/ui";
 import {
   DASH,
   displayTicker,
   fmt,
   fmtBig,
   fmtDate,
+  fmtEps,
   fmtInt,
   fmtPct,
+  fmtPerShare,
   fmtPrice,
   fmtRatio,
   isEquity,
+  isLiveBar,
   isNum,
   safeUrl,
   tone,
@@ -126,9 +129,9 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
                 <Section title="Je Aktie">
                   <Kv
                     items={[
-                      ["Gewinn je Aktie (TTM)", fmt(c.perShare.eps, 2)],
-                      ["EPS-Schätzung lfd. Jahr", fmt(c.perShare.epsEstimateCy, 2)],
-                      ["EPS-Schätzung nächstes Jahr", fmt(c.perShare.epsEstimateNy, 2)],
+                      ["Gewinn je Aktie (TTM)", fmtEps(c.perShare.eps)],
+                      ["EPS-Schätzung lfd. Jahr", fmtEps(c.perShare.epsEstimateCy)],
+                      ["EPS-Schätzung nächstes Jahr", fmtEps(c.perShare.epsEstimateNy)],
                       ["Buchwert", fmt(c.perShare.bookValue, 2)],
                       ["Dividende", fmt(c.perShare.dividendShare, 2)],
                       ["Dividendenrendite", fmtRatio(c.perShare.dividendYield, 2)],
@@ -205,6 +208,8 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
 
 export function HP({ ticker }: ScreenProps) {
   const q = useHistory(ticker);
+  const quote = useQuotes(ticker ? [ticker] : []).data?.[0];
+  const now = useNow(60_000);
   const [n, setN] = useState(250);
   return (
     <div className="panel-body">
@@ -217,6 +222,8 @@ export function HP({ ticker }: ScreenProps) {
             rows.push({ d: h.t[i], o: h.o[i], h: h.h[i], l: h.l[i], c, v: h.v[i], chg: isNum(c) && isNum(prev) && prev !== 0 ? (c / prev - 1) * 100 : null });
           }
           const isYield = h.ticker.endsWith(".GBOND");
+          // Während der Sitzung ist die jüngste Zeile ein laufender Kurs, noch kein Schluss
+          const liveDate = isLiveBar(h.t[h.t.length - 1], quote?.timestamp, now) ? h.t[h.t.length - 1] : null;
           // HP gilt für alle Instrumente: Devisen mit Pips (Ticker an fmtPrice), Renditen mit 3 Stellen
           const px = (v: number | null) => (isYield ? fmt(v, 3) : fmtPrice(v, h.ticker));
           return (
@@ -225,11 +232,22 @@ export function HP({ ticker }: ScreenProps) {
                 rows={rows}
                 rowKey={(r) => r.d}
                 columns={[
-                  { key: "d", label: "Datum", render: (r) => fmtDate(r.d) },
+                  {
+                    key: "d",
+                    label: "Datum",
+                    render: (r) =>
+                      r.d === liveDate ? (
+                        <span title="Handel läuft: letzter Kurs, noch kein Schlusskurs">
+                          {fmtDate(r.d)} <span className="tag">LFD.</span>
+                        </span>
+                      ) : (
+                        fmtDate(r.d)
+                      ),
+                  },
                   { key: "o", label: "Eröffnung", num: true, render: (r) => px(r.o) },
                   { key: "h", label: "Hoch", num: true, render: (r) => px(r.h) },
                   { key: "l", label: "Tief", num: true, render: (r) => px(r.l) },
-                  { key: "c", label: "Schluss", num: true, render: (r) => <b>{px(r.c)}</b> },
+                  { key: "c", label: "Schluss", num: true, render: (r) => <b className={r.d === liveDate ? "lbl" : undefined}>{px(r.c)}</b> },
                   {
                     key: "chg",
                     label: isYield ? "Veränd. bp" : "Veränd.",
@@ -389,7 +407,7 @@ function EpsChart({ e }: { e: Earnings }) {
           <g key={it.date}>
             {isNum(a) && (
               <rect x={x} width={w} y={Math.min(y(a), y(0))} height={Math.max(1, Math.abs(y(a) - y(0)))} fill={beat === false ? "#ff5252" : "#29d17d"} opacity="0.85">
-                <title>{`${it.date}: Ist ${fmt(a, 2)} · Schätzung ${fmt(it.epsEstimate, 2)}`}</title>
+                <title>{`${it.date}: Ist ${fmtEps(a)} · Schätzung ${fmtEps(it.epsEstimate)}`}</title>
               </rect>
             )}
             {isNum(it.epsEstimate) && <line x1={x - 3} x2={x + w + 3} y1={y(it.epsEstimate)} y2={y(it.epsEstimate)} stroke="#ffa028" strokeWidth="2" />}
@@ -418,7 +436,7 @@ export function ERN({ ticker }: ScreenProps) {
                   <div style={{ fontSize: "var(--fs-l)" }}>
                     {fmtDate(e.next.reportDate || e.next.date)}{" "}
                     <span className="muted small">{e.next.timing === "BeforeMarket" ? "vor Börseneröffnung" : e.next.timing === "AfterMarket" ? "nach Börsenschluss" : ""}</span>
-                    <div className="small muted">EPS-Schätzung: <span className="flat">{fmt(e.next.epsEstimate, 2)}</span></div>
+                    <div className="small muted">EPS-Schätzung: <span className="flat">{fmtEps(e.next.epsEstimate)}</span></div>
                   </div>
                 ) : (
                   <span className="muted">Kein Termin bekannt</span>
@@ -451,8 +469,8 @@ export function ERN({ ticker }: ScreenProps) {
               columns={[
                 { key: "q", label: "Quartal", render: (r) => periodLabel(r.date, "quarterly") },
                 { key: "rep", label: "Bericht", render: (r) => fmtDate(r.reportDate) },
-                { key: "est", label: "Schätzung", num: true, render: (r) => fmt(r.epsEstimate, 2) },
-                { key: "act", label: "Ist", num: true, render: (r) => <b>{fmt(r.epsActual, 2)}</b> },
+                { key: "est", label: "Schätzung", num: true, render: (r) => fmtEps(r.epsEstimate) },
+                { key: "act", label: "Ist", num: true, render: (r) => <b>{fmtEps(r.epsActual)}</b> },
                 { key: "sur", label: "Überraschung", num: true, sort: (r) => r.surprisePct, render: (r) => <Change value={r.surprisePct} digits={1} /> },
               ]}
             />
@@ -480,7 +498,7 @@ export function DVD({ ticker }: ScreenProps) {
                 <Section title="Überblick">
                   <Kv
                     items={[
-                      ["Dividende (12 Monate)", fmt(d.ttm, 2)],
+                      ["Dividende (12 Monate)", fmtPerShare(d.ttm)],
                       ["Rendite (12 Monate)", fmtRatio(d.yieldTtm, 2)],
                       ["Letzter Ex-Tag", fmtDate(d.dividends[0]?.exDate)],
                       ["Zahlungen pro Jahr", perYear ? String(perYear) : DASH],
@@ -498,7 +516,7 @@ export function DVD({ ticker }: ScreenProps) {
                     {years.map(([y, v]) => {
                       const max = Math.max(...years.map((x) => x[1]));
                       return (
-                        <div key={y} style={{ flex: 1, textAlign: "center", minWidth: 0 }} title={`${y}: ${fmt(v, 2)}`}>
+                        <div key={y} style={{ flex: 1, textAlign: "center", minWidth: 0 }} title={`${y}: ${fmtPerShare(v)}`}>
                           <div style={{ height: `${(v / max) * 64}px`, background: "var(--label)", opacity: 0.8 }} />
                           <div className="xs muted">{y.slice(2)}</div>
                         </div>
@@ -515,7 +533,7 @@ export function DVD({ ticker }: ScreenProps) {
                   columns={[
                     { key: "ex", label: "Ex-Tag", render: (r) => fmtDate(r.exDate) },
                     { key: "pay", label: "Zahltag", render: (r) => fmtDate(r.payDate) },
-                    { key: "v", label: "Betrag", num: true, render: (r) => `${fmt(r.value, 4)} ${r.currency || ""}` },
+                    { key: "v", label: "Betrag", num: true, render: (r) => `${fmtPerShare(r.value)} ${r.currency || ""}` },
                   ]}
                 />
               ) : (
@@ -539,11 +557,11 @@ export function ANR({ ticker }: ScreenProps) {
         {(c) => {
           const a = c.analyst;
           const buckets = [
-            { label: "Strong Buy", n: a.strongBuy ?? 0, color: "#1f9d5c" },
-            { label: "Buy", n: a.buy ?? 0, color: "#29d17d" },
-            { label: "Hold", n: a.hold ?? 0, color: "#8f8f8f" },
-            { label: "Sell", n: a.sell ?? 0, color: "#ff8a65" },
-            { label: "Strong Sell", n: a.strongSell ?? 0, color: "#ff5252" },
+            { label: "Starker Kauf", n: a.strongBuy ?? 0, color: "#1f9d5c" },
+            { label: "Kaufen", n: a.buy ?? 0, color: "#29d17d" },
+            { label: "Halten", n: a.hold ?? 0, color: "#8f8f8f" },
+            { label: "Verkaufen", n: a.sell ?? 0, color: "#ff8a65" },
+            { label: "Starker Verkauf", n: a.strongSell ?? 0, color: "#ff5252" },
           ];
           const total = buckets.reduce((s, b) => s + b.n, 0);
           const price = quote?.last ?? null;
@@ -570,7 +588,7 @@ export function ANR({ ticker }: ScreenProps) {
               </div>
               <div className="section-title">Verteilung</div>
               {buckets.map((b) => (
-                <div key={b.label} style={{ display: "grid", gridTemplateColumns: "11ch minmax(0,1fr) 4ch", gap: 8, alignItems: "center", padding: "3px 0" }}>
+                <div key={b.label} style={{ display: "grid", gridTemplateColumns: "15ch minmax(0,1fr) 4ch", gap: 8, alignItems: "center", padding: "3px 0" }}>
                   <span className="muted">{b.label}</span>
                   <div className="bar-bg" style={{ height: 10 }}>
                     <div className="bar-fill" style={{ left: 0, width: total ? `${(b.n / total) * 100}%` : 0, background: b.color }} />

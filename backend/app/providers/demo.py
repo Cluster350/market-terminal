@@ -830,40 +830,60 @@ class DemoProvider:
                 "dividendsPaid": -divs, "salePurchaseOfStock": buyback,
             }
 
-        yearly_inc: dict[str, Any] = {}
-        yearly_bal: dict[str, Any] = {}
-        yearly_cf: dict[str, Any] = {}
-        annual_rev: dict[int, float] = {}
-        annual_net: dict[int, float] = {}
-        for k, end in enumerate(years):
-            r = _rng("fy", ticker, end.isoformat())
-            rev = rev0 / (1 + growth) ** k * r.uniform(0.98, 1.02)
-            inc = income(rev, r)
-            annual_rev[end.year] = rev
-            annual_net[end.year] = inc["netIncome"]
-            divs = max(inc["netIncome"], 0) * payout
-            yearly_inc[end.isoformat()] = fmt(inc, end)
-            yearly_bal[end.isoformat()] = fmt(balance(rev, r), end)
-            yearly_cf[end.isoformat()] = fmt(cashflow(inc, r, divs), end)
-
+        # Erst alle Quartale erzeugen, dann das Geschäftsjahr als Summe der vier Quartale
+        # (GuV und Cashflow) bzw. als Stichtagswert des vierten Quartals (Bilanz). So passen
+        # Jahres- und Quartalsansicht in FA und das TTM-EPS in DES zusammen.
         season = [0.95, 1.0, 1.0, 1.05]
+        latest_year = years[0].year
+
+        def level(year: int) -> float:
+            return rev0 * (1 + growth) ** (year - latest_year)
+
+        all_quarters: list[dt.date] = []
+        y, qn = years[-1].year, 1
+        newest = max(quarters[0], years[0]) if quarters else years[0]
+        while True:
+            end = [dt.date(y, 3, 31), dt.date(y, 6, 30), dt.date(y, 9, 30), dt.date(y, 12, 31)][qn - 1]
+            if end > newest:
+                break
+            all_quarters.append(end)
+            qn += 1
+            if qn == 5:
+                qn, y = 1, y + 1
+
+        q_data: dict[dt.date, tuple[dict[str, float], dict[str, float], dict[str, float]]] = {}
+        for end in all_quarters:
+            r = _rng("fq", ticker, end.isoformat())
+            rev = level(end.year) / 4 * season[(end.month - 1) // 3] * r.uniform(0.97, 1.03)
+            inc = income(rev, r)
+            divs = max(inc["netIncome"], 0) * payout
+            q_data[end] = (inc, balance(rev * 4, r), cashflow(inc, r, divs))
+
         q_inc: dict[str, Any] = {}
         q_bal: dict[str, Any] = {}
         q_cf: dict[str, Any] = {}
         q_net: dict[dt.date, float] = {}
         q_rev: dict[dt.date, float] = {}
-        latest_year = years[0].year
         for end in quarters:
-            r = _rng("fq", ticker, end.isoformat())
-            base_rev = annual_rev.get(end.year) or annual_rev[latest_year] * (1 + growth) ** (end.year - latest_year)
-            rev = base_rev / 4 * season[(end.month - 1) // 3] * r.uniform(0.97, 1.03)
-            inc = income(rev, r)
-            q_rev[end] = rev
+            inc, bal, cf = q_data[end]
+            q_rev[end] = inc["totalRevenue"]
             q_net[end] = inc["netIncome"]
-            divs = max(inc["netIncome"], 0) * payout
             q_inc[end.isoformat()] = fmt(inc, end)
-            q_bal[end.isoformat()] = fmt(balance(rev * 4, r), end)
-            q_cf[end.isoformat()] = fmt(cashflow(inc, r, divs), end)
+            q_bal[end.isoformat()] = fmt(bal, end)
+            q_cf[end.isoformat()] = fmt(cf, end)
+
+        yearly_inc: dict[str, Any] = {}
+        yearly_bal: dict[str, Any] = {}
+        yearly_cf: dict[str, Any] = {}
+        for end in years:
+            parts = [q_data[q] for q in all_quarters if q.year == end.year]
+            if len(parts) != 4:
+                continue
+            inc_y = {k: sum(p[0][k] for p in parts) for k in parts[0][0]}
+            cf_y = {k: sum(p[2][k] for p in parts) for k in parts[0][2]}
+            yearly_inc[end.isoformat()] = fmt(inc_y, end)
+            yearly_bal[end.isoformat()] = fmt(parts[-1][1], end)
+            yearly_cf[end.isoformat()] = fmt(cf_y, end)
 
         last4 = quarters[:4]
         rev_ttm = sum(q_rev[q] for q in last4)
@@ -1060,12 +1080,20 @@ class DemoProvider:
         if not weekend:
             for i, (t, rec) in enumerate(self._report_index().get(day, [])):
                 items.extend(self._earnings_story(_COMPANY[t], rec, day, i))
-        count = rng.randint(1, 3) if weekend else rng.randint(12, 20)
+        # Unternehmensmeldungen nur an Werktagen
+        count = 0 if weekend else rng.randint(12, 20)
         for i in range(count):
             minute = rng.randint(7 * 60, 21 * 60)
             when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=minute)
             c = rng.choices(D.COMPANIES, weights=weights)[0]
-            items.append(self._company_story(c, when, rng, i, weekend))
+            items.append(self._company_story(c, when, rng, i))
+        # Übernahmen: je Unternehmen höchstens eine pro 30-Tage-Fenster, an einem festen Werktag
+        for c in D.COMPANIES:
+            hit = self._mna_day(f"{c[0]}.{c[2]}", day)
+            if hit is not None:
+                r, minute = hit
+                when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=minute)
+                items.append(self._company_story(c, when, r, 0, kind="mna"))
         # Markt- und Makromeldungen aus den synthetischen Kursen und dem Kalender
         items.extend(self._market_stories(day))
         return items
@@ -1119,20 +1147,29 @@ class DemoProvider:
             )
         return items
 
-    def _company_story(self, c: tuple, when: dt.datetime, rng: random.Random, i: int, weekend: bool = False) -> NewsItem:
+    @staticmethod
+    def _mna_day(ticker: str, day: dt.date) -> tuple[random.Random, int] | None:
+        """Übernahmemeldung für ``ticker`` an ``day``: (Zufallsquelle, Minute) oder None."""
+        slot = day.toordinal() // 30
+        r = _rng("mna-slot", ticker, slot)
+        if r.random() >= 0.2:
+            return None
+        start = slot * 30
+        weekdays = [o for o in range(start, start + 30) if dt.date.fromordinal(o).weekday() < 5]
+        if dt.date.fromordinal(weekdays[r.randrange(len(weekdays))]) != day:
+            return None
+        return r, r.randint(7 * 60, 9 * 60)
+
+    def _company_story(self, c: tuple, when: dt.datetime, rng: random.Random, i: int, kind: str | None = None) -> NewsItem:
         code, name, exch, sector, industry, _ = c
         ticker = f"{code}.{exch}"
         cur = D.EXCHANGE_INFO[exch][0]
-        if weekend:
-            kind = rng.choice(["product", "order", "cfo"])
-        else:
+        if kind is None:
             kind = rng.choices(
-                ["up", "down", "mna", "buyback", "order", "cfo", "outage", "jobs", "product"],
-                weights=[7, 5, 2, 4, 5, 3, 2, 2, 5],
+                ["up", "down", "buyback", "order", "cfo", "outage", "jobs", "product"],
+                weights=[7, 5, 4, 5, 3, 2, 2, 5],
             )[0]
         month = when.date().toordinal() // 30
-        if kind == "mna" and _rng("mna-slot", ticker, month).random() > 0.25:
-            kind = "product"  # höchstens eine Übernahme je Unternehmen und Monat
         pct_num = round(abs(rng.gauss(6, 4)) + 1, 1)
         amount_num = round(rng.uniform(0.5, 12), 1)
         pct_val = _de(pct_num, 1)
@@ -1170,7 +1207,7 @@ class DemoProvider:
         topic, title, content, polarity = templates[kind]
         polarity = max(-1.0, min(1.0, polarity + rng.gauss(0, 0.15)))
         urgent = kind == "mna" and rng.random() < 0.5
-        ident = hashlib.sha1(f"{ticker}|{when.isoformat()}|{i}".encode()).hexdigest()[:16]
+        ident = hashlib.sha1(f"{ticker}|{when.isoformat()}|{i}|{kind}".encode()).hexdigest()[:16]
         return NewsItem(
             id=ident,
             date=when.isoformat().replace("+00:00", "Z"),
@@ -1338,11 +1375,23 @@ class DemoProvider:
             return d.month in (1, 4, 7, 10) and DemoProvider._matches(("dom", rule[1]), d)
         return False
 
+    _LAG: dict[str, int] = {
+        "Consumer Confidence": 0, "Michigan Consumer Sentiment": 0, "Ifo Business Climate": 0,
+        "ZEW Economic Sentiment": 0, "Inflation Rate YoY Prel": 0, "Unemployment Change": 0,
+        "HCOB Manufacturing PMI Flash": 0, "Consumer Confidence Flash": 0, "GfK Consumer Confidence": -1,
+        "Industrial Production MoM": 2, "Factory Orders MoM": 2, "Trade Balance": 2, "Retail Sales MoM": 1,
+        "GDP MoM": 2,
+    }
+    # Abweichungen, die vom Land abhängen (gleicher Name, andere Veröffentlichungspraxis)
+    _LAG_COUNTRY: dict[tuple[str, str], int] = {
+        ("EU", "Retail Sales MoM"): 2, ("EU", "Unemployment Rate"): 2, ("GB", "Unemployment Rate"): 2,
+        ("JP", "Industrial Production MoM"): 1,
+    }
     _MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
     # Umfragen und Schnellschätzungen beziehen sich auf den laufenden Monat
     _CURRENT_MONTH = ("Flash", "Prel", "ZEW", "Ifo", "Confidence", "Sentiment", "GfK")
 
-    def _event_period(self, name: str, rule: tuple, d: dt.date) -> tuple[str, int, Optional[str]]:
+    def _event_period(self, name: str, rule: tuple, d: dt.date, country: str = "") -> tuple[str, int, Optional[str]]:
         """(Frequenz, Periodenindex, Bezeichnung) einer Veröffentlichung."""
         kind = rule[0]
         if kind == "weekday":  # Wochenwerte: Woche bis zum vorangegangenen Samstag
@@ -1355,11 +1404,13 @@ class DemoProvider:
             return "q", y * 4 + q, f"Q{q} {y}"
         if kind == "cb":
             return "cb", d.toordinal(), None
-        # Nur Schnellschätzungen zu Monatsbeginn (Eurozone-Inflation am 1. Werktag) gelten dem
-        # Vormonat; mit ">= 15" fiel die Michigan-Umfrage (2. Freitag, Tag 8–14) in den Vormonat
-        current = any(w in name for w in self._CURRENT_MONTH) and d.day > 5
-        y, m = (d.year, d.month) if current else ((d.year, d.month - 1) if d.month > 1 else (d.year - 1, 12))
-        return "m", y * 12 + m, f"{self._MONTHS[m - 1]} {y}"
+        # Monatswerte: Verzögerung je Statistik (0 = Umfrage für den laufenden Monat,
+        # 1 = Vormonat, 2 = harte Daten wie Produktion oder Handelsbilanz, −1 = Prognose
+        # für den Folgemonat wie GfK). Ein Monatswert erscheint nie wenige Tage nach Monatsende.
+        lag = self._LAG_COUNTRY.get((country, name), self._LAG.get(name, 1))
+        idx = d.year * 12 + (d.month - 1) - lag
+        y, m0 = divmod(idx, 12)
+        return "m", y * 12 + m0 + 1, f"{self._MONTHS[m0]} {y}"
 
     def _event_value(
         self, country: str, name: str, base: float, spread: float, freq: str, idx: int, d: dt.date
@@ -1394,9 +1445,12 @@ class DemoProvider:
                 continue
             hh, mm = (int(x) for x in time.split(":"))
             when = dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=UTC)
-            freq, idx, period = self._event_period(name, rule, d)
+            freq, idx, period = self._event_period(name, rule, d, country)
             actual, estimate, previous = self._event_value(country, name, base, spread, freq, idx, d)
             released = when <= now
+            if not released and self._previous_release(rule, d, when) > now:
+                # Vorperiode noch nicht veröffentlicht: Vorwert ist noch unbekannt
+                previous = None
             ident = hashlib.sha1(f"{country}|{name}|{d}".encode()).hexdigest()[:16]
             out.append(
                 EconEvent(
@@ -1414,6 +1468,15 @@ class DemoProvider:
                 )
             )
         return out
+
+    def _previous_release(self, rule: tuple, d: dt.date, when: dt.datetime) -> dt.datetime:
+        """Zeitpunkt der vorherigen Veröffentlichung derselben Statistik."""
+        x = d - dt.timedelta(days=1)
+        for _ in range(130):
+            if self._matches(rule, x):
+                return when - dt.timedelta(days=(d - x).days)
+            x -= dt.timedelta(days=1)
+        return when - dt.timedelta(days=365)
 
     async def calendar(self, start: dt.date, end: dt.date, country: Optional[str]) -> list[EconEvent]:
         out: list[EconEvent] = []

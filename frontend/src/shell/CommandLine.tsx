@@ -1,10 +1,10 @@
 // Befehlszeile mit Autovervollständigung für Funktionen und Wertpapiere.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FUNCTIONS, FN, normalizeTicker, parseCommand, resolveFn, type FnCode } from "../lib/commands";
+import { FUNCTIONS, FN, normalizeTicker, parseCommand, resolveFn, unknownSecurityMessage, type FnCode } from "../lib/commands";
 import { displayTicker } from "../lib/format";
 import { api, ApiError } from "../lib/api";
-import { useSearch } from "../lib/queries";
+import { useResolve, useSearch } from "../lib/queries";
 import { useWorkspace } from "../state/workspace";
 
 type Suggestion =
@@ -22,6 +22,20 @@ function loadHistory(): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Wertpapierteil einer Eingabe: alles vor der Funktion bzw. vor dem gerade getippten Wort.
+ * ``complete``: nur wenn die Eingabe mit Leerzeichen oder einer Funktion endet.
+ */
+function secTickerOf(text: string, complete: boolean): string | null {
+  const tokens = text.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+  const fnLast = !!resolveFn(tokens[tokens.length - 1]);
+  const done = fnLast || /\s$/.test(text);
+  if (complete && !done) return null;
+  const sec = done && !fnLast ? tokens : tokens.slice(0, -1);
+  return sec.length ? normalizeTicker(sec.join(" ")) : null;
 }
 
 export function CommandLine() {
@@ -83,12 +97,19 @@ export function CommandLine() {
   }, [debounced]);
   const search = useSearch(searchTerm);
 
+  // Ticker vor der Funktion ("XYZQ US …") vorab prüfen, damit keine Funktion für ein
+  // unbekanntes Wertpapier vorgeschlagen wird
+  const probeTicker = useMemo(() => secTickerOf(debounced, false), [debounced]);
+  const probe = useResolve(probeTicker);
+  const isUnknown = (t: string | null) => !!t && t === probeTicker && probe.isError;
+
   const suggestions = useMemo<Suggestion[]>(() => {
     const out: Suggestion[] = [];
     const v = value.trim().toUpperCase();
     // Nach Ticker + Leerzeichen (z. B. per Tab): passende Funktionen für dieses Wertpapier anbieten
     if (v && /\s$/.test(value) && !parts.fn) {
       const t = normalizeTicker(v);
+      if (t && isUnknown(t)) return out;
       if (t) {
         for (const f of FUNCTIONS.filter((f) => f.needsTicker)) {
           out.push({ kind: "fn", fn: f.code, ticker: t, label: `${displayTicker(t)} ${f.code}`, desc: `${f.title} – ${f.desc}` });
@@ -115,6 +136,7 @@ export function CommandLine() {
     const secTicker = secPrefix ? normalizeTicker(secPrefix) : null;
     for (const f of fnMatches.slice(0, 8)) {
       const t = f.needsTicker ? secTicker ?? tickerFromInput : null;
+      if (isUnknown(t)) continue;
       out.push({
         kind: "fn",
         fn: f.code,
@@ -134,7 +156,11 @@ export function CommandLine() {
       });
     }
     return out;
-  }, [value, parts, search.data, ws.state.recent]);
+  }, [value, parts, search.data, ws.state.recent, probeTicker, probe.isError]);
+
+  // Hinweis nur bei abgeschlossener Eingabe ("XYZQ US " oder "XYZQ US GP"), nicht mitten im Wort
+  const unknownHint =
+    probeTicker && probe.isError && secTickerOf(value, true) === probeTicker ? `Unbekanntes Wertpapier ${displayTicker(probeTicker)}` : null;
 
   useEffect(() => setCursor(-1), [value]);
 
@@ -177,7 +203,13 @@ export function CommandLine() {
         if (id !== requestId.current) return;
         setChecking(false);
         setOpen(true);
-        setError(e instanceof ApiError ? e.message : "Ticker konnte nicht geprüft werden.");
+        setError(
+          e instanceof ApiError && e.status === 404
+            ? unknownSecurityMessage(value, ticker, e.message)
+            : e instanceof ApiError
+              ? e.message
+              : "Ticker konnte nicht geprüft werden.",
+        );
         return;
       }
       if (id !== requestId.current) return;
@@ -222,7 +254,7 @@ export function CommandLine() {
     void activate(cmd.ticker, null, false);
   }
 
-  const showMenu = open && (suggestions.length > 0 || !!error);
+  const showMenu = open && (suggestions.length > 0 || !!error || !!unknownHint);
   let lastKind: string | null = null;
 
   return (
@@ -290,7 +322,7 @@ export function CommandLine() {
       </button>
       {showMenu && (
         <div className="cmd-menu" id="cmd-menu" role="listbox">
-          {error && <div className="cmd-error">{error}</div>}
+          {error ? <div className="cmd-error">{error}</div> : unknownHint && <div className="cmd-error">{unknownHint}</div>}
           {suggestions.map((s, i) => {
             const header = s.kind !== lastKind;
             lastKind = s.kind;

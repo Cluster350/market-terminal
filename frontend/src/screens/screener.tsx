@@ -6,7 +6,6 @@ import { api, ApiError, IS_STATIC } from "../lib/api";
 import { FUNCTIONS, normalizeTicker } from "../lib/commands";
 import { DASH, displayTicker, fmt, fmtBig, fmtPrice, fmtStamp, isNum, sectorDe, tone } from "../lib/format";
 import { useMovers, useQuotes, useScreen, useScreenFields, useStatus } from "../lib/queries";
-import { rowKey } from "../lib/screen";
 import type { ScreenField, ScreenFilter, ScreenOp, ScreenRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
@@ -118,12 +117,28 @@ const RESULT_COLS: { key: string; label: string; num?: boolean; render: (r: Scre
  * Marktkapitalisierung in USD und in Handelswährung.
  */
 export function toCsv(rows: ScreenRow[]): string {
-  const cols: [string, string][] = [
-    ["ticker", "Ticker"], ["name", "Name"], ["exchange", "Börse"], ["sector", "Sektor"], ["industry", "Branche"],
-    ["currency", "Währung"], ["price", "Kurs"], ["chg_1d", "Veränd. 1T %"], ["market_cap", "Marktkap. USD"],
-    ["market_cap_local", "Marktkap. Handelswährung"], ["pe", "KGV"], ["eps", "EPS"], ["div_yield", "Div.-Rendite %"],
-    ["perf_1m", "Perf. 1M %"], ["perf_3m", "Perf. 3M %"], ["perf_12m", "Perf. 12M %"], ["rsi14", "RSI 14"],
-    ["vol_1y", "Volatilität 1J %"], ["dist_52w_high", "Abst. 52W-Hoch %"],
+  // Wie in der Oberfläche: Bloomberg-Kürzel und deutsche Sektoren; EODHD-Ticker als Schlüssel dazu
+  const cols: [string, (r: ScreenRow) => unknown][] = [
+    ["Ticker", (r) => displayTicker(r.ticker)],
+    ["Name", (r) => r.name],
+    ["Börse", (r) => displayTicker(r.ticker).split(" ").slice(1).join(" ")],
+    ["Sektor", (r) => (r.sector ? sectorDe(r.sector) : null)],
+    ["Branche", (r) => r.industry],
+    ["Währung", (r) => r.currency],
+    ["Kurs", (r) => r.price],
+    ["Veränd. 1T %", (r) => r.chg1d],
+    ["Marktkap. USD", (r) => (isNum(r.marketCap) ? Math.round(r.marketCap) : null)],
+    ["Marktkap. Handelswährung", (r) => (isNum(r.marketCapLocal) ? Math.round(r.marketCapLocal) : null)],
+    ["KGV", (r) => r.pe],
+    ["EPS", (r) => r.eps],
+    ["Div.-Rendite %", (r) => r.divYield],
+    ["Perf. 1M %", (r) => r.perf1m],
+    ["Perf. 3M %", (r) => r.perf3m],
+    ["Perf. 12M %", (r) => r.perf12m],
+    ["RSI 14", (r) => r.rsi14],
+    ["Volatilität 1J %", (r) => r.vol1y],
+    ["Abst. 52W-Hoch %", (r) => r.dist52wHigh],
+    ["EODHD-Ticker", (r) => r.ticker],
   ];
   const esc = (v: unknown) => {
     if (v === null || v === undefined) return "";
@@ -132,7 +147,7 @@ export function toCsv(rows: ScreenRow[]): string {
     if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  return [cols.map(([, h]) => h).join(";"), ...rows.map((r) => cols.map(([k]) => esc(r[rowKey(k)])).join(";"))].join("\n");
+  return [cols.map(([h]) => h).join(";"), ...rows.map((r) => cols.map(([, get]) => esc(get(r))).join(";"))].join("\n");
 }
 
 export function EQS(_: ScreenProps) {

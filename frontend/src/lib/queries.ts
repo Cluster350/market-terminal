@@ -54,6 +54,10 @@ export const useNews = (p: NewsParams, enabled = true) =>
     placeholderData: keepPreviousData,
   });
 
+/** Prüft einen Ticker (für Vorschläge der Befehlszeile); Fehler werden nicht wiederholt. */
+export const useResolve = (t: string | null) =>
+  useQuery({ queryKey: ["resolve", t], queryFn: () => api.resolve(t!), enabled: !!t, staleTime: 600_000, retry: false });
+
 export const useIndices = () => useQuery({ queryKey: ["indices"], queryFn: api.indices, refetchInterval: poll(60_000) });
 export const useFx = () => useQuery({ queryKey: ["fx"], queryFn: api.fx, refetchInterval: poll(60_000) });
 export const useCommodities = () =>

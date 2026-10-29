@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FN, FUNCTIONS, normalizeTicker, parseCommand, resolveFn } from "./commands";
+import { FN, FUNCTIONS, nearestFn, normalizeTicker, parseCommand, resolveFn, unknownSecurityMessage } from "./commands";
 
 describe("normalizeTicker (wie services/tickers.py)", () => {
   it.each([
@@ -94,5 +94,34 @@ describe("Gelbe Bloomberg-Tasten und Funktionsprüfung", () => {
 
   it("Prototyp-Namen sind keine Funktionen", () => {
     expect(parseCommand("toString")).toEqual({ kind: "ticker", ticker: "TOSTRING.US" });
+  });
+});
+
+describe("Runde 3: Tippfehler und Rohstoff-Generika", () => {
+  it("schlägt bei vertippten Funktionen die nächstliegende vor", () => {
+    expect(nearestFn("HLEP")).toBe("HELP");
+    expect(nearestFn("GPP")).toBe("GP");
+    expect(nearestFn("HELP")).toBeNull(); // gültige Funktion
+    expect(nearestFn("XYZQ")).toBeNull();
+    const c = parseCommand("NWND US GPP");
+    expect(c).toMatchObject({ kind: "error" });
+    expect(c?.kind === "error" && c.message).toContain("Meinten Sie GP?");
+  });
+
+  it("meldet unbekannte Wertpapiere im Bloomberg-Format", () => {
+    expect(unknownSecurityMessage("HLEP", "HLEP.US", "Unbekannter Ticker HLEP.US. Meinten Sie: HRVS.US, MTHR.SW?")).toBe(
+      "„HLEP“ ist weder Funktion noch Wertpapier. Meinten Sie HELP? Wertpapiere: HRVS US, MTHR SW",
+    );
+    expect(unknownSecurityMessage("XYZQ US GP", "XYZQ.US", "Unbekannter Ticker XYZQ.US.")).toBe("Unbekanntes Wertpapier XYZQ US.");
+    expect(unknownSecurityMessage("LMRX FP", "LMRX.PA", "Unbekannter Ticker LMRX.PA. Meinten Sie: LMRE.PA?")).toBe(
+      "Unbekanntes Wertpapier LMRX FP. Meinten Sie: LMRE FP",
+    );
+  });
+
+  it("löst Bloomberg-Generika für Rohstoffe auf", () => {
+    expect(normalizeTicker("CL1 Comdty")).toBe("WTI.COMM");
+    expect(normalizeTicker("CO1 COMDTY")).toBe("BRENT.COMM");
+    expect(normalizeTicker("GC1 Comdty")).toBe("GOLD.COMM");
+    expect(normalizeTicker("hasOwnProperty Comdty")).toBe("HASOWNPROPERTY.COMM");
   });
 });

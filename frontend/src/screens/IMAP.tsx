@@ -65,8 +65,8 @@ export default function IMAP(_: ScreenProps) {
           const x = p.data;
           if (!x) return "";
           // Tooltip ist HTML: Namen aus der Datenquelle escapen
-          if (x.chg === undefined) return `<b>${escapeHtml(x.name)}</b><br/>Marktkap. ${fmtBig(x.value)}`;
-          return `<b>${escapeHtml(displayTicker(x.name))}</b> ${escapeHtml(x.full)}<br/>Marktkap. ${fmtBig(x.value)}<br/>Veränderung ${fmtPct(x.chg)}`;
+          if (x.chg === undefined) return `<b>${escapeHtml(x.name)}</b><br/>Marktkap. ${fmtBig(x.value)} USD`;
+          return `<b>${escapeHtml(displayTicker(x.name))}</b> ${escapeHtml(x.full)}<br/>Marktkap. ${fmtBig(x.value)} USD<br/>Veränderung ${fmtPct(x.chg)}`;
         },
       },
       series: [

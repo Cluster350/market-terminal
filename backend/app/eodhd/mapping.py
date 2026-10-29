@@ -364,6 +364,10 @@ def financials(data: Any, ticker: str, period: str, max_periods: int = 0) -> Fin
                     )
                 )
     cash = _rows(CASHFLOW_ROWS, cfs, periods)
+    for r in cash:
+        # Capex ist ein Mittelabfluss; EODHD liefert das Vorzeichen je nach Quelle unterschiedlich
+        if r.key == "capitalExpenditures":
+            r.values = [None if v is None else -abs(v) for v in r.values]
     cash_keys = {r.key for r in cash}
     if "freeCashFlow" not in cash_keys:
         cfo = next((r for r in cash if r.key == "totalCashFromOperatingActivities"), None)

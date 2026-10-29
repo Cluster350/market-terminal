@@ -168,6 +168,15 @@ a { color: var(--link); }
 .tag.prov { font-size: 9px; padding: 0 3px; vertical-align: 1px; }
 
 .clocks { display: flex; gap: 12px; margin-left: auto; flex: none; color: var(--muted); font-size: var(--fs-s); }
+/* Bei 1280–1500 px Breite Platz für die Befehlszeile schaffen */
+@media (max-width: 1500px) {
+  .brand-name { display: none; }
+  .wt-label { display: none; }
+}
+@media (max-width: 1360px) {
+  .clocks { gap: 8px; }
+  .clocks > span:nth-child(n + 3) { display: none; }
+}
 .clocks b { color: var(--value); font-weight: 500; margin-left: 4px; }
 .clock-open b { color: var(--up); }
 .mode-badge {
@@ -251,6 +260,10 @@ a { color: var(--link); }
 .tool:hover { color: var(--value); border-color: var(--rule-strong); }
 .fn-select { background: #000; border: 1px solid var(--rule-strong); color: var(--muted); height: 18px; font-size: var(--fs-s); }
 .panel-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
+/* Schmale Panels (Viererlayout bei 1280 px): Zusatzspalten ausblenden statt abschneiden */
+.panel { container-type: inline-size; }
+@container (max-width: 680px) { .t .col-opt1 { display: none; } }
+@container (max-width: 540px) { .t .col-opt2 { display: none; } }
 .panel-body.flush { overflow: hidden; display: flex; flex-direction: column; }
 
 .statusbar {

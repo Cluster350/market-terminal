@@ -104,6 +104,8 @@ const isLayout = (l: unknown): l is Layout => typeof l === "string" && Object.pr
 const strings = (x: unknown, max: number): string[] =>
   Array.isArray(x) ? x.filter((t): t is string => typeof t === "string").slice(0, max) : [];
 
+export const isSolo = (window: string): boolean => window.startsWith("solo-");
+
 /** Fenster-Kennung aus dem URL-Fragment: "" → main, "#makro" → makro, "#solo-GP" → solo-GP. */
 export function windowFromHash(hash: string): { key: string; page?: PageId; solo?: FnCode } {
   const h = hash.replace(/^#/, "").trim();
@@ -222,6 +224,8 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       return { ...s, security, watchlist: sh.watchlist, recent: sh.recent };
     }
     case "page":
+      // Einzelfunktions-Fenster (#solo-GP) bleiben bei ihrer Funktion
+      if (isSolo(s.window)) return s;
       return { ...s, page: a.page, maximized: null };
     case "security": {
       const recent = [a.ticker, ...s.recent.filter((t) => t !== a.ticker)].slice(0, 12);
@@ -244,7 +248,7 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       return { ...s, maximized: a.index };
     case "layout": {
       const page = s.pages[s.page];
-      if (page.layout === a.layout) return s;
+      if (page.layout === a.layout || isSolo(s.window)) return s;
       const panels = resize(page.panels, a.layout, s.page);
       return {
         ...s,
@@ -362,6 +366,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const setSecurity = useCallback(
     (t: string, opts?: { open?: FnCode }) => {
       dispatch({ type: "security", ticker: t });
+      // Einzelfunktions-Fenster behalten ihre Funktion; verknüpfte Fenster zeigen das Wertpapier
+      if (isSolo(state.window)) return;
       const pageHasTickerPanel = state.pages[state.page].panels.some((f) => FN[f].needsTicker);
       if (opts?.open) {
         if (!pageHasTickerPanel && FN[opts.open].needsTicker) dispatch({ type: "page", page: "equity" });

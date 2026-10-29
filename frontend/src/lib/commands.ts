@@ -1,5 +1,7 @@
 // Funktionskürzel und Befehlszeilen-Parser.
 
+import { displayTicker } from "./format";
+
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
@@ -65,13 +67,19 @@ const INDEX_ALIASES: Record<string, string> = {
   SX5E: "STOXX50E", CAC: "FCHI", UKX: "FTSE", SMI: "SSMI", NKY: "N225", HSI: "HSI", AS51: "AXJO", VIX: "VIX",
 };
 
+const COMDTY_ALIASES: Record<string, string> = {
+  CL1: "WTI", CO1: "BRENT", GC1: "GOLD", SI1: "SILVER", NG1: "NATGAS", HG1: "COPPER", W1: "WHEAT",
+  C1: "CORN", S1: "SOY", KC1: "COFFEE", SB1: "SUGAR", PL1: "PLAT", PA1: "PALL", LA1: "ALU",
+};
+
 /** Wie services/tickers.py: "sap gr" -> "SAP.XETRA", "aapl" -> "AAPL.US", "dax index" -> "GDAXI.INDX". */
 export function normalizeTicker(raw: string): string | null {
   let s = raw.trim().toUpperCase().replace(/\s+EQUITY$/, "");
   if (!s) return null;
   const m = /^(\S+)\s+(INDEX|CURNCY|GOVT|COMDTY)$/.exec(s);
   if (m && !m[1].includes(".")) {
-    const code = m[2] === "INDEX" ? INDEX_ALIASES[m[1]] ?? m[1] : m[1];
+    const aliases = m[2] === "INDEX" ? INDEX_ALIASES : m[2] === "COMDTY" ? COMDTY_ALIASES : null;
+    const code = aliases && Object.prototype.hasOwnProperty.call(aliases, m[1]) ? aliases[m[1]] : m[1];
     s = `${code}.${m[2] === "CURNCY" && code.includes("-") ? "CC" : YELLOW_KEYS[m[2]]}`;
   }
   const parts = s.split(/\s+/);
@@ -85,6 +93,43 @@ export function resolveFn(token: string): FnCode | null {
   const t = token.toUpperCase();
   if (Object.prototype.hasOwnProperty.call(FN, t)) return t as FnCode;
   return Object.prototype.hasOwnProperty.call(ALIASES, t) ? ALIASES[t] : null;
+}
+
+/** Editierdistanz mit Vertauschung benachbarter Zeichen (HLEP -> HELP = 1). */
+function distance(a: string, b: string): number {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/** Funktion mit Tippfehler-Abstand 1 zu ``token`` (ab drei Zeichen), sonst null. */
+export function nearestFn(token: string): FnCode | null {
+  const t = token.toUpperCase();
+  if (t.length < 3 || resolveFn(t)) return null;
+  const hit = FUNCTIONS.find((f) => distance(t, f.code) === 1);
+  return hit ? hit.code : null;
+}
+
+/**
+ * Meldung für ein unbekanntes Wertpapier im Bloomberg-Format. Vorschläge des Backends
+ * ("Meinten Sie: HRVS.US, …") werden in Anzeigekürzel übersetzt; sieht die Eingabe wie eine
+ * vertippte Funktion aus, steht diese vorn.
+ */
+export function unknownSecurityMessage(input: string, ticker: string, serverMessage?: string): string {
+  const tokens = input.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  const fn = tokens.length === 1 ? nearestFn(tokens[0]) : null;
+  const m = /Meinten Sie:\s*([^?]+)\?/.exec(serverMessage ?? "");
+  const near = m ? m[1].split(",").map((x) => x.trim()).filter(Boolean).map(displayTicker) : [];
+  const parts = [fn ? `„${tokens[0]}“ ist weder Funktion noch Wertpapier. Meinten Sie ${fn}?` : `Unbekanntes Wertpapier ${displayTicker(ticker)}.`];
+  if (near.length) parts.push(`${fn ? "Wertpapiere" : "Meinten Sie"}: ${near.join(", ")}`);
+  return parts.join(" ");
 }
 
 export type Command =
@@ -116,7 +161,11 @@ export function parseCommand(input: string): Command | null {
     const head = normalizeTicker(tokens.slice(0, -1).join(" "));
     const whole = normalizeTicker(raw);
     if (head && (!whole || tokens.length >= 3)) {
-      return { kind: "error", message: `Unbekannte Funktion „${last.toUpperCase()}“. HELP zeigt alle Funktionen.` };
+      const near = nearestFn(last);
+      return {
+        kind: "error",
+        message: `Unbekannte Funktion „${last.toUpperCase()}“.${near ? ` Meinten Sie ${near}?` : ""} HELP zeigt alle Funktionen.`,
+      };
     }
   }
   const t = normalizeTicker(raw);

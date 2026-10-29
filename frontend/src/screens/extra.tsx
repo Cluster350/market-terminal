@@ -7,10 +7,14 @@ import {
   displayTicker,
   fmt,
   fmtBig,
+  fmtBp,
   fmtDate,
+  fmtEps,
   fmtPct,
   fmtPrice,
+  fmtStamp,
   fmtWeekday,
+  isLiveBar,
   isNum,
   sectorDe,
   shiftMonths,
@@ -115,8 +119,8 @@ export function EVTS(_: ScreenProps) {
                           </td>
                           <td className="cell-name">{e.name ?? DASH}</td>
                           <td>{quarterLabel(e.periodEnd)}</td>
-                          <td className="num">{fmt(e.epsEstimate, 2)}</td>
-                          <td className="num" style={{ fontWeight: 600 }}>{fmt(e.epsActual, 2)}</td>
+                          <td className="num">{fmtEps(e.epsEstimate)}</td>
+                          <td className="num" style={{ fontWeight: 600 }}>{fmtEps(e.epsActual)}</td>
                           <td className="num">
                             <Change value={e.surprisePct} digits={1} />
                           </td>
@@ -313,7 +317,7 @@ export function InstrumentOverview({ ticker }: { ticker: string }) {
                 <span style={{ marginLeft: "auto", fontSize: "var(--fs-l)" }}>
                   {isYield ? `${fmt(last, 3)} %` : fmtPrice(last, ticker)}{" "}
                   {isYield ? (
-                    <span className={tone(quote?.change)}>{isNum(quote?.change) ? `${quote!.change! >= 0 ? "+" : ""}${Math.round(quote!.change! * 100)} bp` : ""}</span>
+                    <span className={tone(quote?.change, 2)}>{isNum(quote?.change) ? fmtBp(quote!.change) : ""}</span>
                   ) : (
                     <Change value={quote?.changePct} arrowSign />
                   )}
@@ -338,7 +342,9 @@ export function InstrumentOverview({ ticker }: { ticker: string }) {
                   ["Hoch", isYield ? `${fmt(hi, 3)} %` : fmtPrice(hi, ticker)],
                   ["Tief", isYield ? `${fmt(lo, 3)} %` : fmtPrice(lo, ticker)],
                   ["Kursdaten seit", fmtDate(h.t[0])],
-                  ["Letzter Schluss", fmtDate(lastDate)],
+                  isLiveBar(lastDate, quote?.timestamp)
+                    ? ["Letzter Kurs", `${fmtStamp(quote?.timestamp)} (Handel läuft)`]
+                    : ["Letzter Schluss", fmtDate(lastDate)],
                 ]}
               />
               <p className="small muted">Unternehmensdaten (Bilanz, Earnings, Dividenden) gibt es nur für Aktien.</p>

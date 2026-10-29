@@ -8,12 +8,15 @@ import {
   fmtBig,
   fmtBp,
   fmtDate,
+  fmtEps,
   fmtInt,
   fmtPct,
+  fmtPerShare,
   fmtPrice,
   fmtRatio,
   fmtShortDate,
   fmtSigned,
+  isLiveBar,
   isNum,
   safeUrl,
   shiftMonths,
@@ -135,5 +138,31 @@ describe("Ticker und Fremddaten", () => {
     expect(escapeHtml('<img src=x onerror="a">')).toBe("&lt;img src=x onerror=&quot;a&quot;&gt;");
     expect(escapeHtml("AT&T Inc")).toBe("AT&amp;T Inc");
     expect(escapeHtml(null)).toBe("");
+  });
+});
+
+describe("Runde 3: Rundung und Formate", () => {
+  it("tone berücksichtigt die angezeigte Rundung", () => {
+    expect(tone(-0.00001, 4)).toBe("flat");
+    expect(tone(-0.0001, 4)).toBe("down");
+    expect(tone(-0.004, 2)).toBe("flat");
+    expect(tone(-0.004)).toBe("down");
+  });
+
+  it("EPS unter 1 mit drei Stellen, Dividenden je nach Betrag", () => {
+    expect(fmtEps(0.3712)).toBe("0,371");
+    expect(fmtEps(2.214)).toBe("2,21");
+    expect(fmtEps(-0.05)).toBe("-0,050");
+    expect(fmtPerShare(4.4259)).toBe("4,4259");
+    expect(fmtPerShare(0.25)).toBe("0,25");
+    expect(fmtPerShare(1.105)).toBe("1,105");
+  });
+
+  it("erkennt den laufenden Tagesbalken", () => {
+    const now = Date.parse("2026-10-29T14:00:00Z");
+    expect(isLiveBar("2026-10-29", "2026-10-29T13:55:00Z", now)).toBe(true);
+    expect(isLiveBar("2026-10-29", "2026-10-29T13:00:00Z", now)).toBe(false); // seit 1 h kein Kurs: Schluss
+    expect(isLiveBar("2026-10-28", "2026-10-29T13:55:00Z", now)).toBe(false);
+    expect(isLiveBar("2026-10-29", null, now)).toBe(false);
   });
 });
