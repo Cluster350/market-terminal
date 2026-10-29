@@ -217,7 +217,10 @@ export default function GP({ ticker }: ScreenProps) {
   const comparing = compare.length > 0 && !intradayRange;
 
   // Wertpapierwechsel: Vergleichsliste leeren
-  useEffect(() => setCompare([]), [ticker]);
+  useEffect(() => {
+    setCompare([]);
+    setCompareErr(null); // Meldung gehörte zum vorherigen Wertpapier
+  }, [ticker]);
 
   const compareQ = useQueries({
     queries: compare.map((t) => ({ queryKey: ["history", t], queryFn: () => api.history(t), staleTime: 60_000, retry })),
@@ -438,6 +441,8 @@ export default function GP({ ticker }: ScreenProps) {
     try {
       t = (await api.resolve(t)).ticker;
     } catch (e) {
+      // Inzwischen anderes Wertpapier: keine Meldung zum alten Vergleich beim neuen Chart zeigen
+      if (tickerRef.current !== base) return;
       setCompareErr(e instanceof ApiError && e.status === 404 ? unknownSecurityMessage(raw, t, e.message) : "Ticker konnte nicht geprüft werden.");
       return;
     } finally {

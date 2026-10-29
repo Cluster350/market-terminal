@@ -212,3 +212,21 @@ def test_provider_screener_request_building():
         await prov.close()
 
     asyncio.run(run())
+
+
+def test_provider_resolves_commodity_codes_to_etf_proxies():
+    """'CL1 Comdty' -> WTI.COMM gibt es bei EODHD nicht; aufgelöst wird der ETF aus CMDT."""
+    seen = []
+
+    def handler(request: httpx.Request):
+        seen.append(request.url.path)
+        return httpx.Response(200, json={"code": "USO.US", "timestamp": 1761768000, "close": 75.1, "previousClose": 74.0, "change": 1.1, "change_p": 1.49})
+
+    async def run():
+        prov = EODHDProvider(Settings(eodhd_api_key="KEY"), client=_client(handler))
+        hit = await prov.resolve("WTI.COMM")
+        assert hit is not None and hit.ticker == "USO.US"
+        assert seen and seen[0].endswith("/real-time/USO.US")
+        await prov.close()
+
+    asyncio.run(run())

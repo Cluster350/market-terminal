@@ -733,8 +733,6 @@ class DemoProvider:
     def _fiscal(self, ticker: str) -> tuple[list[dt.date], list[dt.date]]:
         """Geschäftsjahre und bereits berichtete Quartale (je Unternehmen verschieden)."""
         today = self.today()
-        last_fy = today.year - 1 if today >= dt.date(today.year, 3, 1) else today.year - 2
-        years = [dt.date(last_fy - k, 12, 31) for k in range(6)]
         quarters: list[dt.date] = []
         y, q = today.year, 4
         while len(quarters) < 10:
@@ -744,6 +742,10 @@ class DemoProvider:
             q -= 1
             if q == 0:
                 q, y = 4, y - 1
+        # Das Geschäftsjahr erscheint mit dem Bericht zum vierten Quartal (früher pauschal ab
+        # 1. März: im Februar fehlte das Jahr, obwohl Q4 schon berichtet war)
+        last_fy = next(e.year for e in quarters if e.month == 12)
+        years = [dt.date(last_fy - k, 12, 31) for k in range(6)]
         return years, quarters
 
     def _fundamentals_raw(self, ticker: str) -> dict:
@@ -834,10 +836,11 @@ class DemoProvider:
         # (GuV und Cashflow) bzw. als Stichtagswert des vierten Quartals (Bilanz). So passen
         # Jahres- und Quartalsansicht in FA und das TTM-EPS in DES zusammen.
         season = [0.95, 1.0, 1.0, 1.05]
-        latest_year = years[0].year
 
         def level(year: int) -> float:
-            return rev0 * (1 + growth) ** (year - latest_year)
+            # Fest am Stichtagsjahr verankert: Mit dem jeweils neuesten Geschäftsjahr als Anker
+            # änderten sich beim Jahreswechsel der Berichte alle historischen Zahlen rückwirkend
+            return rev0 * (1 + growth) ** (year - ANCHOR.year)
 
         all_quarters: list[dt.date] = []
         y, qn = years[-1].year, 1

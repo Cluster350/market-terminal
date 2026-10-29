@@ -28,7 +28,7 @@ function loadHistory(): string[] {
  * Wertpapierteil einer Eingabe: alles vor der Funktion bzw. vor dem gerade getippten Wort.
  * ``complete``: nur wenn die Eingabe mit Leerzeichen oder einer Funktion endet.
  */
-function secTickerOf(text: string, complete: boolean): string | null {
+export function secTickerOf(text: string, complete: boolean): string | null {
   const tokens = text.trim().split(/\s+/).filter(Boolean);
   if (!tokens.length) return null;
   const fnLast = !!resolveFn(tokens[tokens.length - 1]);
@@ -36,6 +36,11 @@ function secTickerOf(text: string, complete: boolean): string | null {
   if (complete && !done) return null;
   const sec = done && !fnLast ? tokens : tokens.slice(0, -1);
   return sec.length ? normalizeTicker(sec.join(" ")) : null;
+}
+
+/** Hat die Ticker-Prüfung "nicht gefunden" ergeben (und nicht etwa einen Netzfehler)? */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
 }
 
 export function CommandLine() {
@@ -101,7 +106,10 @@ export function CommandLine() {
   // unbekanntes Wertpapier vorgeschlagen wird
   const probeTicker = useMemo(() => secTickerOf(debounced, false), [debounced]);
   const probe = useResolve(probeTicker);
-  const isUnknown = (t: string | null) => !!t && t === probeTicker && probe.isError;
+  // Nur "nicht gefunden" heißt unbekannt; bei Netz- oder Serverfehlern (502, Budget 429) würde
+  // sonst jedes Wertpapier als unbekannt markiert und alle Funktionsvorschläge verschwänden
+  const probeUnknown = isNotFound(probe.error);
+  const isUnknown = (t: string | null) => !!t && t === probeTicker && probeUnknown;
 
   const suggestions = useMemo<Suggestion[]>(() => {
     const out: Suggestion[] = [];
@@ -156,11 +164,11 @@ export function CommandLine() {
       });
     }
     return out;
-  }, [value, parts, search.data, ws.state.recent, probeTicker, probe.isError]);
+  }, [value, parts, search.data, ws.state.recent, probeTicker, probeUnknown]);
 
   // Hinweis nur bei abgeschlossener Eingabe ("XYZQ US " oder "XYZQ US GP"), nicht mitten im Wort
   const unknownHint =
-    probeTicker && probe.isError && secTickerOf(value, true) === probeTicker ? `Unbekanntes Wertpapier ${displayTicker(probeTicker)}` : null;
+    probeTicker && probeUnknown && secTickerOf(value, true) === probeTicker ? `Unbekanntes Wertpapier ${displayTicker(probeTicker)}` : null;
 
   useEffect(() => setCursor(-1), [value]);
 

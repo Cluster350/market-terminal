@@ -76,7 +76,8 @@ export function Boot({ onDone }: { onDone: () => void }) {
       ok: (d: { last: number | null }[]) => `${d.filter((r) => r.last !== null).length} Werte mit Kurs`,
       fixed: "leer",
       // Die Standard-Watchlist kommt erst mit dem Datenmodus; vorher wäre "leer" nur ein Zwischenstand
-      waiting: !ws.state.mode,
+      // Ohne Datenquelle (Status-Fehler) kommt kein Modus: dann nicht auf ihn warten
+      waiting: !ws.state.mode && !status.isError,
     },
     {
       label: "Wirtschaftskalender",

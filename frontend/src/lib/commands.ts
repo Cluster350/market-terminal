@@ -75,6 +75,8 @@ const COMDTY_ALIASES: Record<string, string> = {
 /** Wie services/tickers.py: "sap gr" -> "SAP.XETRA", "aapl" -> "AAPL.US", "dax index" -> "GDAXI.INDX". */
 export function normalizeTicker(raw: string): string | null {
   let s = raw.trim().toUpperCase().replace(/\s+EQUITY$/, "");
+  // Bloomberg schreibt einbuchstabige Rohstoff-Generika mit Leerzeichen: "W 1 Comdty" = W1
+  s = s.replace(/^([A-Z]{1,2})\s+(\d)\s+COMDTY$/, "$1$2 COMDTY");
   if (!s) return null;
   const m = /^(\S+)\s+(INDEX|CURNCY|GOVT|COMDTY)$/.exec(s);
   if (m && !m[1].includes(".")) {

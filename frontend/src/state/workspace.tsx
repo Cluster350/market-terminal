@@ -169,10 +169,14 @@ export function initial(hash = typeof location !== "undefined" ? location.hash :
           pages[p.id] = { layout, panels: sp.panels as FnCode[] };
         }
       }
+      // Solo-Fenster sind auf ihre Seite und ein Panel festgelegt (Seite und Layout sind dort
+      // gesperrt). Ein älterer gespeicherter Zustand mit anderer Seite oder Viererlayout bliebe
+      // sonst dauerhaft hängen, weil er sich im Fenster nicht mehr ändern lässt.
+      if (win.solo && pages[base.page].layout !== "single") pages[base.page] = base.pages[base.page];
       state = {
         ...state,
         mode: typeof saved.mode === "string" ? saved.mode : null,
-        page: win.page ?? (PAGES.some((p) => p.id === saved.page) ? (saved.page as PageId) : state.page),
+        page: win.page ?? (win.solo ? base.page : PAGES.some((p) => p.id === saved.page) ? (saved.page as PageId) : state.page),
         pages: win.solo && !readJson(winKey(win.key)) ? state.pages : pages,
         linked: saved.linked !== false,
         security: typeof saved.security === "string" ? saved.security : null,

@@ -45,6 +45,8 @@ def normalize(raw: str, default_exchange: str = "US") -> str:
     if not s:
         raise BadRequest("Ticker fehlt.")
     s = re.sub(r"\s+EQUITY$", "", s)
+    # Bloomberg schreibt einbuchstabige Rohstoff-Generika mit Leerzeichen: "W 1 Comdty" = W1
+    s = re.sub(r"^([A-Z]{1,2})\s+(\d)\s+COMDTY$", r"\1\2 COMDTY", s)
     m = re.match(r"^(\S+)\s+(INDEX|CURNCY|GOVT|COMDTY)$", s)
     if m and "." not in m.group(1):
         code, key = m.groups()

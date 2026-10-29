@@ -147,3 +147,23 @@ describe("Einzelfunktions-Fenster", () => {
     expect(reducer(main, { type: "page", page: "macro" }).page).toBe("macro");
   });
 });
+
+describe("Einzelfunktions-Fenster: gespeicherter Zustand", () => {
+  it("älterer Zustand mit anderer Seite oder Viererlayout wird auf die eigene Funktion zurückgesetzt", () => {
+    // Vor der Sperre gespeichert: Seite gewechselt und Layout vergrößert – danach nicht mehr änderbar
+    const saved = {
+      version: 1, window: "solo-GP", mode: "demo", page: "macro",
+      pages: { equity: { layout: "quad", panels: ["GP", "DES", "FA", "CN"] }, macro: { layout: "quad", panels: ["WEI", "GC", "ECO", "FX"] } },
+    };
+    vi.stubGlobal("localStorage", { getItem: (k: string) => (k === "mt.win.v1.solo-GP" ? JSON.stringify(saved) : null), setItem: () => {} });
+    const s = initial("#solo-GP");
+    expect(s.page).toBe("equity");
+    expect(s.pages.equity).toEqual({ layout: "single", panels: ["GP"] });
+  });
+
+  it("eine im Solo-Fenster gewählte andere Funktion bleibt erhalten", () => {
+    const saved = { version: 1, window: "solo-GP", mode: "demo", page: "equity", pages: { equity: { layout: "single", panels: ["HP"] } } };
+    vi.stubGlobal("localStorage", { getItem: (k: string) => (k === "mt.win.v1.solo-GP" ? JSON.stringify(saved) : null), setItem: () => {} });
+    expect(initial("#solo-GP").pages.equity).toEqual({ layout: "single", panels: ["HP"] });
+  });
+});

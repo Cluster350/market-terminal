@@ -37,6 +37,14 @@ from .base import (
     curve_catalog,
 )
 
+# Rohstoffcodes ("CL1 Comdty" -> WTI.COMM) gibt es bei EODHD nicht als Kurs; im EODHD-Modus
+# stehen dafür dieselben ETFs wie in CMDT
+COMM_PROXY = {
+    "GOLD": "GLD.US", "SILVER": "SLV.US", "WTI": "USO.US", "BRENT": "BNO.US", "NATGAS": "UNG.US",
+    "COPPER": "CPER.US", "PLAT": "PPLT.US", "PALL": "PALL.US", "CORN": "CORN.US", "SOY": "SOYB.US",
+    "WHEAT": "WEAT.US", "SUGAR": "CANE.US",
+}
+
 CATALOG = Catalog(
     indices=INDICES,
     fx=FX,
@@ -231,6 +239,9 @@ class EODHDProvider:
         return mapping.earnings_calendar(data)
 
     async def resolve(self, ticker: str) -> Optional[SearchHit]:
+        code, _, exch = ticker.rpartition(".")
+        if exch == "COMM" and code in COMM_PROXY:
+            ticker = COMM_PROXY[code]
         # Ein Kursabruf ist die billigste Prüfung (1 Call) und deckt Aktien, Indizes und Devisen ab
         try:
             q = (await self.quotes([ticker]))[0]

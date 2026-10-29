@@ -125,3 +125,14 @@ describe("Runde 3: Tippfehler und Rohstoff-Generika", () => {
     expect(normalizeTicker("hasOwnProperty Comdty")).toBe("HASOWNPROPERTY.COMM");
   });
 });
+
+describe("Rohstoff-Generika in Bloomberg-Schreibweise", () => {
+  it("einbuchstabige Wurzeln mit Leerzeichen (W 1 Comdty) wie W1 Comdty", () => {
+    expect(normalizeTicker("W 1 Comdty")).toBe("WHEAT.COMM");
+    expect(normalizeTicker("C 1 Comdty")).toBe("CORN.COMM");
+    expect(normalizeTicker("S 1 COMDTY")).toBe("SOY.COMM");
+    expect(normalizeTicker("W1 Comdty")).toBe("WHEAT.COMM");
+    expect(normalizeTicker("CL1 Comdty")).toBe("WTI.COMM");
+    expect(parseCommand("C 1 Comdty GP")).toEqual({ kind: "fn", fn: "GP", ticker: "CORN.COMM" });
+  });
+});
