@@ -23,7 +23,10 @@ import {
 describe("Zahlenformate (de-DE)", () => {
   it("formatiert mit deutschem Dezimal- und Tausendertrennzeichen", () => {
     expect(fmt(1234567.891, 2)).toBe("1.234.567,89");
-    expect(fmtPrice(1.23456)).toBe("1,2346");
+    expect(fmtPrice(1.23456)).toBe("1,23");
+    expect(fmtPrice(1.23456, "EURUSD.FOREX")).toBe("1,2346");
+    expect(fmtPrice(156.789, "USDJPY.FOREX")).toBe("156,79");
+    expect(fmtPrice(0.8123)).toBe("0,8123");
     expect(fmtPrice(18250.5)).toBe("18.250,50");
     expect(fmtInt(1234.4)).toBe("1.234");
   });
@@ -109,7 +112,10 @@ describe("Datumsformate", () => {
 describe("Ticker und Fremddaten", () => {
   it("displayTicker trennt am letzten Punkt", () => {
     expect(displayTicker("NWND.US")).toBe("NWND US");
-    expect(displayTicker("BTC-USD.CC")).toBe("BTC-USD CC");
+    expect(displayTicker("BTC-USD.CC")).toBe("BTC-USD Curncy");
+    expect(displayTicker("SAP.XETRA")).toBe("SAP GR");
+    expect(displayTicker("GDAXI.INDX")).toBe("GDAXI Index");
+    expect(displayTicker("US10Y.GBOND")).toBe("US10Y Govt");
     expect(displayTicker("OHNEBOERSE")).toBe("OHNEBOERSE");
   });
 

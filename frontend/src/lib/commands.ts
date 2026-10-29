@@ -3,7 +3,7 @@
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV";
 
 export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "System";
 
@@ -24,7 +24,9 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "DVD", title: "Dividenden", group: "Aktie", needsTicker: true, desc: "Dividendenhistorie, Rendite, Splits" },
   { code: "ANR", title: "Analysten", group: "Aktie", needsTicker: true, desc: "Empfehlungen und Kursziel" },
   { code: "CN", title: "Firmen-News", group: "Aktie", needsTicker: true, desc: "Nachrichten zum Wertpapier" },
+  { code: "RV", title: "Peer-Vergleich", group: "Aktie", needsTicker: true, desc: "Bewertung und Performance gegenüber Branchen-Peers" },
   { code: "TOP", title: "News-Terminal", group: "News", needsTicker: false, desc: "Nachrichtenstrom mit Filtern, Suche und Leseansicht" },
+  { code: "EVTS", title: "Earnings-Kalender", group: "News", needsTicker: false, desc: "Quartalszahlen aller Unternehmen nach Termin, mit Schätzung und Ergebnis" },
   { code: "WEI", title: "Weltindizes", group: "Makro", needsTicker: false, desc: "Aktienindizes weltweit" },
   { code: "FX", title: "Devisen", group: "Makro", needsTicker: false, desc: "Währungspaare und Stärke-Ranking" },
   { code: "CMDT", title: "Rohstoffe", group: "Makro", needsTicker: false, desc: "Energie, Metalle, Agrar" },
@@ -45,7 +47,7 @@ const ALIASES: Record<string, FnCode> = {
   N: "TOP", NEWS: "TOP", NI: "TOP", G: "GP", CHART: "GP", WCRS: "FX", FXC: "FX", GLCO: "CMDT",
   CAL: "ECO", KALENDER: "ECO", SCREENER: "EQS", SCRN: "EQS", HEAT: "IMAP", HEATMAP: "IMAP",
   MOV: "MOST", WATCH: "W", WL: "W", HILFE: "HELP", "?": "HELP", EE: "ERN", BDVD: "DVD",
-  CURVE: "GC", YC: "GC", SPREAD: "SPRD", ECOST: "ECST",
+  CURVE: "GC", YC: "GC", SPREAD: "SPRD", ECOST: "ECST", EARN: "EVTS", ERNCAL: "EVTS", PEERS: "RV", COMP: "RV",
 };
 
 const BBG_EXCHANGES: Record<string, string> = {
@@ -56,10 +58,22 @@ const BBG_EXCHANGES: Record<string, string> = {
 
 const VALID = /^[A-Z0-9][A-Z0-9\-_=^&]{0,24}\.[A-Z0-9]{1,10}$/;
 
-/** Wie services/tickers.py: "sap gr" -> "SAP.XETRA", "aapl" -> "AAPL.US". */
+// Gelbe Bloomberg-Tasten und Indexkürzel (wie services/tickers.py)
+const YELLOW_KEYS: Record<string, string> = { INDEX: "INDX", CURNCY: "FOREX", GOVT: "GBOND", COMDTY: "COMM" };
+const INDEX_ALIASES: Record<string, string> = {
+  SPX: "GSPC", INDU: "DJI", CCMP: "IXIC", NDX: "NDX", RTY: "RUT", SPTSX: "GSPTSE", DAX: "GDAXI", MDAX: "MDAXI",
+  SX5E: "STOXX50E", CAC: "FCHI", UKX: "FTSE", SMI: "SSMI", NKY: "N225", HSI: "HSI", AS51: "AXJO", VIX: "VIX",
+};
+
+/** Wie services/tickers.py: "sap gr" -> "SAP.XETRA", "aapl" -> "AAPL.US", "dax index" -> "GDAXI.INDX". */
 export function normalizeTicker(raw: string): string | null {
-  let s = raw.trim().toUpperCase().replace(/\s+(EQUITY|INDEX|CURNCY|COMDTY|GOVT)$/, "");
+  let s = raw.trim().toUpperCase().replace(/\s+EQUITY$/, "");
   if (!s) return null;
+  const m = /^(\S+)\s+(INDEX|CURNCY|GOVT|COMDTY)$/.exec(s);
+  if (m && !m[1].includes(".")) {
+    const code = m[2] === "INDEX" ? INDEX_ALIASES[m[1]] ?? m[1] : m[1];
+    s = `${code}.${m[2] === "CURNCY" && code.includes("-") ? "CC" : YELLOW_KEYS[m[2]]}`;
+  }
   const parts = s.split(/\s+/);
   if (parts.length === 2 && !parts[0].includes(".")) s = `${parts[0]}.${BBG_EXCHANGES[parts[1]] || parts[1]}`;
   else if (parts.length > 2) return null;
@@ -69,8 +83,8 @@ export function normalizeTicker(raw: string): string | null {
 
 export function resolveFn(token: string): FnCode | null {
   const t = token.toUpperCase();
-  if (t in FN) return t as FnCode;
-  return ALIASES[t] ?? null;
+  if (Object.prototype.hasOwnProperty.call(FN, t)) return t as FnCode;
+  return Object.prototype.hasOwnProperty.call(ALIASES, t) ? ALIASES[t] : null;
 }
 
 export type Command =
@@ -96,6 +110,14 @@ export function parseCommand(input: string): Command | null {
     const t = normalizeTicker(rest);
     if (!t) return { kind: "error", message: `Ticker „${rest}“ nicht erkannt.` };
     return { kind: "fn", fn, ticker: t };
+  }
+  // "NWND US GPP": gültiger Ticker, aber unbekannte Funktion am Ende
+  if (tokens.length >= 2 && /^[A-Z]{2,5}$/i.test(last)) {
+    const head = normalizeTicker(tokens.slice(0, -1).join(" "));
+    const whole = normalizeTicker(raw);
+    if (head && (!whole || tokens.length >= 3)) {
+      return { kind: "error", message: `Unbekannte Funktion „${last.toUpperCase()}“. HELP zeigt alle Funktionen.` };
+    }
   }
   const t = normalizeTicker(raw);
   if (!t) return { kind: "error", message: `„${raw}“ ist weder Funktion noch Ticker.` };

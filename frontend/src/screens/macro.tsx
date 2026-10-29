@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import EChart, { AXIS, TOOLTIP, type EOption } from "../components/EChart";
 import { Change, Empty, Flash, Q, Seg, Spark, Table, useNow } from "../components/ui";
-import { DASH, fmt, fmtAge, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, fmtWeekday, isNum, tone } from "../lib/format";
+import { DASH, fmt, fmtBig, fmtBp, fmtDate, fmtInt, fmtPct, fmtPrice, fmtStamp, fmtTime, fmtWeekday, isNum, tone } from "../lib/format";
 import { useCalendar, useCommodities, useCountries, useCurves, useFx, useIndices, useSpreads, useStatus } from "../lib/queries";
 import type { EconEvent, MarketRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
@@ -25,17 +25,17 @@ function MarketTable({ rows, grouped, digits }: { rows: MarketRow[]; grouped?: b
           num: true,
           render: (r) => (
             <Flash value={r.last}>
-              <b>{isNum(digits) ? fmt(r.last, digits) : fmtPrice(r.last)}</b>
+              <b>{isNum(digits) ? fmt(r.last, digits) : fmtPrice(r.last, r.ticker)}</b>
             </Flash>
           ),
         },
-        { key: "chg", label: "Veränd.", num: true, sort: (r) => r.change, render: (r) => <Change value={r.change} pct={false} digits={isNum(r.last) && Math.abs(r.last) < 10 ? 4 : 2} /> },
+        { key: "chg", label: "Veränd.", num: true, sort: (r) => r.change, render: (r) => <Change value={r.change} pct={false} digits={r.ticker.endsWith(".FOREX") && isNum(r.last) && Math.abs(r.last) < 20 ? 4 : 2} /> },
         { key: "chgp", label: "%", num: true, sort: (r) => r.changePct, render: (r) => <Change value={r.changePct} arrowSign /> },
         { key: "w", label: "1W %", num: true, sort: (r) => r.chg1w, render: (r) => <Change value={r.chg1w} /> },
         { key: "m", label: "1M %", num: true, sort: (r) => r.chg1m, render: (r) => <Change value={r.chg1m} /> },
         { key: "ytd", label: "YTD %", num: true, sort: (r) => r.chgYtd, render: (r) => <Change value={r.chgYtd} /> },
         { key: "spark", label: "30 Tage", num: true, render: (r) => <Spark data={r.spark} /> },
-        { key: "time", label: "Stand", num: true, render: (r) => <span className="muted">{r.asOf && r.asOf.length > 10 ? fmtAge(r.asOf) : fmtDate(r.asOf)}</span> },
+        { key: "time", label: "Stand", num: true, render: (r) => <span className="muted" title={r.asOf ?? undefined}>{fmtStamp(r.asOf)}</span> },
       ]}
     />
   );
@@ -159,7 +159,7 @@ export function GC(_: ScreenProps) {
       grid: { left: 46, right: 16, top: 30, bottom: 26 },
       legend: { top: 4, textStyle: { color: "#8f8f8f", fontSize: 10 }, itemHeight: 6 },
       tooltip: { trigger: "axis", ...TOOLTIP, valueFormatter: (v: number) => (isNum(v) ? `${v.toFixed(3).replace(".", ",")} %` : DASH) },
-      xAxis: { type: "category", data: tenors, boundaryGap: false, ...AXIS },
+      xAxis: { type: "category", data: tenors.map((t) => t.replace("Y", "J")), boundaryGap: false, ...AXIS },
       yAxis: { type: "value", scale: true, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => `${v.toFixed(1).replace(".", ",")} %` } },
       series,
     };
@@ -201,38 +201,45 @@ export function GC(_: ScreenProps) {
                 <table className="t">
                   <thead>
                     <tr>
-                      <th>Land</th>
-                      {curves[0]?.points.map((p) => (
-                        <th key={p.tenor} className="num">{p.tenor}</th>
+                      <th>Laufzeit</th>
+                      {curves.map((c) => (
+                        <th key={c.country} className="num" title={`Stand ${fmtDate(c.asOf)}`}>
+                          <span style={{ color: CURVE_COLORS[c.country] }}>■</span> {c.name} %
+                          {compare !== "none" && <span className="dim"> · Δ {compare === "1m" ? "1M" : "1J"}</span>}
+                        </th>
                       ))}
-                      <th className="num" title="10J minus 2J">2s10s</th>
-                      <th className="num">Stand</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {curves.map((c) => {
-                      const y2 = c.points.find((p) => p.tenor === "2Y")?.y;
-                      const y10 = c.points.find((p) => p.tenor === "10Y")?.y;
-                      return (
-                        <tr key={c.country}>
-                          <td>
-                            <span style={{ color: CURVE_COLORS[c.country] }}>■</span> {c.name}
+                    {(curves[0]?.points ?? []).map((pt, i) => (
+                      <tr key={pt.tenor}>
+                        <td className="lbl">{pt.tenor.replace("Y", "J")}</td>
+                        {curves.map((c) => {
+                          const p = c.points[i];
+                          const ref = compare === "1m" ? p?.y1m : p?.y1y;
+                          const d = p && isNum(p.y) && isNum(ref) ? p.y - ref : null;
+                          return (
+                            <td key={c.country} className="num">
+                              {p && isNum(p.y) ? fmt(p.y, 3) : DASH}
+                              {compare !== "none" && <span className={`xs ${tone(d)}`} style={{ display: "inline-block", minWidth: "7ch" }}> {d === null ? "" : fmtBp(d)}</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    <tr className="em">
+                      <td title="10 Jahre minus 2 Jahre">2s10s</td>
+                      {curves.map((c) => {
+                        const y2 = c.points.find((p) => p.tenor === "2Y")?.y;
+                        const y10 = c.points.find((p) => p.tenor === "10Y")?.y;
+                        const v = isNum(y10) && isNum(y2) ? y10 - y2 : null;
+                        return (
+                          <td key={c.country} className={`num ${tone(v)}`}>
+                            {v === null ? DASH : fmtBp(v)}
                           </td>
-                          {c.points.map((p) => {
-                            const ref = compare === "1m" ? p.y1m : p.y1y;
-                            const d = isNum(p.y) && isNum(ref) ? p.y - ref : null;
-                            return (
-                              <td key={p.tenor} className="num">
-                                {isNum(p.y) ? `${fmt(p.y, 3)}` : DASH}
-                                {compare !== "none" && <span className={`xs ${tone(d)}`}> {d === null ? "" : fmtBp(d)}</span>}
-                              </td>
-                            );
-                          })}
-                          <td className={`num ${tone(isNum(y10) && isNum(y2) ? y10 - y2 : null)}`}>{isNum(y10) && isNum(y2) ? fmtBp(y10 - y2) : DASH}</td>
-                          <td className="num muted">{fmtDate(c.asOf)}</td>
-                        </tr>
-                      );
-                    })}
+                        );
+                      })}
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -424,7 +431,7 @@ export function ECO(_: ScreenProps) {
                           </td>
                           <td className="num">{fmtEvent(e.estimate, e.unit)}</td>
                           <td className="num muted">{fmtEvent(e.previous, e.unit)}</td>
-                          <td className={`num ${tone(e.surprise)}`}>{isNum(e.surprise) ? fmt(e.surprise, Math.abs(e.surprise) >= 10 ? 0 : 2) : DASH}</td>
+                          <td className={`num ${tone(e.surprise)}`}>{isNum(e.surprise) ? `${e.surprise > 0 ? "+" : ""}${fmtEvent(e.surprise, e.unit === "%" ? "Pp" : e.unit)}` : DASH}</td>
                         </tr>
                       </FragmentWithHeader>
                     );
@@ -478,7 +485,15 @@ export function ECST(_: ScreenProps) {
       grid: { left: 110, right: 40, top: 8, bottom: 8 },
       tooltip: { ...TOOLTIP, trigger: "item" },
       xAxis: { type: "value", show: false },
-      yAxis: { type: "category", inverse: true, data: rows.map((r) => r.name), ...AXIS, axisLine: { show: false }, axisTick: { show: false } },
+      yAxis: {
+        type: "category",
+        inverse: true,
+        data: rows.map((r) => r.name),
+        ...AXIS,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: { ...AXIS.axisLabel, interval: 0, fontSize: 9 },
+      },
       series: [
         {
           type: "bar",
@@ -489,7 +504,8 @@ export function ECST(_: ScreenProps) {
             position: "right",
             color: "#ececec",
             fontSize: 10,
-            formatter: (p: { value: number }) => (ind?.unit === "USD" ? fmtBig(p.value, 1) : `${fmt(p.value, 1)} %`),
+            formatter: (p: { value: number }) =>
+              ind?.unit === "USD" ? (focus === "gdp_per_capita_usd" ? fmtInt(p.value) : fmtBig(p.value, 1)) : `${fmt(p.value, 1)} %`,
           },
         },
       ],
@@ -520,14 +536,14 @@ export function ECST(_: ScreenProps) {
                     <tr>
                       <th>Land</th>
                       {t.indicators.map((ind) => (
-                        <th key={ind.key} className={`num sortable ${ind.key === focus ? "sorted" : ""}`} onClick={() => setFocus(ind.key)} title="Für Balkendiagramm auswählen">
+                        <th key={ind.key} className={`num sortable ${ind.key === focus ? "sorted" : ""}`} onClick={() => setFocus(ind.key)} title="Sortieren und als Balkendiagramm zeigen">
                           {ind.label} {ind.unit === "%" ? "%" : ""}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {t.rows.map((r) => (
+                    {t.rows.slice().sort((a, b) => (b.values[focus]?.value ?? -Infinity) - (a.values[focus]?.value ?? -Infinity)).map((r) => (
                       <tr key={r.country}>
                         <td>{r.name}</td>
                         {t.indicators.map((ind) => {
@@ -537,7 +553,7 @@ export function ECST(_: ScreenProps) {
                             <td key={ind.key} className="num" title={v?.year ? `Stand ${v.year}` : undefined}>
                               <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                                 <Spark data={hist.slice(-10)} width={40} height={12} color="#5c5c5c" />
-                                {ind.unit === "USD" ? fmtBig(v?.value) : fmt(v?.value, 1)}
+                                {ind.key === "gdp_per_capita_usd" ? fmtInt(v?.value) : ind.unit === "USD" ? fmtBig(v?.value) : fmt(v?.value, 1)}
                                 <span className="xs dim">{v?.year ? `’${String(v.year).slice(2)}` : ""}</span>
                               </span>
                             </td>

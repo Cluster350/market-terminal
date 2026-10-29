@@ -14,6 +14,7 @@ from ..eodhd.client import EODHDClient
 from ..errors import NotFound, TerminalError
 from ..models import (
     Company,
+    EarningsEvent,
     CountryValue,
     Dividends,
     Earnings,
@@ -47,6 +48,12 @@ CATALOG = Catalog(
         Instrument("UNG.US", "Erdgas (US Natural Gas Fund)"),
         Instrument("CPER.US", "Kupfer (US Copper Index Fund)"),
         Instrument("DBA.US", "Agrarrohstoffe (Invesco DB Agriculture)"),
+        Instrument("PPLT.US", "Platin (abrdn Platinum ETF)"),
+        Instrument("PALL.US", "Palladium (abrdn Palladium ETF)"),
+        Instrument("CORN.US", "Mais (Teucrium Corn Fund)"),
+        Instrument("SOYB.US", "Sojabohnen (Teucrium Soybean Fund)"),
+        Instrument("WEAT.US", "Weizen (Teucrium Wheat Fund)"),
+        Instrument("CANE.US", "Zucker (Teucrium Sugar Fund)"),
     ],
     curves=curve_catalog(),
     default_watchlist=[
@@ -219,6 +226,21 @@ class EODHDProvider:
             params["country"] = country
         return mapping.econ_events(await self.client.get("economic-events", params))
 
+    async def earnings_calendar(self, start: dt.date, end: dt.date) -> list[EarningsEvent]:
+        data = await self.client.get("calendar/earnings", {"from": start.isoformat(), "to": end.isoformat()})
+        return mapping.earnings_calendar(data)
+
+    async def resolve(self, ticker: str) -> Optional[SearchHit]:
+        # Ein Kursabruf ist die billigste Prüfung (1 Call) und deckt Aktien, Indizes und Devisen ab
+        try:
+            q = (await self.quotes([ticker]))[0]
+        except NotFound:
+            return None
+        if q.last is None:
+            return None
+        code, _, exch = ticker.rpartition(".")
+        return SearchHit(ticker=ticker, name=q.name or code, exchange=exch)
+
     async def macro_indicator(self, country: str, indicator: str) -> list[CountryValue]:
         data = await self.client.get(f"macro-indicator/{urlquote(country, safe='')}", {"indicator": indicator})
         return mapping.macro_series(data)
@@ -237,6 +259,15 @@ class EODHDProvider:
                     value = "us" if value.upper() == "US" else value.upper()
                 if f.field == "div_yield" and isinstance(value, (int, float)):
                     value = value / 100.0  # Terminal: Prozent, EODHD: Anteil
+                if f.field == "market_cap" and isinstance(value, (int, float)):
+                    # Terminal filtert in USD, EODHD in Handelswährung: serverseitig großzügig
+                    # vorfiltern, exakt nach der Umrechnung lokal
+                    if f.op in ("gt", "gte"):
+                        server.append([field, op, value * 0.4])
+                    elif f.op in ("lt", "lte"):
+                        server.append([field, op, value * 2.5])
+                    local.append(f)
+                    continue
                 server.append([field, op, value])
             else:
                 local.append(f)

@@ -126,6 +126,12 @@ def main(target: str) -> None:
         write("macro/calendar.json", sorted({e["id"]: e for e in cal}.values(), key=lambda e: e["date"]))
         write("macro/countries.json", get("/api/macro/countries?indicators=" + ",".join(k for k, _, _ in MACRO_INDICATORS)))
 
+        evts = []
+        for k in range(-21, 35, 28):
+            frm = today + dt.timedelta(days=k)
+            evts.extend(get(f"/api/calendar/earnings?from={frm}&to={frm + dt.timedelta(days=27)}"))
+        write("calendar/earnings.json", sorted({(e["ticker"], e["reportDate"]): e for e in evts}.values(), key=lambda e: (e["reportDate"], e["ticker"])))
+
         write("screener/fields.json", get("/api/screener/fields"))
         universe = c.post("/api/screener", json={"filters": [], "sort": "market_cap", "desc": True, "limit": 500, "enrich": True})
         universe.raise_for_status()

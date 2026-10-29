@@ -213,7 +213,8 @@ export interface ScreenRow {
   price: Num;
   chg1d: Num;
   chg5d: Num;
-  marketCap: Num;
+  marketCap: Num; // in USD umgerechnet
+  marketCapLocal?: Num; // in Handelswährung
   eps: Num;
   pe: Num;
   divYield: Num;
@@ -281,4 +282,24 @@ export interface Status {
   account?: { plan: string | null; apiRequests: number | null; dailyRateLimit: number | null };
   accountError?: string;
   note?: string;
+}
+
+export interface EarningsEvent {
+  ticker: string;
+  name: string | null;
+  reportDate: string;
+  periodEnd: string | null;
+  timing: string | null;
+  epsEstimate: Num;
+  epsActual: Num;
+  surprisePct: Num;
+  currency: string | null;
+}
+
+export interface PeerResult {
+  ticker: string;
+  basis: "industry" | "sector";
+  group: string | null;
+  rows: ScreenRow[];
+  median: ScreenRow;
 }

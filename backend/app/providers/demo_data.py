@@ -76,16 +76,19 @@ EXCHANGE_INFO: dict[str, tuple[str, str, str]] = {
     "XETRA": ("EUR", "Germany", "eu"),
     "PA": ("EUR", "France", "eu"),
     "AS": ("EUR", "Netherlands", "eu"),
-    "SW": ("CHF", "Switzerland", "eu"),
-    "LSE": ("GBP", "United Kingdom", "eu"),
+    "SW": ("CHF", "Switzerland", "sw"),
+    "LSE": ("GBP", "United Kingdom", "lse"),
 }
 
-# Handelszeiten in Minuten nach Mitternacht UTC (Sommerzeit wird ignoriert)
-SESSIONS: dict[str, tuple[int, int]] = {
-    "us": (14 * 60 + 30, 21 * 60),
-    "eu": (8 * 60, 16 * 60 + 30),
-    "asia": (0, 6 * 60),
-    "fx": (0, 23 * 60 + 55),
+# Handelszeiten in lokaler Börsenzeit (Sommer-/Winterzeit wird über die Zeitzone berücksichtigt)
+SESSIONS: dict[str, tuple[str, tuple[int, int], tuple[int, int]]] = {
+    "us": ("America/New_York", (9, 30), (16, 0)),
+    "eu": ("Europe/Berlin", (9, 0), (17, 30)),
+    "lse": ("Europe/London", (8, 0), (16, 30)),
+    "sw": ("Europe/Zurich", (9, 0), (17, 30)),
+    "asia": ("Asia/Tokyo", (9, 0), (15, 0)),
+    "hk": ("Asia/Hong_Kong", (9, 30), (16, 0)),
+    "fx": ("UTC", (0, 0), (23, 55)),
 }
 
 # Indizes: Startniveau Anfang 2016, jährliche Drift, Handelszeitgruppe
@@ -99,10 +102,10 @@ INDEX_PARAMS: dict[str, tuple[float, float, str]] = {
     "MDAXI.INDX": (20000, 0.03, "eu"),
     "STOXX50E.INDX": (3200, 0.05, "eu"),
     "FCHI.INDX": (4500, 0.055, "eu"),
-    "FTSE.INDX": (6100, 0.035, "eu"),
-    "SSMI.INDX": (8500, 0.03, "eu"),
+    "FTSE.INDX": (6100, 0.035, "lse"),
+    "SSMI.INDX": (8500, 0.03, "sw"),
     "N225.INDX": (18000, 0.09, "asia"),
-    "HSI.INDX": (21000, 0.0, "asia"),
+    "HSI.INDX": (21000, 0.0, "hk"),
     "AXJO.INDX": (5300, 0.04, "asia"),
 }
 
@@ -131,6 +134,13 @@ COMMODITIES: list[tuple[str, str, float, float, float]] = [
     ("NATGAS.COMM", "Erdgas (USD/MMBtu)", 2.3, 0.03, 0.42),
     ("COPPER.COMM", "Kupfer (USD/lb)", 2.1, 0.08, 0.22),
     ("WHEAT.COMM", "Weizen (USc/bu)", 470.0, 0.02, 0.28),
+    ("PLAT.COMM", "Platin (USD/oz)", 870.0, 0.02, 0.24),
+    ("PALL.COMM", "Palladium (USD/oz)", 560.0, 0.06, 0.35),
+    ("CORN.COMM", "Mais (USc/bu)", 360.0, 0.02, 0.24),
+    ("SOY.COMM", "Sojabohnen (USc/bu)", 870.0, 0.02, 0.20),
+    ("COFFEE.COMM", "Kaffee (USc/lb)", 120.0, 0.07, 0.32),
+    ("SUGAR.COMM", "Zucker (USc/lb)", 14.5, 0.03, 0.30),
+    ("ALU.COMM", "Aluminium (USD/t)", 1500.0, 0.04, 0.20),
 ]
 
 # Zinskurven: Stützstellen (Datum, Leitzins, langes Ende)
@@ -163,8 +173,11 @@ LAST_NAMES = ["Berger", "Lindqvist", "Moreau", "Okafor", "Hartmann", "Silva", "N
 OFFICER_TITLES = ["Chief Executive Officer", "Chief Financial Officer", "Chief Operating Officer",
                   "Chief Technology Officer", "General Counsel"]
 
-ACQUISITION_TARGETS = ["Bluecrest Labs", "Ostwind Digital", "Corvalis Data", "Paxton Tools",
-                       "Meridia Bio", "Silverline Parts", "Arcadia Sensors", "Novaterm Services"]
+# Übernahmeziele werden aus Vor- und Nachsilbe zusammengesetzt (je Unternehmen und Monat verschieden)
+TARGET_PREFIX = ["Bluecrest", "Ostwind", "Corvalis", "Paxton", "Meridia", "Silverline", "Arcadia", "Novaterm",
+                 "Brightway", "Kestrel", "Halden", "Vireo", "Solara", "Tidewater", "Lindholm", "Quarzwerk"]
+TARGET_SUFFIX = ["Labs", "Digital", "Data", "Tools", "Bio", "Parts", "Sensors", "Services", "Systems",
+                 "Robotics", "Analytics", "Materials"]
 
 # Makro-Grundniveaus je Land: Wachstum, Inflation, Arbeitslosigkeit, Schulden 2000 -> 2025,
 # BIP/Kopf 2000 -> 2025 (USD), BIP 2025 (Mrd. USD), Realzins

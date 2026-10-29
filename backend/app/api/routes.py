@@ -10,6 +10,8 @@ from fastapi import APIRouter, Body, Query, Request
 from ..errors import BadRequest
 from ..models import (
     Company,
+    EarningsEvent,
+    PeerResult,
     CountryTable,
     Curve,
     Dividends,
@@ -179,3 +181,25 @@ async def market_movers(request: Request, exchange: Optional[str] = Query(None, 
 async def market_heatmap(request: Request, exchange: Optional[str] = Query(None, max_length=10), limit: int = Query(100, ge=10, le=300)):
     term = T(request)
     return await term.heatmap(exchange or term.p.catalog.heatmap_exchange, limit)
+
+
+@router.get("/resolve", response_model=SearchHit)
+async def resolve(request: Request, q: str = Query(..., min_length=1, max_length=40)):
+    return await T(request).resolve(normalize(q))
+
+
+@router.get("/calendar/earnings", response_model=list[EarningsEvent])
+async def calendar_earnings(
+    request: Request,
+    start: Optional[str] = Query(None, alias="from"),
+    end: Optional[str] = Query(None, alias="to"),
+):
+    today = dt.date.today()
+    s = _date(start, today - dt.timedelta(days=today.weekday()))
+    e = _date(end, s + dt.timedelta(days=6))
+    return await T(request).earnings_calendar(s, e)
+
+
+@router.get("/peers/{ticker}", response_model=PeerResult)
+async def peers(request: Request, ticker: str, limit: int = Query(12, ge=3, le=30)):
+    return await T(request).peers(normalize(ticker), limit)

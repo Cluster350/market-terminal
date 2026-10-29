@@ -14,6 +14,7 @@ from typing import Any, Iterable, Optional
 
 from ..models import (
     Analyst,
+    EarningsEvent,
     Company,
     CountryValue,
     Dividends,
@@ -294,8 +295,10 @@ BALANCE_ROWS = [
     ("netReceivables", "Forderungen", False, ()),
     ("inventory", "Vorräte", False, ()),
     ("totalCurrentAssets", "Umlaufvermögen", False, ()),
+    ("nonCurrentAssetsTotal", "Anlagevermögen", False, ()),
     ("totalAssets", "Bilanzsumme", True, ()),
     ("totalCurrentLiabilities", "Kurzfristige Verbindlichkeiten", False, ()),
+    ("nonCurrentLiabilitiesTotal", "Langfristige Verbindlichkeiten", False, ()),
     ("shortLongTermDebtTotal", "Finanzschulden gesamt", False, ("longTermDebtTotal", "longTermDebt")),
     ("totalLiab", "Verbindlichkeiten gesamt", False, ()),
     ("totalStockholderEquity", "Eigenkapital", True, ()),
@@ -690,3 +693,31 @@ def search_hits(data: Any) -> list[SearchHit]:
             )
         )
     return out
+
+
+def earnings_calendar(data: Any) -> list[EarningsEvent]:
+    """/calendar/earnings: {"earnings": [{code, report_date, date, before_after_market, …}]}"""
+    rows = data.get("earnings") if isinstance(data, dict) else data
+    out: dict[tuple[str, str], EarningsEvent] = {}
+    for r in _as_list(rows):
+        code = text(r.get("code"))
+        rep = text(r.get("report_date"))
+        if not code or not rep:
+            continue
+        ticker = code.upper() if "." in code else f"{code.upper()}.US"
+        actual, est = num(r.get("actual")), num(r.get("estimate"))
+        surprise = num(r.get("percent"))
+        if surprise is None and actual is not None and est not in (None, 0):
+            surprise = (actual - est) / abs(est) * 100.0
+        out[(ticker, rep[:10])] = EarningsEvent(
+            ticker=ticker,
+            report_date=rep[:10],
+            period_end=(text(r.get("date")) or "")[:10] or None,
+            timing=text(r.get("before_after_market")),
+            eps_estimate=est,
+            eps_actual=actual,
+            surprise_pct=surprise,
+            currency=text(r.get("currency")),
+        )
+    order = {"BeforeMarket": 0, "AfterMarket": 2}
+    return sorted(out.values(), key=lambda e: (e.report_date, order.get(e.timing or "", 1), e.ticker))

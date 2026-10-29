@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Change, Empty, ErrorState, Flash, Loading, Q, Table, TickerLink } from "../components/ui";
-import { IS_STATIC } from "../lib/api";
+import { api, ApiError, IS_STATIC } from "../lib/api";
 import { FUNCTIONS, normalizeTicker } from "../lib/commands";
-import { DASH, displayTicker, fmt, fmtAge, fmtBig, fmtPrice, isNum, tone } from "../lib/format";
+import { DASH, displayTicker, fmt, fmtBig, fmtPrice, fmtStamp, isNum, sectorDe, tone } from "../lib/format";
 import { useMovers, useQuotes, useScreen, useScreenFields, useStatus } from "../lib/queries";
 import { rowKey } from "../lib/screen";
 import type { ScreenField, ScreenFilter, ScreenOp, ScreenRow } from "../lib/types";
@@ -38,7 +38,7 @@ const PRESETS: { name: string; filters: () => Draft[]; sort: string; desc: boole
   { name: "Momentum", filters: () => [d("perf_12m", "gt", "20"), d("dist_52w_high", "gt", "-10")], sort: "perf_12m", desc: true },
   { name: "Überverkauft", filters: () => [d("rsi14", "lt", "35")], sort: "rsi14", desc: false },
   { name: "Dividende", filters: () => [d("div_yield", "gt", "3")], sort: "div_yield", desc: true },
-  { name: "Tech-Wachstum", filters: () => [d("sector", "eq", "Technology"), d("perf_3m", "gt", "0")], sort: "perf_3m", desc: true },
+  { name: "Tech-Momentum", filters: () => [d("sector", "eq", "Technology"), d("perf_3m", "gt", "0")], sort: "perf_3m", desc: true },
 ];
 
 const SAVED_KEY = "mt.screens";
@@ -91,10 +91,18 @@ function toFilter(dr: Draft, fields: Map<string, ScreenField>): ScreenFilter | n
 const RESULT_COLS: { key: string; label: string; num?: boolean; render: (r: ScreenRow) => React.ReactNode }[] = [
   { key: "ticker", label: "Ticker", render: (r) => <TickerLink ticker={r.ticker} /> },
   { key: "name", label: "Name", render: (r) => <span title={r.name ?? ""}>{r.name ?? DASH}</span> },
-  { key: "sector", label: "Sektor", render: (r) => <span className="muted">{r.sector ?? DASH}</span> },
+  { key: "sector", label: "Sektor", render: (r) => <span className="muted" title={r.industry ?? ""}>{sectorDe(r.sector)}</span> },
+  { key: "currency", label: "Whg.", render: (r) => <span className="muted">{r.currency ?? DASH}</span> },
   { key: "price", label: "Kurs", num: true, render: (r) => fmtPrice(r.price) },
   { key: "chg_1d", label: "1T %", num: true, render: (r) => <Change value={r.chg1d} /> },
-  { key: "market_cap", label: "Marktkap.", num: true, render: (r) => fmtBig(r.marketCap) },
+  {
+    key: "market_cap",
+    label: "Marktkap. USD",
+    num: true,
+    render: (r) => (
+      <span title={isNum(r.marketCapLocal) && r.currency !== "USD" ? `${fmtBig(r.marketCapLocal)} ${r.currency ?? ""}` : undefined}>{fmtBig(r.marketCap)}</span>
+    ),
+  },
   { key: "pe", label: "KGV", num: true, render: (r) => fmt(r.pe, 1) },
   { key: "div_yield", label: "Div. %", num: true, render: (r) => fmt(r.divYield, 2) },
   { key: "perf_1m", label: "1M %", num: true, render: (r) => <Change value={r.perf1m} digits={1} /> },
@@ -105,14 +113,24 @@ const RESULT_COLS: { key: string; label: string; num?: boolean; render: (r: Scre
   { key: "dist_52w_high", label: "52W-H %", num: true, render: (r) => <span className={tone(r.dist52wHigh)}>{fmt(r.dist52wHigh, 1)}</span> },
 ];
 
-function toCsv(rows: ScreenRow[]): string {
-  const keys = ["ticker", "name", "exchange", "sector", "industry", "price", "chg_1d", "market_cap", "pe", "eps", "div_yield", "perf_1m", "perf_3m", "perf_12m", "rsi14", "vol_1y", "dist_52w_high"];
+/**
+ * CSV für deutsches Excel: Semikolon als Trenner und Dezimalkomma, ohne Tausenderpunkte.
+ * Marktkapitalisierung in USD und in Handelswährung.
+ */
+export function toCsv(rows: ScreenRow[]): string {
+  const cols: [string, string][] = [
+    ["ticker", "Ticker"], ["name", "Name"], ["exchange", "Börse"], ["sector", "Sektor"], ["industry", "Branche"],
+    ["currency", "Währung"], ["price", "Kurs"], ["chg_1d", "Veränd. 1T %"], ["market_cap", "Marktkap. USD"],
+    ["market_cap_local", "Marktkap. Handelswährung"], ["pe", "KGV"], ["eps", "EPS"], ["div_yield", "Div.-Rendite %"],
+    ["perf_1m", "Perf. 1M %"], ["perf_3m", "Perf. 3M %"], ["perf_12m", "Perf. 12M %"], ["rsi14", "RSI 14"],
+    ["vol_1y", "Volatilität 1J %"], ["dist_52w_high", "Abst. 52W-Hoch %"],
+  ];
   const esc = (v: unknown) => {
     if (v === null || v === undefined) return "";
-    const s = typeof v === "number" ? String(Math.round(v * 10000) / 10000) : String(v);
+    const s = typeof v === "number" ? String(Math.round(v * 10000) / 10000).replace(".", ",") : String(v);
     return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  return [keys.join(";"), ...rows.map((r) => keys.map((k) => esc(r[rowKey(k)])).join(";"))].join("\n");
+  return [cols.map(([, h]) => h).join(";"), ...rows.map((r) => cols.map(([k]) => esc(r[rowKey(k)])).join(";"))].join("\n");
 }
 
 export function EQS(_: ScreenProps) {
@@ -330,7 +348,7 @@ export function EQS(_: ScreenProps) {
                       key={c.key}
                       className={`${c.num ? "num" : ""} sortable ${active ? "sorted" : ""}`}
                       aria-sort={active ? (applied.desc ? "descending" : "ascending") : undefined}
-                      onClick={() => setApplied((a) => ({ ...a, sort: c.key, desc: a.sort === c.key ? !a.desc : !!c.num }))}
+                      onClick={c.key === "currency" ? undefined : () => setApplied((a) => ({ ...a, sort: c.key, desc: a.sort === c.key ? !a.desc : !!c.num }))}
                     >
                       {c.label}
                       {active ? (applied.desc ? " ▼" : " ▲") : ""}
@@ -374,8 +392,17 @@ function MoverTable({ title, rows, volume }: { title: string; rows: ScreenRow[];
         rowKey={(r) => r.ticker}
         onRowClick={(r) => ws.setSecurity(r.ticker)}
         columns={[
-          { key: "t", label: "Ticker", render: (r) => <span className="lbl">{displayTicker(r.ticker)}</span> },
-          { key: "n", label: "Name", className: "cell-name", render: (r) => r.name ?? DASH },
+          {
+            key: "t",
+            label: "Wert",
+            className: "cell-name",
+            render: (r) => (
+              <span title={r.name ?? undefined}>
+                <span className="lbl">{displayTicker(r.ticker)}</span>
+                <span className="xs muted" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
+              </span>
+            ),
+          },
           { key: "p", label: "Kurs", num: true, render: (r) => fmtPrice(r.price) },
           volume
             ? { key: "v", label: "Ø Vol.", num: true, render: (r) => fmtBig(r.avgVol, 1) }
@@ -418,13 +445,20 @@ export function W(_: ScreenProps) {
     <>
       <form
         className="toolbar"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
           const t = normalizeTicker(input);
           if (!t) return setErr("Ticker nicht erkannt.");
           if (list.includes(t)) return setErr("Bereits in der Watchlist.");
-          ws.watchAdd(t);
-          setInput("");
+          try {
+            // Nur bekannte Wertpapiere aufnehmen (Tippfehler sonst als „n. v.“ in der Liste)
+            const hit = await api.resolve(t);
+            if (list.includes(hit.ticker)) return setErr("Bereits in der Watchlist.");
+            ws.watchAdd(hit.ticker);
+            setInput("");
+          } catch (ex) {
+            setErr(ex instanceof ApiError ? ex.message : "Ticker konnte nicht geprüft werden.");
+          }
         }}
       >
         <input className="field" placeholder="Ticker hinzufügen, z. B. QBIT US" aria-label="Ticker hinzufügen" value={input} onChange={(e) => setInput(e.target.value)} style={{ width: 200 }} />
@@ -448,26 +482,25 @@ export function W(_: ScreenProps) {
                 <th>Ticker</th>
                 <th className="num">Kurs</th>
                 <th className="num">%</th>
-                <th className="num">Zeit</th>
                 <th aria-label="Aktionen" />
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={r.ticker} className={`clickable ${ws.state.security === r.ticker ? "selected" : ""}`} onClick={() => ws.setSecurity(r.ticker)}>
-                  <td title={r.name ?? undefined}>
+                  <td className="cell-name" title={`${r.name ?? r.ticker} · Stand ${fmtStamp(r.timestamp)}`}>
                     <span className="lbl">{displayTicker(r.ticker)}</span>
-                    {r.name && <div className="xs muted" style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>}
+                    {r.name && <div className="xs muted" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>}
                   </td>
                   <td className="num">
                     <Flash value={r.last}>
-                      <b>{r.last === null || r.last === undefined ? <span className="muted" title="Keine Kursdaten">n. v.</span> : fmtPrice(r.last)}</b>
+                      <b>{r.last === null || r.last === undefined ? <span className="muted" title="Keine Kursdaten">n. v.</span> : fmtPrice(r.last, r.ticker)}</b>
                     </Flash>
+                    <div className="xs muted">{fmtStamp(r.timestamp)}</div>
                   </td>
                   <td className="num">
                     {r.ticker.endsWith(".GBOND") ? <span className={tone(r.change)}>{isNum(r.change) ? `${Math.round(r.change * 100)} bp` : DASH}</span> : <Change value={r.changePct} />}
                   </td>
-                  <td className="num muted">{fmtAge(r.timestamp)}</td>
                   <td className="num nowrap" onClick={(e) => e.stopPropagation()}>
                     <button className="tool" title="Nach oben" disabled={i === 0} onClick={() => ws.watchMove(r.ticker, -1)}>↑</button>
                     <button className="tool" title="Nach unten" disabled={i === rows.length - 1} onClick={() => ws.watchMove(r.ticker, 1)}>↓</button>

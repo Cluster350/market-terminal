@@ -20,6 +20,16 @@ BBG_EXCHANGES = {
     "AU": "AU", "SS": "ST", "DC": "CO", "NO": "OL", "FH": "HE",
 }
 
+# Gelbe Bloomberg-Tasten -> EODHD-"Börse"
+YELLOW_KEYS = {"INDEX": "INDX", "CURNCY": "FOREX", "GOVT": "GBOND", "COMDTY": "COMM"}
+
+# Bloomberg-Indexkürzel -> EODHD-Ticker (nur zusammen mit "INDEX")
+INDEX_ALIASES = {
+    "SPX": "GSPC", "INDU": "DJI", "CCMP": "IXIC", "NDX": "NDX", "RTY": "RUT", "SPTSX": "GSPTSE",
+    "DAX": "GDAXI", "MDAX": "MDAXI", "SX5E": "STOXX50E", "CAC": "FCHI", "UKX": "FTSE", "SMI": "SSMI",
+    "NKY": "N225", "HSI": "HSI", "AS51": "AXJO", "VIX": "VIX",
+}
+
 _VALID = re.compile(r"^[A-Z0-9][A-Z0-9\-_=^&]{0,24}\.[A-Z0-9]{1,10}$")
 
 
@@ -27,7 +37,14 @@ def normalize(raw: str, default_exchange: str = "US") -> str:
     s = (raw or "").strip().upper()
     if not s:
         raise BadRequest("Ticker fehlt.")
-    s = re.sub(r"\s+(EQUITY|INDEX|CURNCY|COMDTY|GOVT)$", "", s)
+    s = re.sub(r"\s+EQUITY$", "", s)
+    m = re.match(r"^(\S+)\s+(INDEX|CURNCY|GOVT|COMDTY)$", s)
+    if m and "." not in m.group(1):
+        code, key = m.groups()
+        if key == "INDEX":
+            code = INDEX_ALIASES.get(code, code)
+        exch = "CC" if key == "CURNCY" and "-" in code else YELLOW_KEYS[key]
+        s = f"{code}.{exch}"
     parts = s.split()
     if len(parts) == 2 and "." not in parts[0]:
         code, exch = parts

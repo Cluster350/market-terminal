@@ -12,12 +12,14 @@ import {
   fmtPct,
   fmtPrice,
   fmtRatio,
+  isEquity,
   isNum,
   safeUrl,
   tone,
 } from "../lib/format";
 import { useCompany, useDividends, useEarnings, useFinancials, useHistory, useQuotes } from "../lib/queries";
 import type { Company, Earnings, StatementRow } from "../lib/types";
+import { InstrumentOverview, NotForInstrument } from "./extra";
 import type { ScreenProps } from "./types";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -55,6 +57,11 @@ function RangeBar({ low, high, value, label }: { low: number | null; high: numbe
 }
 
 export function DES({ ticker }: ScreenProps) {
+  if (!isEquity(ticker)) return <InstrumentOverview ticker={ticker!} />;
+  return <CompanyDES ticker={ticker} />;
+}
+
+function CompanyDES({ ticker }: { ticker: string | null }) {
   const q = useCompany(ticker);
   const quote = useQuotes(ticker ? [ticker] : []).data?.[0];
   const [more, setMore] = useState(false);
@@ -90,7 +97,7 @@ export function DES({ ticker }: ScreenProps) {
                 <Section title="Bewertung">
                   <Kv
                     items={[
-                      ["Marktkapitalisierung", fmtBig(c.marketCap)],
+                      ["Marktkap.", `${fmtBig(isNum(c.shares.outstanding) && isNum(price) ? c.shares.outstanding * price : c.marketCap)} ${c.currency ?? ""}`],
                       ["Enterprise Value", fmtBig(c.valuation.ev)],
                       ["KGV (TTM)", fmt(c.valuation.pe, 1)],
                       ["KGV erwartet", fmt(c.valuation.forwardPe, 1)],
@@ -144,10 +151,10 @@ export function DES({ ticker }: ScreenProps) {
                 <Section title="Analysten">
                   <Kv
                     items={[
-                      ["Durchschnittsrating (1–5)", fmt(c.analyst.rating, 2)],
+                      ["Rating (1–5)", fmt(c.analyst.rating, 2)],
                       ["Kursziel", fmtPrice(c.analyst.targetPrice)],
-                      ["Potenzial", <Change value={upside} />],
-                      ["Kaufen / Halten / Verkaufen", `${(c.analyst.strongBuy ?? 0) + (c.analyst.buy ?? 0)} / ${c.analyst.hold ?? 0} / ${(c.analyst.sell ?? 0) + (c.analyst.strongSell ?? 0)}`],
+                      ["Potenzial", <Change value={upside} digits={1} />],
+                      ["Kauf / Halten / Verk.", `${(c.analyst.strongBuy ?? 0) + (c.analyst.buy ?? 0)} / ${c.analyst.hold ?? 0} / ${(c.analyst.sell ?? 0) + (c.analyst.strongSell ?? 0)}`],
                     ]}
                   />
                 </Section>
@@ -263,7 +270,8 @@ function periodLabel(p: string, period: "annual" | "quarterly"): string {
 export function FA({ ticker }: ScreenProps) {
   const [period, setPeriod] = useState<"annual" | "quarterly">("annual");
   const [stmt, setStmt] = useState<Stmt>("income");
-  const q = useFinancials(ticker, period);
+  const q = useFinancials(isEquity(ticker) ? ticker : null, period);
+  if (!isEquity(ticker)) return <NotForInstrument fn="FA" />;
   return (
     <>
       <div className="toolbar">
@@ -300,27 +308,29 @@ export function FA({ ticker }: ScreenProps) {
                 <thead>
                   <tr>
                     <th>Position</th>
-                    {f.periods.map((p) => (
+                    {f.periods.slice().reverse().map((p) => (
                       <th key={p} className="num" title={fmtDate(p)}>
                         {periodLabel(p, f.period)}
                       </th>
                     ))}
                     <th className="num">Trend</th>
-                    <th className="num" title="Veränderung zur Vorperiode">Δ</th>
+                    <th className="num" title="Neueste Periode gegenüber der vorherigen">{f.period === "annual" ? "Δ J/J" : "Δ Q/Q"}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((r) => {
                     const latest = r.values[0];
                     const prev = r.values[1];
+                    // Vorzeichenwechsel (Verlust -> Gewinn) ergibt keine sinnvolle Prozentveränderung
+                    const signFlip = isNum(latest) && isNum(prev) && latest * prev < 0;
                     const delta =
                       r.kind === "ratio"
                         ? isNum(latest) && isNum(prev) ? (latest - prev) * 100 : null
-                        : isNum(latest) && isNum(prev) && prev !== 0 ? ((latest - prev) / Math.abs(prev)) * 100 : null;
+                        : isNum(latest) && isNum(prev) && prev !== 0 && !signFlip ? ((latest - prev) / Math.abs(prev)) * 100 : null;
                     return (
                       <tr key={r.key} className={r.emphasis ? "em" : ""}>
                         <td className={r.kind === "ratio" ? "muted" : ""}>{r.label}</td>
-                        {r.values.map((v, i) => (
+                        {r.values.slice().reverse().map((v, i) => (
                           <td key={i} className={`num ${isNum(v) && v < 0 ? "down" : ""}`}>
                             {cell(r, v)}
                           </td>
@@ -329,7 +339,7 @@ export function FA({ ticker }: ScreenProps) {
                           <Spark data={r.values.slice().reverse().filter(isNum)} width={64} height={14} color="var(--label)" />
                         </td>
                         <td className={`num ${tone(delta)}`}>
-                          {delta === null ? DASH : r.kind === "ratio" ? `${delta > 0 ? "+" : ""}${fmt(delta, 1)} Pp` : fmtPct(delta, 1)}
+                          {signFlip && r.kind !== "ratio" ? <span className="muted" title="Vorzeichenwechsel – Veränderung nicht aussagekräftig">n. a.</span> : delta === null ? DASH : r.kind === "ratio" ? `${delta > 0 ? "+" : ""}${fmt(delta, 1)} Pp` : fmtPct(delta, 1)}
                         </td>
                       </tr>
                     );
@@ -392,7 +402,8 @@ function EpsChart({ e }: { e: Earnings }) {
 }
 
 export function ERN({ ticker }: ScreenProps) {
-  const q = useEarnings(ticker);
+  const q = useEarnings(isEquity(ticker) ? ticker : null);
+  if (!isEquity(ticker)) return <NotForInstrument fn="ERN" />;
   return (
     <div className="panel-body">
       <Q q={q}>
@@ -451,7 +462,8 @@ export function ERN({ ticker }: ScreenProps) {
 }
 
 export function DVD({ ticker }: ScreenProps) {
-  const q = useDividends(ticker);
+  const q = useDividends(isEquity(ticker) ? ticker : null);
+  if (!isEquity(ticker)) return <NotForInstrument fn="DVD" />;
   return (
     <div className="panel-body">
       <Q q={q}>
@@ -516,8 +528,9 @@ export function DVD({ ticker }: ScreenProps) {
 }
 
 export function ANR({ ticker }: ScreenProps) {
-  const q = useCompany(ticker);
+  const q = useCompany(isEquity(ticker) ? ticker : null);
   const quote = useQuotes(ticker ? [ticker] : []).data?.[0];
+  if (!isEquity(ticker)) return <NotForInstrument fn="ANR" />;
   return (
     <div className="panel-body">
       <Q q={q}>

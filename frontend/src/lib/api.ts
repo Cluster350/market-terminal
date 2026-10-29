@@ -1,6 +1,7 @@
 // Zugriff auf das Backend. Im statischen Demo-Build (__STATIC__) werden dieselben
 // Aufrufe aus vorab exportierten JSON-Dateien bedient.
 
+import { normalizeTicker } from "./commands";
 import { runScreen } from "./screen";
 import type {
   Company,
@@ -8,6 +9,7 @@ import type {
   Curve,
   Dividends,
   Earnings,
+  EarningsEvent,
   EconEvent,
   Financials,
   History,
@@ -15,6 +17,7 @@ import type {
   MarketRow,
   Movers,
   NewsPage,
+  PeerResult,
   Quote,
   ScreenField,
   ScreenFilter,
@@ -252,6 +255,45 @@ const staticApi = {
     const rows = all.rows.filter((r) => r.exchange === exchange);
     return { ...all, rows, total: rows.length, truncated: false };
   },
+  async resolve(q: string): Promise<SearchHit> {
+    const t = normalizeTicker(q);
+    const all = await file<SearchHit[]>("search.json");
+    const hit = t ? all.find((h) => h.ticker === t) : undefined;
+    if (hit) return hit;
+    const code = (t ?? q).split(".")[0].toLowerCase();
+    const near = all.filter((h) => h.ticker.toLowerCase().startsWith(code.slice(0, 2))).slice(0, 3).map((h) => h.ticker);
+    throw new ApiError(404, "not_found", `Unbekannter Ticker ${t ?? q}.${near.length ? ` Meinten Sie: ${near.join(", ")}?` : ""}`);
+  },
+  async earningsCalendar(from: string, to: string): Promise<EarningsEvent[]> {
+    const all = await file<EarningsEvent[]>("calendar/earnings.json");
+    return all.filter((e) => e.reportDate >= from && e.reportDate <= to);
+  },
+  async peers(t: string): Promise<PeerResult> {
+    const ticker = normalizeStatic(t);
+    const universe = await file<ScreenRow[]>("screener/universe.json");
+    const own = universe.find((r) => r.ticker === ticker);
+    if (!own) throw new ApiError(404, "not_found", "Für dieses Instrument gibt es keinen Peer-Vergleich.");
+    let basis: PeerResult["basis"] = "industry";
+    let group = own.industry;
+    let others = universe.filter((r) => r.ticker !== ticker && r.industry === own.industry);
+    if (others.length < 4) {
+      basis = "sector";
+      group = own.sector;
+      others = universe.filter((r) => r.ticker !== ticker && r.sector === own.sector);
+    }
+    others = others.sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0)).slice(0, 11);
+    const rows = [own, ...others];
+    const med = (k: keyof ScreenRow): number | null => {
+      const v = rows.map((r) => r[k]).filter((x): x is number => typeof x === "number" && Number.isFinite(x)).sort((a, b) => a - b);
+      if (!v.length) return null;
+      const m = Math.floor(v.length / 2);
+      return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+    };
+    const keys: (keyof ScreenRow)[] = ["price", "chg1d", "chg5d", "marketCap", "pe", "divYield", "perf1m", "perf3m", "perf12m", "rsi14", "vol1y", "dist52wHigh"];
+    const median = { ...own, ticker: "MEDIAN", name: "Median der Gruppe", exchange: null, sector: null, industry: null, currency: null, eps: null, avgVol: null } as ScreenRow;
+    for (const k of keys) (median as unknown as Record<string, number | null>)[k] = med(k);
+    return { ticker, basis, group, rows, median };
+  },
 };
 
 // --- Öffentliche API -------------------------------------------------------------------
@@ -304,6 +346,9 @@ const liveApi = {
     request<ScreenResult>("/screener", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }),
   movers: (exchange?: string) => request<Movers>(`/market/movers${qs({ exchange })}`),
   heatmap: (exchange?: string) => request<ScreenResult>(`/market/heatmap${qs({ exchange })}`),
+  resolve: (q: string) => request<SearchHit>(`/resolve${qs({ q })}`),
+  earningsCalendar: (from: string, to: string) => request<EarningsEvent[]>(`/calendar/earnings${qs({ from, to })}`),
+  peers: (t: string) => request<PeerResult>(`/peers/${enc(t)}`),
 };
 
 export const api: typeof liveApi = IS_STATIC ? (staticApi as unknown as typeof liveApi) : liveApi;

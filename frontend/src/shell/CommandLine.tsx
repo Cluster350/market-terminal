@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FUNCTIONS, FN, normalizeTicker, parseCommand, resolveFn, type FnCode } from "../lib/commands";
 import { displayTicker } from "../lib/format";
+import { api, ApiError } from "../lib/api";
 import { useSearch } from "../lib/queries";
 import { useWorkspace } from "../state/workspace";
 
@@ -12,6 +13,17 @@ type Suggestion =
 
 export const FOCUS_EVENT = "mt:focus-cmd";
 
+const HISTORY_KEY = "mt.cmd.history";
+
+function loadHistory(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string").slice(0, 30) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function CommandLine() {
   const ws = useWorkspace();
   const [value, setValue] = useState("");
@@ -19,6 +31,9 @@ export function CommandLine() {
   const [cursor, setCursor] = useState(-1);
   const [error, setError] = useState<string | null>(null);
   const [debounced, setDebounced] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [history, setHistory] = useState<string[]>(loadHistory);
+  const [histIdx, setHistIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -70,6 +85,16 @@ export function CommandLine() {
   const suggestions = useMemo<Suggestion[]>(() => {
     const out: Suggestion[] = [];
     const v = value.trim().toUpperCase();
+    // Nach Ticker + Leerzeichen (z. B. per Tab): passende Funktionen für dieses Wertpapier anbieten
+    if (v && /\s$/.test(value) && !parts.fn) {
+      const t = normalizeTicker(v);
+      if (t) {
+        for (const f of FUNCTIONS.filter((f) => f.needsTicker)) {
+          out.push({ kind: "fn", fn: f.code, ticker: t, label: `${displayTicker(t)} ${f.code}`, desc: `${f.title} – ${f.desc}` });
+        }
+        return out;
+      }
+    }
     if (!v) {
       for (const t of ws.state.recent.slice(0, 6)) {
         out.push({ kind: "sec", ticker: t, label: displayTicker(t), desc: "Zuletzt verwendet", meta: "", fn: null });
@@ -116,23 +141,60 @@ export function CommandLine() {
     setValue("");
     setOpen(false);
     setError(null);
+    setHistIdx(-1);
     inputRef.current?.blur();
   }
 
-  function runFn(fn: FnCode, ticker: string | null) {
+  function remember(cmd: string) {
+    const c = cmd.trim().toUpperCase();
+    if (!c) return;
+    const next = [c, ...history.filter((h) => h !== c)].slice(0, 30);
+    setHistory(next);
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    } catch {
+      /* Verlauf nur für diese Sitzung */
+    }
+  }
+
+  /**
+   * Wertpapier vor dem Umschalten prüfen: Ein Tippfehler darf nicht alle Panels auf einen
+   * unbekannten Ticker setzen. Vorschläge aus der Suche sind bereits geprüft.
+   */
+  async function activate(ticker: string, fn: FnCode | null, verified: boolean) {
+    let t = ticker;
+    if (!verified) {
+      setChecking(true);
+      try {
+        t = (await api.resolve(ticker)).ticker;
+      } catch (e) {
+        setChecking(false);
+        setOpen(true);
+        setError(e instanceof ApiError ? e.message : "Ticker konnte nicht geprüft werden.");
+        return;
+      }
+      setChecking(false);
+    }
+    remember(value);
+    if (fn) ws.runFn(fn, t);
+    else ws.setSecurity(t);
+    close();
+  }
+
+  function runFn(fn: FnCode, ticker: string | null, verified = false) {
     if (FN[fn].needsTicker && !ticker && !ws.state.security) {
       setError(`${fn} braucht ein Wertpapier, z. B. „${ws.state.watchlist[0] ? displayTicker(ws.state.watchlist[0]) : "NWND US"} ${fn}“.`);
       return;
     }
-    ws.runFn(fn, ticker);
+    if (ticker) return void activate(ticker, fn, verified);
+    remember(value);
+    ws.runFn(fn, null);
     close();
   }
 
   function choose(s: Suggestion) {
-    if (s.kind === "fn") return runFn(s.fn, s.ticker);
-    if (s.fn) return runFn(s.fn, s.ticker);
-    ws.setSecurity(s.ticker);
-    close();
+    if (s.kind === "fn") return runFn(s.fn, s.ticker, false);
+    return void activate(s.ticker, s.fn, true);
   }
 
   function submit() {
@@ -148,8 +210,7 @@ export function CommandLine() {
       return;
     }
     if (cmd.kind === "fn") return runFn(cmd.fn, cmd.ticker);
-    ws.setSecurity(cmd.ticker);
-    close();
+    void activate(cmd.ticker, null, false);
   }
 
   const showMenu = open && (suggestions.length > 0 || !!error);
@@ -172,6 +233,7 @@ export function CommandLine() {
         onChange={(e) => {
           setValue(e.target.value);
           setError(null);
+          setHistIdx(-1);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
@@ -184,10 +246,23 @@ export function CommandLine() {
             close();
           } else if (e.key === "ArrowDown") {
             e.preventDefault();
+            if (histIdx >= 0) {
+              const i = histIdx - 1;
+              setHistIdx(i);
+              setValue(i >= 0 ? history[i] : "");
+              return;
+            }
             setOpen(true);
             setCursor((c) => Math.min(c + 1, suggestions.length - 1));
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
+            // Ohne markierten Vorschlag: frühere Befehle zurückholen
+            if (cursor <= -1 && history.length && (!value.trim() || histIdx >= 0)) {
+              const i = Math.min(histIdx + 1, history.length - 1);
+              setHistIdx(i);
+              setValue(history[i]);
+              return;
+            }
             setCursor((c) => Math.max(c - 1, -1));
           } else if (e.key === "Tab" && suggestions.length && open) {
             e.preventDefault();
@@ -196,8 +271,8 @@ export function CommandLine() {
           }
         }}
       />
-      <button type="button" className="go-key" onClick={submit} title="Ausführen (Enter)">
-        GO
+      <button type="button" className="go-key" onClick={submit} title="Ausführen (Enter)" disabled={checking}>
+        {checking ? "…" : "GO"}
       </button>
       {showMenu && (
         <div className="cmd-menu" id="cmd-menu" role="listbox">

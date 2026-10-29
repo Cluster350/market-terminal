@@ -1,6 +1,7 @@
 import { lazy, type ComponentType } from "react";
 import type { FnCode } from "../lib/commands";
 import { ANR, DES, DVD, ERN, FA, HP } from "./equity";
+import { EVTS, RV } from "./extra";
 import { CN, TOP } from "./news";
 import { EQS, HELP, MOST, W } from "./screener";
 import type { ScreenProps } from "./types";
@@ -34,4 +35,6 @@ export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   MOST,
   W,
   HELP,
+  EVTS,
+  RV,
 };

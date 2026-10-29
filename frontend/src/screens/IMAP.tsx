@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import EChart, { TOOLTIP, type EOption } from "../components/EChart";
 import { Empty, Q, Seg } from "../components/ui";
-import { displayTicker, escapeHtml, fmtBig, fmtPct, isNum } from "../lib/format";
+import { displayTicker, sectorDe, escapeHtml, fmtBig, fmtPct, isNum } from "../lib/format";
 import { useHeatmap, useStatus } from "../lib/queries";
 import type { ScreenRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
@@ -38,14 +38,21 @@ export default function IMAP(_: ScreenProps) {
       const s = r.sector || "Sonstige";
       bySector.set(s, [...(bySector.get(s) ?? []), r]);
     }
+    const total = q.data.rows.reduce((a, r) => a + (r.marketCap ?? 0), 0) || 1;
     const data = Array.from(bySector.entries()).map(([sector, rows]) => ({
-      name: sector,
+      name: sectorDe(sector),
       value: rows.reduce((s, r) => s + (r.marketCap ?? 0), 0),
       children: rows.map((r) => ({
         name: r.ticker,
         value: r.marketCap,
         chg: r[metric],
-        label: { formatter: `{b|${r.ticker.split(".")[0]}}\n${fmtPct(r[metric])}` },
+        // Kleine Kacheln: keine abgeschnittenen Reste wie „+“ oder „−0“, nur Tooltip
+        label:
+          (r.marketCap ?? 0) / total < 0.006
+            ? { show: false }
+            : (r.marketCap ?? 0) / total < 0.015
+              ? { formatter: `{b|${r.ticker.split(".")[0]}}` }
+              : { formatter: `{b|${r.ticker.split(".")[0]}}\n${fmtPct(r[metric], 1)}` },
         itemStyle: { color: heatColor(r[metric]) },
         full: r.name,
       })),

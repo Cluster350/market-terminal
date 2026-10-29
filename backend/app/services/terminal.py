@@ -14,6 +14,8 @@ from ..cache import TTLCache
 from ..errors import BadRequest, NotFound, PlanNotIncluded, TerminalError
 from ..models import (
     Company,
+    EarningsEvent,
+    PeerResult,
     CountryRow,
     CountryTable,
     CountryValue,
@@ -56,7 +58,7 @@ SCREEN_FIELDS: list[ScreenField] = [
     ScreenField(key="sector", label="Sektor", group="descriptive", kind="choice", choices=SECTORS),
     ScreenField(key="industry", label="Branche", group="descriptive", kind="text"),
     ScreenField(key="name", label="Name", group="descriptive", kind="text"),
-    ScreenField(key="market_cap", label="Marktkap.", group="descriptive", kind="money"),
+    ScreenField(key="market_cap", label="Marktkap. (USD)", group="descriptive", kind="money"),
     ScreenField(key="price", label="Kurs", group="descriptive", kind="number"),
     ScreenField(key="avg_vol", label="Ø Volumen", group="descriptive", kind="number"),
     ScreenField(key="pe", label="KGV", group="fundamental", kind="number"),
@@ -74,6 +76,20 @@ SCREEN_FIELDS: list[ScreenField] = [
 _FIELD = {f.key: f for f in SCREEN_FIELDS}
 _ENRICHED = {f.key for f in SCREEN_FIELDS if f.enriched}
 _OPS = {"gt", "gte", "lt", "lte", "eq", "neq", "in", "contains"}
+
+
+CURRENCY_SYMBOLS = {"$": "USD", "US$": "USD", "€": "EUR", "£": "GBP", "GBp": "GBX", "p": "GBX", "¥": "JPY", "Fr.": "CHF", "SFr": "CHF"}
+
+
+def currency_code(raw: Optional[str]) -> Optional[str]:
+    """EODHD liefert teils Symbole ($, €, £) statt ISO-Codes."""
+    if not raw:
+        return None
+    s = raw.strip()
+    if s in CURRENCY_SYMBOLS:
+        return CURRENCY_SYMBOLS[s]
+    s = s.upper()
+    return s if len(s) == 3 and s.isalpha() else None
 
 
 class Terminal:
@@ -245,8 +261,8 @@ class Terminal:
                 last=last,
                 change=None if last is None or prev is None else last - prev,
                 change_pct=(q.change_pct if q and q.change_pct is not None else pct(last, prev)),
-                chg_1w=metrics.perf(closes, 5),
-                chg_1m=metrics.perf(closes, 21),
+                chg_1w=metrics.perf_since(dates, closes, days=7),
+                chg_1m=metrics.perf_since(dates, closes, months=1),
                 # YTD ab dem heutigen Kalenderjahr, nicht ab dem Jahr des letzten Kurses: sonst zeigt
                 # ein Index ohne Handel am 1. Januar noch die Vorjahresperformance als YTD
                 chg_ytd=metrics.perf_ytd(dates, closes, today=today) if dates else None,
@@ -440,6 +456,42 @@ class Terminal:
             "gt": v > b, "gte": v >= b, "lt": v < b, "lte": v <= b, "eq": v == b, "neq": v != b,
         }[f.op]
 
+    async def fx_to_usd(self) -> dict[str, float]:
+        """Umrechnungsfaktoren Landeswährung -> USD aus den Devisenkursen."""
+        pairs = {
+            "EUR": ("EURUSD.FOREX", False), "GBP": ("GBPUSD.FOREX", False), "AUD": ("AUDUSD.FOREX", False),
+            "NZD": ("NZDUSD.FOREX", False), "CHF": ("USDCHF.FOREX", True), "JPY": ("USDJPY.FOREX", True),
+            "CAD": ("USDCAD.FOREX", True), "CNH": ("USDCNH.FOREX", True), "CNY": ("USDCNH.FOREX", True),
+            "SEK": ("USDSEK.FOREX", True), "NOK": ("USDNOK.FOREX", True), "DKK": ("USDDKK.FOREX", True),
+            "HKD": ("USDHKD.FOREX", True),
+        }
+        try:
+            quotes = {q.ticker: q.last for q in await self.quotes(sorted({t for t, _ in pairs.values()}))}
+        except TerminalError:
+            quotes = {}
+        rates = {"USD": 1.0}
+        for ccy, (ticker, invert) in pairs.items():
+            px = quotes.get(ticker)
+            if px:
+                rates[ccy] = 1.0 / px if invert else px
+        if "GBP" in rates:
+            rates["GBX"] = rates["GBP"] / 100.0  # Londoner Kurse in Pence
+        return rates
+
+    async def _to_usd(self, rows: list[ScreenRow]) -> list[ScreenRow]:
+        """Marktkapitalisierung einheitlich in USD, damit Filter, Sortierung und Heatmap
+        Werte verschiedener Börsen vergleichen können. Der Originalwert bleibt erhalten."""
+        if not any(r.market_cap is not None and r.currency not in (None, "USD") for r in rows):
+            return [r.model_copy(update={"market_cap_local": r.market_cap}) for r in rows]
+        rates = await self.fx_to_usd()
+        out = []
+        for r in rows:
+            ccy = currency_code(r.currency)
+            rate = rates.get(ccy) if ccy else None
+            usd = r.market_cap * rate if r.market_cap is not None and rate is not None else None
+            out.append(r.model_copy(update={"market_cap_local": r.market_cap, "market_cap": usd, "currency": ccy or r.currency}))
+        return out
+
     async def _enrich(self, rows: list[ScreenRow]) -> list[ScreenRow]:
         async def one(row: ScreenRow) -> ScreenRow:
             async with self._sem:
@@ -447,15 +499,16 @@ class Terminal:
                     h = await self.history(row.ticker)
                 except TerminalError:
                     return row
-            c = h.c
+            c, t = h.c, h.t
+            # Kalenderfenster statt Balkenzahl: identisch mit GP-Zeiträumen und 52W in DES
             return row.model_copy(
                 update={
-                    "perf_1m": metrics.perf(c, 21),
-                    "perf_3m": metrics.perf(c, 63),
-                    "perf_12m": metrics.perf(c, 252),
+                    "perf_1m": metrics.perf_since(t, c, months=1),
+                    "perf_3m": metrics.perf_since(t, c, months=3),
+                    "perf_12m": metrics.perf_since(t, c, months=12),
                     "rsi14": metrics.rsi(c, 14),
-                    "vol_1y": metrics.annual_vol(c),
-                    "dist_52w_high": metrics.dist_from_high(c, h.h),
+                    "vol_1y": metrics.annual_vol_dated(t, c),
+                    "dist_52w_high": metrics.dist_from_high_dated(t, c, h.h),
                 }
             )
 
@@ -487,6 +540,7 @@ class Terminal:
             key, "screen", lambda: self.p.screener(base_filters, server_sort, server_desc, max_rows)
         )
         notes = list(notes)
+        rows = await self._to_usd(rows)
         rows = [r for r in rows if all(self._match(r, f) for f in local)]
         if needs_enrich:
             head, tail = rows[: self.enrich_limit], rows[self.enrich_limit :]
@@ -529,3 +583,65 @@ class Terminal:
         if exchange and exchange.upper() != "ALL":
             flt.append(ScreenFilter("exchange", "eq", exchange.upper()))
         return await self.screen(flt, "market_cap", True, limit)
+
+    # --- Ticker-Prüfung, Earnings-Kalender, Peers ---------------------------------------
+
+    async def resolve(self, ticker: str) -> SearchHit:
+        """Prüft, ob es den Ticker bei der Datenquelle gibt; sonst 404 mit Vorschlägen."""
+        hit = await self._cached(f"resolve:{ticker}", "search", lambda: self.p.resolve(ticker))
+        if hit is not None:
+            return hit
+        code = ticker.rpartition(".")[0]
+        try:
+            suggestions = [h.ticker for h in await self.search(code, 4) if h.ticker != ticker][:3]
+        except TerminalError:
+            suggestions = []
+        hint = f" Meinten Sie: {', '.join(suggestions)}?" if suggestions else ""
+        raise NotFound(f"Unbekannter Ticker {ticker}.{hint}")
+
+    async def earnings_calendar(self, start: dt.date, end: dt.date) -> list[EarningsEvent]:
+        if end < start:
+            raise BadRequest("Enddatum liegt vor Startdatum.")
+        if (end - start).days > 31:
+            raise BadRequest("Maximal 31 Tage pro Abfrage.")
+        return await self._cached(f"evts:{start}:{end}", "calendar", lambda: self.p.earnings_calendar(start, end))
+
+    async def peers(self, ticker: str, limit: int = 12) -> PeerResult:
+        """Vergleichsgruppe: gleiche Branche, bei zu wenigen Treffern gleicher Sektor."""
+        company = await self.company(ticker)
+        basis, group = "industry", company.industry
+        rows: list[ScreenRow] = []
+        if company.industry:
+            res = await self.screen([ScreenFilter("industry", "eq", company.industry)], "market_cap", True, 60, enrich=True)
+            rows = res.rows
+        if len([r for r in rows if r.ticker != ticker]) < 4 and company.sector:
+            basis, group = "sector", company.sector
+            res = await self.screen([ScreenFilter("sector", "eq", company.sector)], "market_cap", True, 60, enrich=True)
+            rows = res.rows
+        own = next((r for r in rows if r.ticker == ticker), None)
+        others = [r for r in rows if r.ticker != ticker][: max(1, limit - 1)]
+        if own is None:
+            q = (await self.quotes([ticker]))[0]
+            own = (await self._enrich([ScreenRow(
+                ticker=ticker, name=company.name, exchange=company.exchange, sector=company.sector,
+                industry=company.industry, currency=company.currency, price=q.last, chg_1d=q.change_pct,
+                eps=company.per_share.eps, pe=company.valuation.pe,
+                div_yield=None if company.per_share.dividend_yield is None else company.per_share.dividend_yield * 100,
+            )]))[0]
+            own = (await self._to_usd([own.model_copy(update={"market_cap": company.market_cap})]))[0]
+        table = [own] + others
+
+        def median(field: str) -> Optional[float]:
+            vals = sorted(v for v in (getattr(r, field) for r in table) if isinstance(v, (int, float)))
+            if not vals:
+                return None
+            mid = len(vals) // 2
+            return vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2
+
+        med = ScreenRow(
+            ticker="MEDIAN",
+            name="Median der Gruppe",
+            **{f: median(f) for f in ("price", "chg_1d", "chg_5d", "market_cap", "pe", "div_yield", "perf_1m",
+                                      "perf_3m", "perf_12m", "rsi14", "vol_1y", "dist_52w_high")},
+        )
+        return PeerResult(ticker=ticker, basis=basis, group=group, rows=table, median=med)

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { initial, PAGES, reducer, type WorkspaceState } from "./workspace";
+import { initial, PAGES, reducer, windowFromHash, type WorkspaceState } from "./workspace";
 
 function base(over: Partial<WorkspaceState> = {}): WorkspaceState {
   const s = initial(); // ohne localStorage (Node): Standardzustand
@@ -93,5 +93,47 @@ describe("initial: gespeicherter Arbeitsbereich", () => {
       },
     });
     expect(initial().watchlist).toEqual([]);
+  });
+});
+
+describe("Layouts und mehrere Fenster", () => {
+  it("Layoutwechsel füllt Panels aus dem Vorrat der Seite auf bzw. kürzt", () => {
+    let s = base();
+    s = reducer(s, { type: "layout", layout: "single" });
+    expect(s.pages.equity).toEqual({ layout: "single", panels: ["GP"] });
+    s = reducer(s, { type: "layout", layout: "quad" });
+    expect(s.pages.equity.panels).toHaveLength(4);
+    expect(new Set(s.pages.equity.panels).size).toBe(4);
+    s = reducer({ ...s, active: { ...s.active, equity: 3 } }, { type: "layout", layout: "split" });
+    expect(s.pages.equity.panels).toHaveLength(2);
+    expect(s.active.equity).toBe(1);
+  });
+
+  it("Fensterkennung aus dem URL-Fragment", () => {
+    expect(windowFromHash("")).toEqual({ key: "main" });
+    expect(windowFromHash("#makro")).toEqual({ key: "makro", page: "macro" });
+    expect(windowFromHash("#solo-GP")).toEqual({ key: "solo-GP", solo: "GP" });
+    expect(windowFromHash("#solo-toString")).toEqual({ key: "main" });
+    expect(windowFromHash("#unsinn")).toEqual({ key: "main" });
+  });
+
+  it("Einzelfenster startet mit genau dieser Funktion", () => {
+    const s = initial("#solo-ECO");
+    expect(s.page).toBe("macro");
+    expect(s.pages.macro).toEqual({ layout: "single", panels: ["ECO"] });
+  });
+
+  it("verknüpfte Fenster übernehmen das Wertpapier, gelöste nicht", () => {
+    const shared = { mode: "demo", security: "QBIT.US", watchlist: ["QBIT.US"], recent: ["QBIT.US"] };
+    const linked = reducer(base({ mode: "demo", security: "NWND.US" }), { type: "shared", shared });
+    expect(linked.security).toBe("QBIT.US");
+    const loose = reducer(base({ mode: "demo", security: "NWND.US", linked: false }), { type: "shared", shared });
+    expect(loose.security).toBe("NWND.US");
+    expect(loose.watchlist).toEqual(["QBIT.US"]);
+  });
+
+  it("Funktionswahl gilt für das angegebene Panel, nicht für das aktive", () => {
+    const s = reducer(base(), { type: "fn", fn: "ERN", panel: 2 });
+    expect(s.pages.equity.panels).toEqual(["GP", "DES", "ERN", "CN"]);
   });
 });

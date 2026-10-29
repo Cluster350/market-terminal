@@ -1,12 +1,12 @@
 // Kopfzeile, Laufband, Panel-Raster und Statusleiste.
 
-import { Component, Suspense, useSyncExternalStore, type ReactNode } from "react";
+import { Component, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { dataHealth, IS_STATIC } from "../lib/api";
 import { FN, FUNCTIONS, type FnCode } from "../lib/commands";
 import { displayTicker, fmtPct, fmtPrice, fmtTime, tone } from "../lib/format";
 import { useIndices, useQuotes, useStatus } from "../lib/queries";
 import { SCREENS } from "../screens";
-import { PAGES, useWorkspace } from "../state/workspace";
+import { LAYOUTS, openWindow, PAGES, useWorkspace } from "../state/workspace";
 import { useNow } from "../components/ui";
 import { CommandLine } from "./CommandLine";
 
@@ -55,13 +55,52 @@ function ModeBadge() {
   );
 }
 
+function WindowTools() {
+  const ws = useWorkspace();
+  const [blocked, setBlocked] = useState(false);
+  const layout = ws.state.pages[ws.state.page].layout;
+  return (
+    <div className="win-tools">
+      <div className="seg" role="group" aria-label="Layout">
+        {LAYOUTS.map((l) => (
+          <button key={l.value} type="button" aria-pressed={layout === l.value} title={`${l.title} (Alt+L wechselt)`} onClick={() => ws.setLayout(l.value)}>
+            {l.label}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="key small-key"
+        title="Diese Seite in einem neuen Fenster öffnen – z. B. für einen zweiten Monitor"
+        onClick={() => {
+          const ok = openWindow({ page: ws.state.page });
+          setBlocked(!ok);
+          if (!ok) setTimeout(() => setBlocked(false), 4000);
+        }}
+      >
+        ⧉ FENSTER
+      </button>
+      <button
+        type="button"
+        className="key small-key"
+        aria-pressed={ws.state.linked}
+        title={ws.state.linked ? "Verknüpft: folgt dem Wertpapier der anderen Fenster. Klicken zum Lösen." : "Gelöst: dieses Fenster behält sein Wertpapier. Klicken zum Verknüpfen."}
+        onClick={() => ws.setLinked(!ws.state.linked)}
+      >
+        {ws.state.linked ? "◆ LINK" : "◇ LINK"}
+      </button>
+      {blocked && <span className="small down">Pop-up blockiert – bitte im Browser erlauben.</span>}
+    </div>
+  );
+}
+
 export function TopBar() {
   const ws = useWorkspace();
   return (
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark">MT</span>
-        <span className="brand-name">MARKET TERMINAL</span>
+        <span className="brand-name">{ws.state.window === "main" ? "MARKET TERMINAL" : `FENSTER ${ws.state.window.replace(/^solo-/, "").toUpperCase()}`}</span>
       </div>
       <nav className="keys" aria-label="Seiten">
         {PAGES.map((p) => (
@@ -71,6 +110,7 @@ export function TopBar() {
           </button>
         ))}
       </nav>
+      <WindowTools />
       <CommandLine />
       <Clocks />
       <ModeBadge />
@@ -93,7 +133,7 @@ export function TickerTape() {
     items.map((it) => (
       <span key={it.ticker + suffix} className="tape-item" onClick={() => ws.setSecurity(it.ticker, { open: "GP" })} title={it.ticker}>
         <span className="nm">{it.name}</span>
-        <span>{fmtPrice(it.last)}</span>
+        <span>{fmtPrice(it.last, it.ticker)}</span>
         <span className={tone(it.chg)}>{fmtPct(it.chg)}</span>
       </span>
     ));
@@ -129,6 +169,24 @@ class Boundary extends Component<{ children: ReactNode; resetKey: string }, { er
   }
 }
 
+function Provenance({ delayed }: { delayed: boolean | undefined }) {
+  const status = useStatus();
+  const health = useSyncExternalStore(dataHealth.subscribe, dataHealth.get);
+  const mode = IS_STATIC ? "static" : status.data?.mode;
+  const [label, title] = health.stale
+    ? ["CACHE", "Datenquelle zuletzt nicht erreichbar – zwischengespeicherte Werte"]
+    : mode === "eodhd"
+      ? delayed === false
+        ? ["LIVE", "Echtzeitkurs"]
+        : ["VERZ.", "Kurs von EODHD, ca. 15–20 Minuten verzögert"]
+      : ["SYNTH", "Synthetischer Demo-Kurs (fiktive Daten)"];
+  return (
+    <span className="tag prov" title={title}>
+      {label}
+    </span>
+  );
+}
+
 function PanelTitle({ fn, ticker }: { fn: FnCode; ticker: string | null }) {
   const q = useQuotes(FN[fn].needsTicker && ticker ? [ticker] : []);
   const quote = q.data?.[0];
@@ -143,7 +201,8 @@ function PanelTitle({ fn, ticker }: { fn: FnCode; ticker: string | null }) {
           {quote?.last !== null && quote?.last !== undefined && (
             <>
               {" "}
-              <b>{fmtPrice(quote.last)}</b> <span className={tone(quote.changePct)}>{fmtPct(quote.changePct)}</span>
+              <b>{fmtPrice(quote.last, ticker)}</b> <span className={tone(quote.changePct)}>{fmtPct(quote.changePct)}</span>{" "}
+              <Provenance delayed={quote.delayed} />
             </>
           )}
         </>
@@ -177,7 +236,7 @@ function Panel({ fn, index }: { fn: FnCode; index: number }) {
             className="fn-select"
             aria-label="Funktion dieses Panels wechseln"
             value={fn}
-            onChange={(e) => ws.runFn(e.target.value as FnCode)}
+            onChange={(e) => ws.setPanelFn(index, e.target.value as FnCode)}
             onMouseDown={() => ws.setActive(index)}
           >
             {FUNCTIONS.map((f) => (
@@ -186,6 +245,9 @@ function Panel({ fn, index }: { fn: FnCode; index: number }) {
               </option>
             ))}
           </select>
+          <button className="tool" title="In neuem Fenster öffnen (z. B. für einen weiteren Monitor)" onClick={() => openWindow({ fn })}>
+            ⧉
+          </button>
           <button className="tool" title={maximized ? "Wiederherstellen (Alt+M)" : "Maximieren (Alt+M)"} onClick={() => ws.maximize(maximized ? null : index)}>
             {maximized ? "▣" : "□"}
           </button>

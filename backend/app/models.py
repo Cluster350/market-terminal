@@ -327,7 +327,8 @@ class ScreenRow(Model):
     price: Optional[float] = None
     chg_1d: Optional[float] = None  # Prozent
     chg_5d: Optional[float] = None
-    market_cap: Optional[float] = None
+    market_cap: Optional[float] = None  # in USD umgerechnet
+    market_cap_local: Optional[float] = None  # in Handelswährung
     eps: Optional[float] = None
     pe: Optional[float] = None
     div_yield: Optional[float] = None  # Prozent
@@ -370,3 +371,23 @@ class SearchHit(Model):
     type: Optional[str] = None
     country: Optional[str] = None
     currency: Optional[str] = None
+
+
+class EarningsEvent(Model):
+    ticker: str
+    name: Optional[str] = None
+    report_date: str
+    period_end: Optional[str] = None
+    timing: Optional[str] = None  # BeforeMarket / AfterMarket
+    eps_estimate: Optional[float] = None
+    eps_actual: Optional[float] = None
+    surprise_pct: Optional[float] = None
+    currency: Optional[str] = None
+
+
+class PeerResult(Model):
+    ticker: str
+    basis: str  # "industry" oder "sector"
+    group: Optional[str] = None
+    rows: list[ScreenRow]
+    median: ScreenRow

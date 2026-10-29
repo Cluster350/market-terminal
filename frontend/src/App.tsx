@@ -1,12 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useStatus } from "./lib/queries";
 import { PanelGrid, StatusBar, TickerTape, TopBar } from "./shell/Shell";
 import { FOCUS_EVENT } from "./shell/CommandLine";
-import { PAGES, useWorkspace } from "./state/workspace";
+import { LAYOUTS, PAGES, useWorkspace } from "./state/workspace";
+import { Boot, shouldBoot } from "./shell/Boot";
 
 export default function App() {
   const ws = useWorkspace();
   const status = useStatus();
+  const [booting, setBooting] = useState(shouldBoot);
 
   // Standard-Watchlist und Wertpapier passend zum Datenmodus setzen
   useEffect(() => {
@@ -32,6 +34,12 @@ export default function App() {
           ws.setActive((cur + (e.key === "ArrowRight" ? 1 : count - 1)) % count);
           return;
         }
+        if (e.code === "KeyL") {
+          e.preventDefault();
+          const cur = LAYOUTS.findIndex((l) => l.value === ws.state.pages[ws.state.page].layout);
+          ws.setLayout(LAYOUTS[(cur + 1) % LAYOUTS.length].value);
+          return;
+        }
         if (e.code === "KeyM") {
           e.preventDefault();
           ws.maximize(ws.state.maximized === null ? cur : null);
@@ -55,6 +63,7 @@ export default function App() {
 
   return (
     <div className="app">
+      {booting && <Boot onDone={() => setBooting(false)} />}
       <TopBar />
       <TickerTape />
       <PanelGrid />

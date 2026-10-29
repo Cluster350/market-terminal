@@ -14,12 +14,15 @@ import datetime as dt
 import hashlib
 import math
 import random
+from functools import lru_cache
 from typing import Any, Callable, Optional
+from zoneinfo import ZoneInfo
 
 from ..eodhd import mapping
 from ..errors import NotFound
 from ..models import (
     Company,
+    EarningsEvent,
     CountryValue,
     Dividends,
     Earnings,
@@ -81,6 +84,62 @@ def last_business_day(d: dt.date) -> dt.date:
     return d
 
 
+def _easter(year: int) -> dt.date:
+    """Ostersonntag (gregorianisch, Gauß/Meeus)."""
+    a, b, c = year % 19, year // 100, year % 100
+    d, e = b // 4, b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = (h + l - 7 * m + 114) % 31 + 1
+    return dt.date(year, month, day)
+
+
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> dt.date:
+    """n-ter Wochentag im Monat; n = -1 ist der letzte."""
+    if n > 0:
+        d = dt.date(year, month, 1)
+        d += dt.timedelta(days=(weekday - d.weekday()) % 7)
+        return d + dt.timedelta(weeks=n - 1)
+    nxt = dt.date(year + month // 12, month % 12 + 1, 1)
+    d = nxt - dt.timedelta(days=1)
+    return d - dt.timedelta(days=(d.weekday() - weekday) % 7)
+
+
+def _observed(d: dt.date) -> dt.date:
+    return d - dt.timedelta(days=1) if d.weekday() == 5 else d + dt.timedelta(days=1) if d.weekday() == 6 else d
+
+
+@lru_cache(maxsize=512)
+def holidays(group: str, year: int) -> frozenset[dt.date]:
+    """Börsenfeiertage je Handelsplatz-Gruppe (vereinfachte, aber realistische Kalender)."""
+    days = {dt.date(year, 1, 1), dt.date(year, 12, 25)}
+    if group == "fx":
+        return frozenset(days)
+    easter = _easter(year)
+    good_friday, easter_monday = easter - dt.timedelta(days=2), easter + dt.timedelta(days=1)
+    if group == "us":
+        days |= {
+            _observed(dt.date(year, 1, 1)), _nth_weekday(year, 1, 0, 3), _nth_weekday(year, 2, 0, 3), good_friday,
+            _nth_weekday(year, 5, 0, -1), _observed(dt.date(year, 6, 19)), _observed(dt.date(year, 7, 4)),
+            _nth_weekday(year, 9, 0, 1), _nth_weekday(year, 11, 3, 4), _observed(dt.date(year, 12, 25)),
+        }
+    elif group in ("eu", "sw"):
+        days |= {good_friday, easter_monday, dt.date(year, 5, 1), dt.date(year, 12, 24), dt.date(year, 12, 26), dt.date(year, 12, 31)}
+    elif group == "lse":
+        days |= {good_friday, easter_monday, _nth_weekday(year, 5, 0, 1), _nth_weekday(year, 5, 0, -1),
+                 _nth_weekday(year, 8, 0, -1), dt.date(year, 12, 26)}
+    elif group == "asia":
+        days |= {dt.date(year, 1, 2), dt.date(year, 1, 3), dt.date(year, 12, 31)}
+    elif group == "hk":
+        days |= {good_friday, easter_monday, dt.date(year, 7, 1), dt.date(year, 10, 1), dt.date(year, 12, 26)}
+    return frozenset(days)
+
+
 def _regime(d: dt.date) -> tuple[float, float]:
     """Drift und Volatilität des Marktfaktors (synthetische Krisen und Erholungen)."""
     iso = d.isoformat()
@@ -119,6 +178,14 @@ def _ns_yield(short: float, long: float, years: float, tau: float = 2.0) -> floa
     return long + (short - long) * load
 
 
+def _decimals(x: float) -> int:
+    """Anzahl der Nachkommastellen eines bereits gerundeten Werts (max. 2)."""
+    for d in range(3):
+        if abs(round(x, d) - x) < 1e-9:
+            return d
+    return 2
+
+
 def _de(x: float, digits: int, sign: bool = False) -> str:
     """Deutsche Zahlendarstellung: 18.123,45"""
     s = f"{x:{'+' if sign else ''},.{digits}f}"
@@ -132,6 +199,14 @@ _FX_NAMES = {i.ticker: i for i in FX}
 _COMMODITY = {c[0]: c for c in D.COMMODITIES}
 _CURVES = curve_catalog()
 _BOND = {t: (cc, tenor, years) for cc, (_, pts) in _CURVES.items() for tenor, years, t in pts}
+
+TIMING_ORDER = {"BeforeMarket": 0, "AfterMarket": 2}  # vorbörslich zuerst
+
+CROSSES = {
+    "EURGBP.FOREX": ("EURUSD.FOREX", "GBPUSD.FOREX"),  # EUR/USD ÷ GBP/USD
+    "EURCHF.FOREX": ("EURUSD.FOREX", "USDCHF.FOREX"),  # EUR/USD × USD/CHF
+    "EURJPY.FOREX": ("EURUSD.FOREX", "USDJPY.FOREX"),  # EUR/USD × USD/JPY
+}
 
 CATALOG = Catalog(
     indices=INDICES,
@@ -189,9 +264,7 @@ class DemoProvider:
 
     def _require(self, ticker: str) -> None:
         if not self.known(ticker):
-            raise NotFound(
-                f"{ticker} ist im Demo-Datensatz nicht enthalten. Für echte Ticker EODHD_API_KEY setzen."
-            )
+            raise NotFound(f"Unbekannter Ticker {ticker}. Der Demo-Datensatz enthält nur die fiktiven Werte der Suche.")
 
     def name(self, ticker: str) -> str:
         if ticker in _COMPANY:
@@ -227,6 +300,8 @@ class DemoProvider:
             return "us"
         if ticker in _FX_NAMES:
             return "fx"
+        if ticker in _BOND:
+            return {"US": "us", "JP": "asia", "UK": "lse"}.get(_BOND[ticker][0], "eu")
         return "eu"
 
     # --- Zeitreihen ----------------------------------------------------------------
@@ -255,7 +330,17 @@ class DemoProvider:
         closes: list[float] = []
         kind = "price"
 
-        if ticker in _COMPANY:
+        if ticker in CROSSES:
+            # Kreuzkurse aus den USD-Paaren ableiten, damit keine Arbitrage entsteht
+            (a, b), op_ = CROSSES[ticker], None
+            sa, sb = self._daily(a), self._daily(b)
+            mb = dict(zip(sb["days"], sb["c"]))
+            pairs = [(d, ca, mb[d]) for d, ca in zip(sa["days"], sa["c"]) if d in mb]
+            days = [d for d, _, _ in pairs]
+            closes = [ca / cb if ticker == "EURGBP.FOREX" else ca * cb for _, ca, cb in pairs]
+            day_sigma = 0.006
+            mkt = []
+        elif ticker in _COMPANY:
             _, _, _, sector, _, _ = _COMPANY[ticker]
             sp = D.SECTORS[sector]
             vol, beta = sp[7] * rng.uniform(0.8, 1.3), sp[8] * rng.uniform(0.8, 1.2)
@@ -287,6 +372,8 @@ class DemoProvider:
             s = vol / math.sqrt(252)
             x = 0.0  # log-Abweichung vom Trend (mean reverting)
             for k, m in enumerate(mkt):
+                if ticker in CROSSES:
+                    continue
                 if ticker.startswith("BTC"):
                     shock = 1.5 * m
                 elif ticker in ("USDCAD.FOREX", "USDCNH.FOREX"):
@@ -319,6 +406,13 @@ class DemoProvider:
         else:
             raise NotFound(ticker)
 
+        if ticker not in CROSSES:
+            # Börsenfeiertage des Handelsplatzes entfernen (Kurs läuft über den Feiertag weiter)
+            group = self.session_group(ticker)
+            keep = [i for i, d in enumerate(days) if d not in holidays(group, d.year)]
+            days = [days[i] for i in keep]
+            closes = [closes[i] for i in keep]
+
         o: list[float] = []
         h: list[float] = []
         l: list[float] = []
@@ -331,7 +425,7 @@ class DemoProvider:
                 hi = max(op, c) + abs(rng.gauss(0, 0.015))
                 lo = min(op, c) - abs(rng.gauss(0, 0.015))
             else:
-                op = prev * math.exp(rng.gauss(0, 0.25 * day_sigma))
+                op = prev * math.exp(rng.gauss(0, 0.15 * day_sigma))
                 hi = max(op, c) * math.exp(abs(rng.gauss(0, 0.5 * day_sigma)))
                 lo = min(op, c) * math.exp(-abs(rng.gauss(0, 0.5 * day_sigma)))
             o.append(op)
@@ -362,9 +456,12 @@ class DemoProvider:
         return target / closes[idx]
 
     def _session_bounds(self, ticker: str, day: dt.date) -> tuple[dt.datetime, dt.datetime]:
-        start_min, end_min = D.SESSIONS[self.session_group(ticker)]
-        base = dt.datetime(day.year, day.month, day.day, tzinfo=UTC)
-        return base + dt.timedelta(minutes=start_min), base + dt.timedelta(minutes=end_min)
+        """Handelszeit in lokaler Börsenzeit -> UTC (berücksichtigt Sommerzeit)."""
+        tzname, (sh, sm), (eh, em) = D.SESSIONS[self.session_group(ticker)]
+        tz = ZoneInfo(tzname)
+        start = dt.datetime(day.year, day.month, day.day, sh, sm, tzinfo=tz).astimezone(UTC)
+        end = dt.datetime(day.year, day.month, day.day, eh, em, tzinfo=tz).astimezone(UTC)
+        return start, end
 
     def _bars(self, ticker: str, day_index: int) -> list[tuple[int, float, float, float, float, float]]:
         """5-Minuten-Balken eines Handelstages (vollständig, ohne Zeitfilter)."""
@@ -373,6 +470,22 @@ class DemoProvider:
         key = (ticker, day)
         if key in self._bars_cache:
             return self._bars_cache[key]
+        if ticker in CROSSES:
+            # Intraday ebenfalls aus den USD-Paaren, damit Live-Kurse arbitragefrei bleiben
+            a, b = CROSSES[ticker]
+            ba = self._bars(a, self._daily(a)["days"].index(day))
+            bb = {x[0]: x for x in self._bars(b, self._daily(b)["days"].index(day))}
+            div = ticker == "EURGBP.FOREX"
+            combo = (lambda x, y: x / y) if div else (lambda x, y: x * y)
+            bars = []
+            for ts, ao, _ah, _al, ac, _av in ba:
+                if ts not in bb:
+                    continue
+                _, bo, _bh, _bl, bc, _bv = bb[ts]
+                o_, c_ = combo(ao, bo), combo(ac, bc)
+                bars.append((ts, o_, max(o_, c_), min(o_, c_), c_, 0.0))
+            self._bars_cache[key] = bars
+            return bars
         o, c = series["o"][day_index], series["c"][day_index]
         h, l = series["h"][day_index], series["l"][day_index]
         start, end = self._session_bounds(ticker, day)
@@ -445,6 +558,34 @@ class DemoProvider:
 
     async def status(self) -> dict[str, Any]:
         return {"note": "Synthetische Demo-Daten. Unternehmen sind frei erfunden."}
+
+    async def resolve(self, ticker: str) -> Optional[SearchHit]:
+        if not self.known(ticker):
+            return None
+        code, _, exch = ticker.rpartition(".")
+        return SearchHit(ticker=ticker, name=self.name(ticker), exchange=exch, currency=self.currency(ticker))
+
+    async def earnings_calendar(self, start: dt.date, end: dt.date) -> list[EarningsEvent]:
+        out: list[EarningsEvent] = []
+        for t in COMPANY_TICKERS:
+            for rec in self._fundamentals_raw(t)["Earnings"]["History"].values():
+                rep = dt.date.fromisoformat(rec["reportDate"])
+                if not start <= rep <= end:
+                    continue
+                out.append(
+                    EarningsEvent(
+                        ticker=t,
+                        name=self.name(t),
+                        report_date=rec["reportDate"],
+                        period_end=rec["date"],
+                        timing=rec.get("beforeAfterMarket"),
+                        eps_estimate=rec.get("epsEstimate"),
+                        eps_actual=rec.get("epsActual"),
+                        surprise_pct=rec.get("surprisePercent"),
+                        currency=rec.get("currency"),
+                    )
+                )
+        return sorted(out, key=lambda e: (e.report_date, TIMING_ORDER.get(e.timing or "", 1), e.ticker))
 
     async def search(self, query: str, limit: int) -> list[SearchHit]:
         q = query.strip().lower()
@@ -559,7 +700,17 @@ class DemoProvider:
 
     # --- Fundamentaldaten (im EODHD-Rohformat) --------------------------------------
 
-    def _fiscal(self) -> tuple[list[dt.date], list[dt.date]]:
+    @staticmethod
+    def _report_date(ticker: str, quarter_end: dt.date) -> tuple[dt.date, str]:
+        """Berichtstermin (22–38 Tage nach Quartalsende, Werktag) und Zeitpunkt."""
+        r = _rng("report", ticker, quarter_end.isoformat())
+        d = quarter_end + dt.timedelta(days=r.randint(22, 38))
+        while d.weekday() >= 5:
+            d += dt.timedelta(days=1)
+        return d, r.choice(["BeforeMarket", "AfterMarket"])
+
+    def _fiscal(self, ticker: str) -> tuple[list[dt.date], list[dt.date]]:
+        """Geschäftsjahre und bereits berichtete Quartale (je Unternehmen verschieden)."""
         today = self.today()
         last_fy = today.year - 1 if today >= dt.date(today.year, 3, 1) else today.year - 2
         years = [dt.date(last_fy - k, 12, 31) for k in range(6)]
@@ -567,7 +718,7 @@ class DemoProvider:
         y, q = today.year, 4
         while len(quarters) < 10:
             end = [dt.date(y, 3, 31), dt.date(y, 6, 30), dt.date(y, 9, 30), dt.date(y, 12, 31)][q - 1]
-            if end + dt.timedelta(days=40) <= today:
+            if self._report_date(ticker, end)[0] <= today:
                 quarters.append(end)
             q -= 1
             if q == 0:
@@ -589,7 +740,7 @@ class DemoProvider:
         price = series["c"][-1]
         shares = self._shares(ticker, self._daily(ticker)["days"], self._daily(ticker)["c"])
         mcap = shares * price
-        years, quarters = self._fiscal()
+        years, quarters = self._fiscal(ticker)
 
         growth = sp[4] + rng.gauss(0, 0.04)
         rev0 = mcap_bn * 1e9 / sp[0] * rng.uniform(0.8, 1.25)
@@ -635,10 +786,13 @@ class DemoProvider:
             debt = assets * (0.15 if sector == "Financial Services" else 0.2)
             cash = assets * r.uniform(0.08, 0.16)
             goods = sector in ("Consumer Cyclical", "Consumer Defensive", "Industrials", "Basic Materials", "Technology")
+            current_assets = assets * (0.55 if sector == "Financial Services" else r.uniform(0.3, 0.45))
+            current_liab = (assets - equity) * r.uniform(0.35, 0.55)
             return {
                 "cash": cash, "netReceivables": rev * 0.12, "inventory": rev * 0.08 if goods else 0.0,
-                "totalCurrentAssets": assets * 0.35, "totalAssets": assets,
-                "totalCurrentLiabilities": assets * 0.2, "shortLongTermDebtTotal": debt,
+                "totalCurrentAssets": current_assets, "nonCurrentAssetsTotal": assets - current_assets,
+                "totalAssets": assets, "totalCurrentLiabilities": current_liab,
+                "nonCurrentLiabilitiesTotal": assets - equity - current_liab, "shortLongTermDebtTotal": debt,
                 "totalLiab": assets - equity, "totalStockholderEquity": equity, "netDebt": debt - cash,
             }
 
@@ -706,7 +860,7 @@ class DemoProvider:
         eps_ny = eps_cy * (1 + growth)
 
         hist_closes = self._daily(ticker)["c"]
-        tech_hi, tech_lo = metrics.high_low_52w(series["h"], series["l"])
+        tech_hi, tech_lo = metrics.window_high_low([d.isoformat() for d in series["days"]], series["h"], series["l"])
         target = price * rng.uniform(0.95, 1.30)
         n_analysts = rng.randint(6, 38)
         mood = rng.uniform(-0.3, 1.0)
@@ -724,10 +878,10 @@ class DemoProvider:
             actual = q_net[q] / shares
             surprise = r.gauss(4.0, 6.0)
             est = actual / (1 + surprise / 100) if actual > 0 else actual * (1 + surprise / 100)
-            rep = last_business_day(q + dt.timedelta(days=r.randint(22, 38)))
+            rep, timing = self._report_date(ticker, q)
             earnings_hist[q.isoformat()] = {
                 "reportDate": rep.isoformat(), "date": q.isoformat(),
-                "beforeAfterMarket": r.choice(["BeforeMarket", "AfterMarket"]), "currency": cur,
+                "beforeAfterMarket": timing, "currency": cur,
                 "epsActual": round(actual, 4), "epsEstimate": round(est, 4),
                 "epsDifference": round(actual - est, 4), "surprisePercent": round(surprise, 2),
             }
@@ -735,12 +889,9 @@ class DemoProvider:
         # (früher +92 Tage und Monatsanfang−1, was für Q2/Q3 den 31.08./30.11. ergab)
         y, m = divmod(quarters[0].year * 12 + quarters[0].month - 1 + 3 + 1, 12)
         nq = dt.date(y, m + 1, 1) - dt.timedelta(days=1)
-        next_rep = last_business_day(nq + dt.timedelta(days=_rng("next", ticker).randint(22, 38)))
-        if next_rep <= self.today():
-            next_rep = self.today() + dt.timedelta(days=_rng("next2", ticker).randint(3, 25))
-            next_rep = last_business_day(next_rep) if next_rep.weekday() >= 5 else next_rep
+        next_rep, next_timing = self._report_date(ticker, nq)
         earnings_hist[nq.isoformat()] = {
-            "reportDate": next_rep.isoformat(), "date": nq.isoformat(), "beforeAfterMarket": "AfterMarket",
+            "reportDate": next_rep.isoformat(), "date": nq.isoformat(), "beforeAfterMarket": next_timing,
             "currency": cur, "epsActual": None, "epsEstimate": round(q_net[quarters[0]] / shares * (1 + growth / 4), 4),
             "epsDifference": None, "surprisePercent": None,
         }
@@ -772,7 +923,8 @@ class DemoProvider:
             "Highlights": {
                 "MarketCapitalization": round(mcap), "EBITDA": round(ebitda_ttm),
                 "PERatio": round(price / eps_ttm, 2) if eps_ttm > 0 else None,
-                "PEGRatio": round(price / eps_ttm / max(growth * 100, 1), 2) if eps_ttm > 0 else None,
+                # PEG nur bei echtem Gewinnwachstum aussagekräftig
+                "PEGRatio": round(price / eps_ttm / (growth * 100), 2) if eps_ttm > 0 and growth > 0.01 else None,
                 "WallStreetTargetPrice": round(target, 2), "BookValue": round(equity / shares, 2),
                 "DividendShare": round(dps, 4) if payer else 0, "DividendYield": round(dps / price, 5) if payer else 0,
                 "EarningsShare": round(eps_ttm, 4), "EPSEstimateCurrentYear": round(eps_cy, 4),
@@ -860,36 +1012,110 @@ class DemoProvider:
 
     # --- News ------------------------------------------------------------------------
 
+    def _report_index(self) -> dict[dt.date, list[tuple[str, dict]]]:
+        """Berichtstermine aller Unternehmen (aus den Earnings-Daten), nach Datum."""
+        key = ("reports", self.today())
+        cached = self._fund_cache.get(key)  # type: ignore[arg-type]
+        if cached is not None:
+            return cached  # type: ignore[return-value]
+        out: dict[dt.date, list[tuple[str, dict]]] = {}
+        for t in COMPANY_TICKERS:
+            for rec in self._fundamentals_raw(t)["Earnings"]["History"].values():
+                if rec.get("epsActual") is None or not rec.get("reportDate"):
+                    continue
+                out.setdefault(dt.date.fromisoformat(rec["reportDate"]), []).append((t, rec))
+        self._fund_cache[key] = out  # type: ignore[index]
+        return out
+
     def _news_day(self, day: dt.date) -> list[NewsItem]:
         rng = _rng("news", day.isoformat())
         items: list[NewsItem] = []
-        if day.weekday() >= 5:
-            count = rng.randint(3, 6)
-        else:
-            count = rng.randint(16, 26)
+        weekend = day.weekday() >= 5
         weights = [c[5] ** 0.5 for c in D.COMPANIES]
+        # Quartalszahlen erscheinen genau an den Berichtsterminen aus ERN
+        if not weekend:
+            for i, (t, rec) in enumerate(self._report_index().get(day, [])):
+                items.extend(self._earnings_story(_COMPANY[t], rec, day, i))
+        count = rng.randint(1, 3) if weekend else rng.randint(12, 20)
         for i in range(count):
-            minute = rng.randint(6 * 60, 22 * 60)
+            minute = rng.randint(7 * 60, 21 * 60)
             when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=minute)
             c = rng.choices(D.COMPANIES, weights=weights)[0]
-            items.append(self._company_story(c, when, rng, i))
+            items.append(self._company_story(c, when, rng, i, weekend))
         # Markt- und Makromeldungen aus den synthetischen Kursen und dem Kalender
         items.extend(self._market_stories(day))
         return items
 
-    def _company_story(self, c: tuple, when: dt.datetime, rng: random.Random, i: int) -> NewsItem:
+    def _earnings_story(self, c: tuple, rec: dict, day: dt.date, i: int) -> list[NewsItem]:
         code, name, exch, sector, industry, _ = c
         ticker = f"{code}.{exch}"
         cur = D.EXCHANGE_INFO[exch][0]
-        kind = rng.choices(
-            ["earn_pos", "earn_neg", "guide_up", "guide_down", "up", "down", "mna", "buyback", "order", "cfo", "outage", "jobs", "product"],
-            weights=[8, 6, 4, 3, 7, 5, 4, 4, 5, 3, 2, 2, 5],
-        )[0]
+        start, end = self._session_bounds(ticker, day)
+        when = start - dt.timedelta(minutes=75) if rec.get("beforeAfterMarket") == "BeforeMarket" else end + dt.timedelta(minutes=10)
+        surprise = rec.get("surprisePercent") or 0.0
+        q = (dt.date.fromisoformat(rec["date"]).month - 1) // 3 + 1
+        beat = surprise >= 0
+        title = (
+            f"{name} übertrifft Gewinnerwartungen im {q}. Quartal" if beat else f"{name} verfehlt Gewinnerwartungen im {q}. Quartal"
+        )
+        content = (
+            f"{name} meldete für das {q}. Quartal einen Gewinn je Aktie von {_de(rec['epsActual'], 2)} {cur}. "
+            f"Analysten hatten im Schnitt {_de(rec['epsEstimate'], 2)} {cur} erwartet, die Abweichung beträgt "
+            f"{_de(surprise, 1, sign=True)} %."
+        )
+        ident = hashlib.sha1(f"earn|{ticker}|{day}|{i}".encode()).hexdigest()[:16]
+        items = [
+            NewsItem(
+                id=ident,
+                date=when.isoformat().replace("+00:00", "Z"),
+                title=title,
+                content=content,
+                source="DEMO-WIRE",
+                symbols=[ticker],
+                tags=["EARNINGS", sector.upper()],
+                topic="earnings",
+                sentiment=Sentiment(polarity=round(max(-1.0, min(1.0, surprise / 10)), 3)),
+                urgent=abs(surprise) >= 5,
+            )
+        ]
+        r = _rng("guide", ticker, day.isoformat())
+        if r.random() < 0.5:
+            up = beat and r.random() < 0.7
+            items.append(
+                NewsItem(
+                    id=ident + "g",
+                    date=(when + dt.timedelta(minutes=12)).isoformat().replace("+00:00", "Z"),
+                    title=f"{name} {'hebt Jahresprognose an' if up else 'bestätigt Jahresprognose' if beat else 'senkt Jahresprognose'}",
+                    content=f"Mit den Quartalszahlen hat {name} den Ausblick für das Gesamtjahr {'angehoben' if up else 'bestätigt' if beat else 'gesenkt'}.",
+                    source="DEMO-WIRE",
+                    symbols=[ticker],
+                    tags=["EARNINGS", "GUIDANCE"],
+                    topic="earnings",
+                    sentiment=Sentiment(polarity=0.5 if up else 0.1 if beat else -0.5),
+                )
+            )
+        return items
+
+    def _company_story(self, c: tuple, when: dt.datetime, rng: random.Random, i: int, weekend: bool = False) -> NewsItem:
+        code, name, exch, sector, industry, _ = c
+        ticker = f"{code}.{exch}"
+        cur = D.EXCHANGE_INFO[exch][0]
+        if weekend:
+            kind = rng.choice(["product", "order", "cfo"])
+        else:
+            kind = rng.choices(
+                ["up", "down", "mna", "buyback", "order", "cfo", "outage", "jobs", "product"],
+                weights=[7, 5, 2, 4, 5, 3, 2, 2, 5],
+            )[0]
+        month = when.date().toordinal() // 30
+        if kind == "mna" and _rng("mna-slot", ticker, month).random() > 0.25:
+            kind = "product"  # höchstens eine Übernahme je Unternehmen und Monat
         pct_num = round(abs(rng.gauss(6, 4)) + 1, 1)
         amount_num = round(rng.uniform(0.5, 12), 1)
         pct_val = _de(pct_num, 1)
         amount = _de(amount_num, 1)
-        target = rng.choice(D.ACQUISITION_TARGETS)
+        tr = _rng("target", ticker, month)
+        target = f"{tr.choice(D.TARGET_PREFIX)} {tr.choice(D.TARGET_SUFFIX)}"
         templates: dict[str, tuple[str, str, str, float]] = {
             "earn_pos": ("earnings", f"{name} übertrifft Gewinnerwartungen deutlich",
                          f"{name} hat im abgelaufenen Quartal einen Gewinn je Aktie gemeldet, der {pct_val} % über der Konsensschätzung lag. Der Umsatz wuchs vor allem im Kerngeschäft {industry}. Das Management bestätigte den Ausblick.", 0.6),
@@ -920,7 +1146,7 @@ class DemoProvider:
         }
         topic, title, content, polarity = templates[kind]
         polarity = max(-1.0, min(1.0, polarity + rng.gauss(0, 0.15)))
-        urgent = kind in ("earn_pos", "earn_neg", "mna") and rng.random() < 0.5
+        urgent = kind == "mna" and rng.random() < 0.5
         ident = hashlib.sha1(f"{ticker}|{when.isoformat()}|{i}".encode()).hexdigest()[:16]
         return NewsItem(
             id=ident,
@@ -940,16 +1166,15 @@ class DemoProvider:
         out: list[NewsItem] = []
         if day.weekday() >= 5:
             return out
-        days = self._daily("GSPC.INDX")["days"]
-        if day not in days:
-            return out
-        i = days.index(day)
-        for ticker, label, close_min in (("GDAXI.INDX", "DAX", 16 * 60 + 35), ("GSPC.INDX", "S&P 500", 21 * 60 + 5)):
+        for ticker, label in (("GDAXI.INDX", "DAX"), ("GSPC.INDX", "S&P 500")):
             s = self._daily(ticker)
+            if day not in s["days"]:
+                continue  # Feiertag an diesem Handelsplatz
+            i = s["days"].index(day)
             if i < 1:
                 continue
             chg = pct(s["c"][i], s["c"][i - 1]) or 0.0
-            when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=close_min)
+            when = self._session_bounds(ticker, day)[1] + dt.timedelta(minutes=5)
             direction = "fester" if chg > 0.15 else "schwächer" if chg < -0.15 else "kaum verändert"
             title = f"Märkte: {label} schließt {direction} ({_de(chg, 2, sign=True)} %)"
             out.append(
@@ -969,10 +1194,14 @@ class DemoProvider:
         for ev in self._calendar_day(day):
             if ev.importance < 3 or ev.actual is None:
                 continue
-            unit = ev.unit or ""
+            unit = f" {ev.unit}" if ev.unit else ""
+            digits = max(_decimals(v) for v in (ev.actual, ev.estimate, ev.previous) if v is not None)
+
             def f(x: Optional[float]) -> str:
-                return "–" if x is None else f"{_de(x, 2 if abs(x) < 1 else 1)}{unit}"
-            surprise = "über" if (ev.surprise or 0) > 0 else "unter" if (ev.surprise or 0) < 0 else "wie"
+                return "–" if x is None else f"{_de(x, digits)}{unit}"
+
+            diff = round(ev.actual - (ev.estimate if ev.estimate is not None else ev.actual), digits)
+            surprise = "über" if diff > 0 else "unter" if diff < 0 else "wie"
             country = {"US": "USA", "DE": "Deutschland", "EU": "Eurozone", "GB": "Großbritannien", "JP": "Japan", "CN": "China"}.get(ev.country, ev.country)
             out.append(
                 NewsItem(
@@ -1086,24 +1315,49 @@ class DemoProvider:
             return d.month in (1, 4, 7, 10) and DemoProvider._matches(("dom", rule[1]), d)
         return False
 
-    def _event_value(self, country: str, name: str, base: float, spread: float, d: dt.date) -> tuple[float, float, float]:
-        """(Ist, Prognose, Vorwert) als glatte Zufallsreihe je Monat."""
-        def level(year: int, month: int) -> float:
-            if spread == 0:  # Leitzins: aus der Zinskurve ableiten
-                cc = {"US": "US", "EU": "DE", "GB": "UK", "JP": "JP"}[country]
-                short, _ = _interp(D.CURVE_KNOTS[cc], dt.date(year, month, 15))
-                return round(max(short, 0.0) * 4) / 4 if country != "JP" else round(max(short, 0) * 20) / 20
-            idx = year * 12 + month
-            r1 = _rng("ev", country, name, idx).gauss(0, 1)
-            r2 = _rng("ev", country, name, idx - 1).gauss(0, 1)
+    _MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+    # Umfragen und Schnellschätzungen beziehen sich auf den laufenden Monat
+    _CURRENT_MONTH = ("Flash", "Prel", "ZEW", "Ifo", "Confidence", "Sentiment", "GfK")
+
+    def _event_period(self, name: str, rule: tuple, d: dt.date) -> tuple[str, int, Optional[str]]:
+        """(Frequenz, Periodenindex, Bezeichnung) einer Veröffentlichung."""
+        kind = rule[0]
+        if kind == "weekday":  # Wochenwerte: Woche bis zum vorangegangenen Samstag
+            ref = d - dt.timedelta(days=(d.weekday() - 5) % 7 or 7)
+            return "w", ref.toordinal() // 7, f"Woche bis {ref.day:02d}.{ref.month:02d}."
+        if kind == "q":  # Quartalszahl für das abgelaufene Quartal
+            q = (d.month - 1) // 3
+            y = d.year if q else d.year - 1
+            q = q or 4
+            return "q", y * 4 + q, f"Q{q} {y}"
+        if kind == "cb":
+            return "cb", d.toordinal(), None
+        current = any(w in name for w in self._CURRENT_MONTH) and d.day >= 15
+        y, m = (d.year, d.month) if current else ((d.year, d.month - 1) if d.month > 1 else (d.year - 1, 12))
+        return "m", y * 12 + m, f"{self._MONTHS[m - 1]} {y}"
+
+    def _event_value(
+        self, country: str, name: str, base: float, spread: float, freq: str, idx: int, d: dt.date
+    ) -> tuple[float, float, float]:
+        """(Ist, Prognose, Vorwert). Der Vorwert ist der Ist-Wert der Vorperiode."""
+
+        def rate(day: dt.date) -> float:  # Leitzins aus der Zinskurve
+            cc = {"US": "US", "EU": "DE", "GB": "UK", "JP": "JP"}[country]
+            short, _ = _interp(D.CURVE_KNOTS[cc], day)
+            step = 20 if country == "JP" else 4
+            return round(max(short, 0.0) * step) / step
+
+        def level(i: int) -> float:
+            r1 = _rng("ev", country, name, freq, i).gauss(0, 1)
+            r2 = _rng("ev", country, name, freq, i - 1).gauss(0, 1)
             return base + spread * (0.7 * r1 + 0.5 * r2)
 
-        actual = level(d.year, d.month)
-        pm = d.month - 1 or 12
-        py = d.year if d.month > 1 else d.year - 1
-        previous = level(py, pm)
-        est_noise = _rng("est", country, name, d.isoformat()).gauss(0, spread * 0.35)
-        estimate = actual - est_noise if spread else actual
+        if freq == "cb":
+            actual, previous = rate(d), rate(d - dt.timedelta(days=42))
+            estimate = actual
+        else:
+            actual, previous = level(idx), level(idx - 1)
+            estimate = actual - _rng("est", country, name, freq, idx).gauss(0, spread * 0.35)
         digits = 0 if abs(base) >= 50 and spread >= 1 else 1 if abs(base) >= 5 else 2
         return round(actual, digits), round(estimate, digits), round(previous, digits)
 
@@ -1115,9 +1369,9 @@ class DemoProvider:
                 continue
             hh, mm = (int(x) for x in time.split(":"))
             when = dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=UTC)
-            actual, estimate, previous = self._event_value(country, name, base, spread, d)
+            freq, idx, period = self._event_period(name, rule, d)
+            actual, estimate, previous = self._event_value(country, name, base, spread, freq, idx, d)
             released = when <= now
-            period = (d.replace(day=1) - dt.timedelta(days=1)).strftime("%b %Y")
             ident = hashlib.sha1(f"{country}|{name}|{d}".encode()).hexdigest()[:16]
             out.append(
                 EconEvent(

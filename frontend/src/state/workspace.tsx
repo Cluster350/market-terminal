@@ -1,38 +1,80 @@
-// Arbeitsbereich: Seiten, Panels, aktives Wertpapier, Watchlist. Wird lokal gespeichert.
+// Arbeitsbereich: Seiten, Layouts, Panels, aktives Wertpapier, Watchlist.
+//
+// Mehrere Monitore: Jede Seite oder jede Funktion lässt sich in einem eigenen Browserfenster
+// öffnen (#makro, #solo-GP …). Jedes Fenster speichert sein Layout für sich; Wertpapier,
+// Watchlist und Verlauf werden über localStorage zwischen allen Fenstern geteilt
+// ("storage"-Ereignis). Ein Fenster kann sich vom Wertpapier-Link lösen.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
 import { FN, type FnCode } from "../lib/commands";
 
 export type PageId = "equity" | "macro" | "screener" | "news";
-export type Layout = "quad" | "wide" | "split" | "single";
+export type Layout = "single" | "split" | "rows" | "wide" | "quad";
+
+export const LAYOUT_SLOTS: Record<Layout, number> = { single: 1, split: 2, rows: 2, wide: 3, quad: 4 };
+export const LAYOUTS: { value: Layout; label: string; title: string }[] = [
+  { value: "single", label: "1", title: "Ein Panel" },
+  { value: "split", label: "2│", title: "Zwei Panels nebeneinander" },
+  { value: "rows", label: "2─", title: "Zwei Panels untereinander" },
+  { value: "wide", label: "3", title: "Ein breites Panel oben, zwei unten" },
+  { value: "quad", label: "4", title: "Vier Panels" },
+];
 
 export interface PageDef {
   id: PageId;
   label: string;
   key: string;
+  hash: string;
   layout: Layout;
   panels: FnCode[];
+  /** Reihenfolge, in der weitere Panels aufgefüllt werden, wenn das Layout wächst */
+  pool: FnCode[];
 }
 
 export const PAGES: PageDef[] = [
-  { id: "equity", label: "AKTIE", key: "1", layout: "quad", panels: ["GP", "DES", "FA", "CN"] },
-  { id: "macro", label: "MAKRO", key: "2", layout: "quad", panels: ["WEI", "GC", "ECO", "FX"] },
-  { id: "screener", label: "SCREENER", key: "3", layout: "wide", panels: ["EQS", "IMAP", "MOST"] },
-  { id: "news", label: "NEWS", key: "4", layout: "split", panels: ["TOP", "W"] },
+  { id: "equity", label: "AKTIE", key: "1", hash: "aktie", layout: "quad", panels: ["GP", "DES", "FA", "CN"], pool: ["GP", "DES", "FA", "CN", "RV", "ERN", "HP", "ANR", "DVD"] },
+  { id: "macro", label: "MAKRO", key: "2", hash: "makro", layout: "quad", panels: ["WEI", "GC", "ECO", "FX"], pool: ["WEI", "GC", "ECO", "FX", "SPRD", "CMDT", "ECST"] },
+  { id: "screener", label: "SCREENER", key: "3", hash: "screener", layout: "wide", panels: ["EQS", "IMAP", "MOST"], pool: ["EQS", "IMAP", "MOST", "W"] },
+  { id: "news", label: "NEWS", key: "4", hash: "news", layout: "split", panels: ["TOP", "W"], pool: ["TOP", "W", "EVTS", "ECO"] },
 ];
+
+const PAGE_BY_ID = Object.fromEntries(PAGES.map((p) => [p.id, p])) as Record<PageId, PageDef>;
 
 const PAGE_DEFAULTS = Object.fromEntries(PAGES.map((p) => [p.id, { layout: p.layout, panels: [...p.panels] }])) as Record<
   PageId,
   { layout: Layout; panels: FnCode[] }
 >;
 
+/** Seite, auf die eine Funktion fachlich gehört (für Einzelfenster). */
+export function pageForFn(fn: FnCode): PageId {
+  switch (FN[fn].group) {
+    case "Aktie":
+      return "equity";
+    case "Makro":
+      return "macro";
+    case "Screener":
+      return "screener";
+    default:
+      return "news";
+  }
+}
+
 export interface WorkspaceState {
   version: 1;
+  window: string;
   mode: string | null;
   page: PageId;
   pages: Record<PageId, { layout: Layout; panels: FnCode[] }>;
   active: Record<PageId, number>;
   maximized: number | null;
+  linked: boolean;
+  security: string | null;
+  watchlist: string[];
+  recent: string[];
+}
+
+interface Shared {
+  mode: string | null;
   security: string | null;
   watchlist: string[];
   recent: string[];
@@ -44,53 +86,122 @@ type Action =
   | { type: "fn"; fn: FnCode; panel?: number }
   | { type: "active"; index: number }
   | { type: "maximize"; index: number | null }
+  | { type: "layout"; layout: Layout }
   | { type: "resetPage" }
+  | { type: "linked"; linked: boolean }
+  | { type: "shared"; shared: Shared }
   | { type: "watchAdd"; ticker: string }
   | { type: "watchRemove"; ticker: string }
   | { type: "watchMove"; ticker: string; delta: number }
   | { type: "init"; mode: string; watchlist: string[] };
 
-const STORAGE_KEY = "mt.workspace.v1";
+const LEGACY_KEY = "mt.workspace.v1";
+const SHARED_KEY = "mt.shared.v1";
+const winKey = (w: string) => `mt.win.v1.${w}`;
 
 const isFn = (f: unknown): f is FnCode => typeof f === "string" && Object.prototype.hasOwnProperty.call(FN, f);
+const isLayout = (l: unknown): l is Layout => typeof l === "string" && Object.prototype.hasOwnProperty.call(LAYOUT_SLOTS, l);
+const strings = (x: unknown, max: number): string[] =>
+  Array.isArray(x) ? x.filter((t): t is string => typeof t === "string").slice(0, max) : [];
 
-export function initial(): WorkspaceState {
+/** Fenster-Kennung aus dem URL-Fragment: "" → main, "#makro" → makro, "#solo-GP" → solo-GP. */
+export function windowFromHash(hash: string): { key: string; page?: PageId; solo?: FnCode } {
+  const h = hash.replace(/^#/, "").trim();
+  if (!h) return { key: "main" };
+  const page = PAGES.find((p) => p.hash === h);
+  if (page) return { key: h, page: page.id };
+  const m = /^solo-([A-Z]{1,5})$/.exec(h);
+  if (m && isFn(m[1])) return { key: h, solo: m[1] };
+  return { key: "main" };
+}
+
+function readJson(key: string): unknown {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseShared(raw: unknown): Shared | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  return {
+    mode: typeof o.mode === "string" ? o.mode : null,
+    security: typeof o.security === "string" ? o.security : null,
+    watchlist: strings(o.watchlist, 60),
+    recent: strings(o.recent, 12),
+  };
+}
+
+export function initial(hash = typeof location !== "undefined" ? location.hash : ""): WorkspaceState {
+  const win = windowFromHash(hash);
   const base: WorkspaceState = {
     version: 1,
+    window: win.key,
     mode: null,
-    page: "equity",
+    page: win.page ?? (win.solo ? pageForFn(win.solo) : "equity"),
     pages: structuredClone(PAGE_DEFAULTS),
     active: { equity: 0, macro: 0, screener: 0, news: 0 },
     maximized: null,
+    linked: true,
     security: null,
     watchlist: [],
     recent: [],
   };
+  if (win.solo) base.pages[base.page] = { layout: "single", panels: [win.solo] };
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return base;
-    const saved = JSON.parse(raw) as Partial<WorkspaceState>;
-    if (saved.version !== 1) return base;
-    const pages = { ...base.pages };
-    for (const p of PAGES) {
-      const sp = saved.pages?.[p.id];
-      // hasOwnProperty statt "in": "toString" o. Ä. aus manipuliertem Speicher ließe das Panel abstürzen
-      if (sp && Array.isArray(sp.panels) && sp.panels.every(isFn) && sp.panels.length === pages[p.id].panels.length) {
-        pages[p.id] = { layout: pages[p.id].layout, panels: sp.panels };
+    const legacy = win.key === "main" ? readJson(LEGACY_KEY) : null;
+    const saved = (readJson(winKey(win.key)) ?? legacy) as Partial<WorkspaceState> | null;
+    const shared = parseShared(readJson(SHARED_KEY)) ?? parseShared(legacy);
+    let state = base;
+    if (saved && saved.version === 1) {
+      const pages = { ...base.pages };
+      for (const p of PAGES) {
+        const sp = saved.pages?.[p.id] as { layout?: unknown; panels?: unknown } | undefined;
+        const layout = isLayout(sp?.layout) ? sp!.layout : pages[p.id].layout;
+        // hasOwnProperty statt "in": "toString" o. Ä. aus manipuliertem Speicher ließe das Panel abstürzen
+        if (sp && Array.isArray(sp.panels) && sp.panels.every(isFn) && sp.panels.length === LAYOUT_SLOTS[layout]) {
+          pages[p.id] = { layout, panels: sp.panels as FnCode[] };
+        }
       }
+      state = {
+        ...state,
+        mode: typeof saved.mode === "string" ? saved.mode : null,
+        page: win.page ?? (PAGES.some((p) => p.id === saved.page) ? (saved.page as PageId) : state.page),
+        pages: win.solo && !readJson(winKey(win.key)) ? state.pages : pages,
+        linked: saved.linked !== false,
+        security: typeof saved.security === "string" ? saved.security : null,
+        watchlist: strings(saved.watchlist, 60),
+        recent: strings(saved.recent, 12),
+      };
     }
-    return {
-      ...base,
-      mode: typeof saved.mode === "string" ? saved.mode : null,
-      page: PAGES.some((p) => p.id === saved.page) ? (saved.page as PageId) : "equity",
-      pages,
-      security: typeof saved.security === "string" ? saved.security : null,
-      watchlist: Array.isArray(saved.watchlist) ? saved.watchlist.filter((t) => typeof t === "string").slice(0, 60) : [],
-      recent: Array.isArray(saved.recent) ? saved.recent.filter((t) => typeof t === "string").slice(0, 12) : [],
-    };
+    if (shared && shared.mode) {
+      state = {
+        ...state,
+        mode: shared.mode,
+        watchlist: shared.watchlist,
+        recent: shared.recent,
+        security: state.linked || !state.security ? shared.security ?? state.security : state.security,
+      };
+    }
+    return state;
   } catch {
     return base;
   }
+}
+
+function resize(panels: FnCode[], layout: Layout, page: PageId): FnCode[] {
+  const slots = LAYOUT_SLOTS[layout];
+  const next = panels.slice(0, slots);
+  for (const f of PAGE_BY_ID[page].pool) {
+    if (next.length >= slots) break;
+    if (!next.includes(f)) next.push(f);
+  }
+  while (next.length < slots) next.push("HELP");
+  return next;
 }
 
 export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
@@ -101,6 +212,14 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       if (s.mode === a.mode) return s.security ? s : { ...s, security: a.watchlist[0] ?? null };
       // Neuer Datenmodus (z. B. Demo -> EODHD): Ticker des alten Modus verwerfen
       return { ...s, mode: a.mode, security: a.watchlist[0] ?? null, watchlist: a.watchlist, recent: [] };
+    }
+    case "shared": {
+      const sh = a.shared;
+      if (!sh.mode) return s;
+      if (sh.mode !== s.mode) return { ...s, mode: sh.mode, security: sh.security, watchlist: sh.watchlist, recent: sh.recent };
+      const security = s.linked && sh.security ? sh.security : s.security;
+      if (security === s.security && sh.watchlist.join() === s.watchlist.join() && sh.recent.join() === s.recent.join()) return s;
+      return { ...s, security, watchlist: sh.watchlist, recent: sh.recent };
     }
     case "page":
       return { ...s, page: a.page, maximized: null };
@@ -116,12 +235,33 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       panels[idx] = a.fn;
       return { ...s, pages: { ...s.pages, [s.page]: { ...page, panels } }, active: { ...s.active, [s.page]: idx } };
     }
-    case "active":
+    case "active": {
+      const n = s.pages[s.page].panels.length;
+      if (a.index < 0 || a.index >= n) return s;
       return { ...s, active: { ...s.active, [s.page]: a.index } };
+    }
     case "maximize":
       return { ...s, maximized: a.index };
+    case "layout": {
+      const page = s.pages[s.page];
+      if (page.layout === a.layout) return s;
+      const panels = resize(page.panels, a.layout, s.page);
+      return {
+        ...s,
+        pages: { ...s.pages, [s.page]: { layout: a.layout, panels } },
+        active: { ...s.active, [s.page]: Math.min(s.active[s.page], panels.length - 1) },
+        maximized: null,
+      };
+    }
     case "resetPage":
-      return { ...s, pages: { ...s.pages, [s.page]: structuredClone(PAGE_DEFAULTS[s.page]) }, maximized: null };
+      return {
+        ...s,
+        pages: { ...s.pages, [s.page]: structuredClone(PAGE_DEFAULTS[s.page]) },
+        active: { ...s.active, [s.page]: 0 },
+        maximized: null,
+      };
+    case "linked":
+      return { ...s, linked: a.linked };
     case "watchAdd":
       if (s.watchlist.includes(a.ticker)) return s;
       return { ...s, watchlist: [...s.watchlist, a.ticker].slice(0, 60) };
@@ -138,14 +278,29 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
   }
 }
 
+/** Öffnet eine Seite oder eine einzelne Funktion in einem neuen Fenster (für weitere Monitore). */
+export function openWindow(target: { page?: PageId; fn?: FnCode }): boolean {
+  const hash = target.fn ? `solo-${target.fn}` : PAGE_BY_ID[target.page ?? "equity"].hash;
+  const url = `${location.href.split("#")[0]}#${hash}`;
+  try {
+    const w = window.open(url, `mt-${hash}-${Date.now()}`, "popup=yes,width=1440,height=900");
+    return !!w;
+  } catch {
+    return false;
+  }
+}
+
 interface WorkspaceApi {
   state: WorkspaceState;
   setPage: (p: PageId) => void;
   setSecurity: (t: string, opts?: { open?: FnCode }) => void;
   runFn: (fn: FnCode, ticker?: string | null) => void;
+  setPanelFn: (panel: number, fn: FnCode) => void;
   setActive: (i: number) => void;
   maximize: (i: number | null) => void;
+  setLayout: (l: Layout) => void;
   resetPage: () => void;
+  setLinked: (linked: boolean) => void;
   watchAdd: (t: string) => void;
   watchRemove: (t: string) => void;
   watchMove: (t: string, delta: number) => void;
@@ -155,15 +310,54 @@ interface WorkspaceApi {
 const Ctx = createContext<WorkspaceApi | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, initial);
+  const [state, dispatch] = useReducer(reducer, undefined, () => initial());
 
+  // Fensterlayout speichern
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(winKey(state.window), JSON.stringify(state));
     } catch {
       /* Speicher nicht verfügbar: Arbeitsbereich gilt nur für diese Sitzung */
     }
   }, [state]);
+
+  // Geteilten Teil für andere Fenster veröffentlichen
+  useEffect(() => {
+    if (!state.mode) return;
+    try {
+      const prev = parseShared(readJson(SHARED_KEY));
+      const shared: Shared = {
+        mode: state.mode,
+        security: state.linked ? state.security : prev?.mode === state.mode ? prev.security : state.security,
+        watchlist: state.watchlist,
+        recent: state.recent,
+      };
+      localStorage.setItem(SHARED_KEY, JSON.stringify(shared));
+    } catch {
+      /* ohne Speicher keine Fenster-Synchronisierung */
+    }
+  }, [state.mode, state.security, state.linked, state.watchlist, state.recent]);
+
+  // Änderungen aus anderen Fenstern übernehmen
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== SHARED_KEY || !e.newValue) return;
+      try {
+        const shared = parseShared(JSON.parse(e.newValue));
+        if (shared) dispatch({ type: "shared", shared });
+      } catch {
+        /* fremder Inhalt */
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(() => {
+    const page = PAGE_BY_ID[state.page];
+    const solo = state.window.startsWith("solo-") ? state.window.slice(5) : null;
+    document.title = solo ? `MT · ${solo}` : state.window === "main" ? "Market Terminal" : `MT · ${page.label}`;
+  }, [state.page, state.window]);
 
   const setSecurity = useCallback(
     (t: string, opts?: { open?: FnCode }) => {
@@ -172,11 +366,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (opts?.open) {
         if (!pageHasTickerPanel && FN[opts.open].needsTicker) dispatch({ type: "page", page: "equity" });
         dispatch({ type: "fn", fn: opts.open });
-      } else if (!pageHasTickerPanel) {
+      } else if (!pageHasTickerPanel && state.window === "main") {
+        // Im Hauptfenster zur Aktienseite wechseln; Zusatzfenster bleiben, wo sie sind,
+        // weil die verknüpften Fenster das Wertpapier ohnehin anzeigen
         dispatch({ type: "page", page: "equity" });
       }
     },
-    [state.page, state.pages],
+    [state.page, state.pages, state.window],
   );
 
   const api = useMemo<WorkspaceApi>(
@@ -188,9 +384,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (ticker) dispatch({ type: "security", ticker });
         dispatch({ type: "fn", fn });
       },
+      setPanelFn: (panel, fn) => dispatch({ type: "fn", fn, panel }),
       setActive: (index) => dispatch({ type: "active", index }),
       maximize: (index) => dispatch({ type: "maximize", index }),
+      setLayout: (layout) => dispatch({ type: "layout", layout }),
       resetPage: () => dispatch({ type: "resetPage" }),
+      setLinked: (linked) => dispatch({ type: "linked", linked }),
       watchAdd: (ticker) => dispatch({ type: "watchAdd", ticker }),
       watchRemove: (ticker) => dispatch({ type: "watchRemove", ticker }),
       watchMove: (ticker, delta) => dispatch({ type: "watchMove", ticker, delta }),

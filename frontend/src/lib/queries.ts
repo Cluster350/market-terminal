@@ -89,3 +89,14 @@ export const useHeatmap = (exchange?: string) =>
 
 export const useSearch = (q: string) =>
   useQuery({ queryKey: ["search", q], queryFn: () => api.search(q), enabled: q.trim().length >= 1, staleTime: 300_000 });
+
+export const useEarningsCalendar = (from: string, to: string) =>
+  useQuery({
+    queryKey: ["evts", from, to],
+    queryFn: () => api.earningsCalendar(from, to),
+    refetchInterval: poll(300_000),
+    placeholderData: keepPreviousData,
+  });
+
+export const usePeers = (t: string | null, enabled = true) =>
+  useQuery({ queryKey: ["peers", t], queryFn: () => api.peers(t!), enabled: !!t && enabled, staleTime: 300_000 });

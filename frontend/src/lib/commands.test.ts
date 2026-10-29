@@ -70,3 +70,29 @@ describe("parseCommand", () => {
     expect(parseCommand("a b c d")?.kind).toBe("error");
   });
 });
+
+describe("Gelbe Bloomberg-Tasten und Funktionsprüfung", () => {
+  it("löst Index-, Devisen-, Anleihen- und Rohstoffkürzel auf", () => {
+    expect(normalizeTicker("DAX INDEX")).toBe("GDAXI.INDX");
+    expect(normalizeTicker("spx index")).toBe("GSPC.INDX");
+    expect(normalizeTicker("GDAXI Index")).toBe("GDAXI.INDX");
+    expect(normalizeTicker("EURUSD CURNCY")).toBe("EURUSD.FOREX");
+    expect(normalizeTicker("BTC-USD Curncy")).toBe("BTC-USD.CC");
+    expect(normalizeTicker("US10Y GOVT")).toBe("US10Y.GBOND");
+    expect(normalizeTicker("GOLD COMDTY")).toBe("GOLD.COMM");
+    expect(normalizeTicker("SAP GR EQUITY")).toBe("SAP.XETRA");
+  });
+
+  it("meldet unbekannte Funktionen statt sie zu ignorieren", () => {
+    const c = parseCommand("NWND US GPP");
+    expect(c?.kind).toBe("error");
+    expect(parseCommand("ELBT GR")).toEqual({ kind: "ticker", ticker: "ELBT.XETRA" });
+    expect(parseCommand("DAX INDEX GP")).toEqual({ kind: "fn", fn: "GP", ticker: "GDAXI.INDX" });
+    expect(parseCommand("ELBT GR RV")).toEqual({ kind: "fn", fn: "RV", ticker: "ELBT.XETRA" });
+    expect(parseCommand("EVTS")).toEqual({ kind: "fn", fn: "EVTS", ticker: null });
+  });
+
+  it("Prototyp-Namen sind keine Funktionen", () => {
+    expect(parseCommand("toString")).toEqual({ kind: "ticker", ticker: "TOSTRING.US" });
+  });
+});

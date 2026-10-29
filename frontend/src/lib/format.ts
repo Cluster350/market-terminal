@@ -32,11 +32,12 @@ export function fmt(x: number | null | undefined, digits = 2): string {
   return isNum(x) ? nf(digits, digits).format(z(x, digits)) : DASH;
 }
 
-/** Kurs: Nachkommastellen nach Größenordnung (Devisen 4, große Indizes 2). */
-export function fmtPrice(x: number | null | undefined): string {
+/** Kurs: zwei Nachkommastellen, unter 1 vier. Devisenpaare über `ticker` mit Devisenschreibweise. */
+export function fmtPrice(x: number | null | undefined, ticker?: string | null): string {
   if (!isNum(x)) return DASH;
   const a = Math.abs(x);
-  const d = a >= 1000 ? 2 : a >= 10 ? 2 : a >= 1 ? 4 : 4;
+  let d = a >= 1 ? 2 : 4;
+  if (ticker && ticker.endsWith(".FOREX")) d = a >= 20 ? 2 : 4;
   return nf(d, d).format(z(x, d));
 }
 
@@ -137,6 +138,19 @@ export function shiftMonths(iso: string, months: number): string {
   return new Date(Date.UTC(y, target, Math.min(d, lastDay))).toISOString().slice(0, 10);
 }
 
+/** Einheitliche Zeitspalte: heute "14:32", sonst "28.10.". */
+export function fmtStamp(x: string | null | undefined, now = Date.now()): string {
+  if (!x) return DASH;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(x)) {
+    const today = new Date(now);
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return x === iso ? "heute" : shortDateFmt.format(toDate(x));
+  }
+  const d = toDate(x);
+  if (Number.isNaN(d.getTime())) return DASH;
+  return d.toDateString() === new Date(now).toDateString() ? timeFmt.format(d) : shortDateFmt.format(d);
+}
+
 /** "vor 5 Min." / "14:32" / "28.10." je nach Alter. */
 export function fmtAge(iso: string | null | undefined, now = Date.now()): string {
   if (!iso) return DASH;
@@ -155,10 +169,36 @@ export function isToday(iso: string, now = Date.now()): boolean {
   return new Date(iso).toDateString() === new Date(now).toDateString();
 }
 
-/** Ticker ohne Börsensuffix für kompakte Anzeige: NWND.US -> NWND US */
+// EODHD-Börse -> Bloomberg-Schreibweise für die Anzeige (Eingabe akzeptiert beides)
+const BBG_DISPLAY: Record<string, string> = {
+  US: "US", XETRA: "GR", F: "GF", LSE: "LN", PA: "FP", AS: "NA", BR: "BB", SW: "SW", MI: "IM", MC: "SM",
+  TSE: "JT", HK: "HK", TO: "CN", AU: "AU", ST: "SS", CO: "DC", OL: "NO", HE: "FH",
+  INDX: "Index", FOREX: "Curncy", CC: "Curncy", GBOND: "Govt", COMM: "Comdty",
+};
+
+/** Ticker in Terminal-Schreibweise: NWND.US -> "NWND US", SAP.XETRA -> "SAP GR", GDAXI.INDX -> "GDAXI Index". */
 export function displayTicker(t: string): string {
   const i = t.lastIndexOf(".");
-  return i > 0 ? `${t.slice(0, i)} ${t.slice(i + 1)}` : t;
+  if (i <= 0) return t;
+  const exch = t.slice(i + 1);
+  return `${t.slice(0, i)} ${BBG_DISPLAY[exch] ?? exch}`;
+}
+
+/** Aktie (mit Fundamentaldaten) oder anderes Instrument (Index, Devise, Anleihe, Rohstoff)? */
+export function isEquity(t: string | null | undefined): boolean {
+  return !!t && !/\.(INDX|FOREX|CC|GBOND|COMM)$/.test(t);
+}
+
+const SECTOR_DE: Record<string, string> = {
+  Technology: "Technologie", Healthcare: "Gesundheit", "Financial Services": "Finanzen",
+  "Consumer Cyclical": "Zykl. Konsum", "Consumer Defensive": "Basiskonsum", Energy: "Energie",
+  Utilities: "Versorger", Industrials: "Industrie", "Communication Services": "Kommunikation",
+  "Basic Materials": "Grundstoffe", "Real Estate": "Immobilien",
+};
+
+/** Sektornamen der Datenquelle (englisch) für die Anzeige übersetzen. */
+export function sectorDe(s: string | null | undefined): string {
+  return s ? SECTOR_DE[s] ?? s : DASH;
 }
 
 /**

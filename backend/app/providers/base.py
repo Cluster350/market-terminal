@@ -8,6 +8,7 @@ from typing import Any, Optional, Protocol
 
 from ..models import (
     Company,
+    EarningsEvent,
     CountryValue,
     Dividends,
     Earnings,
@@ -69,6 +70,10 @@ class Provider(Protocol):
         self, filters: list[ScreenFilter], sort: str, desc: bool, max_rows: int
     ) -> tuple[list[ScreenRow], list[ScreenFilter], list[str]]:
         """Gibt (Zeilen, nicht serverseitig angewandte Filter, Hinweise) zurück."""
+        ...
+    async def earnings_calendar(self, start: dt.date, end: dt.date) -> list[EarningsEvent]: ...
+    async def resolve(self, ticker: str) -> Optional[SearchHit]:
+        """Kanonischer Eintrag zum Ticker oder None, wenn unbekannt."""
         ...
     async def status(self) -> dict[str, Any]: ...
     async def close(self) -> None: ...
@@ -132,7 +137,10 @@ FX = [
     Instrument("BTC-USD.CC", "Bitcoin/USD"),
 ]
 
-CURVE_TENORS = [("3M", 0.25), ("2Y", 2.0), ("5Y", 5.0), ("10Y", 10.0), ("30Y", 30.0)]
+CURVE_TENORS = [
+    ("3M", 0.25), ("6M", 0.5), ("1Y", 1.0), ("2Y", 2.0), ("3Y", 3.0), ("5Y", 5.0),
+    ("7Y", 7.0), ("10Y", 10.0), ("20Y", 20.0), ("30Y", 30.0),
+]
 
 CURVE_COUNTRIES = {
     "US": "USA",

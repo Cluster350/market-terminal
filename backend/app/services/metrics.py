@@ -99,3 +99,70 @@ def dist_from_high(closes: Sequence[Optional[float]], highs: Sequence[Optional[f
 
 def last_n(values: Sequence[Optional[float]], n: int) -> list[float]:
     return [round(v, 6) for v in _clean(values)[-n:]]
+
+
+# --- Kalenderbasierte Fenster ------------------------------------------------------
+# Börsen haben je nach Land unterschiedlich viele Handelstage (Feiertage). Perioden wie
+# 1M, 12M oder 52 Wochen werden deshalb über das Datum bestimmt, nicht über eine feste
+# Anzahl von Balken – so stimmen Chart, Beschreibung und Screener überein.
+
+
+def shift_date(d: dt.date, months: int = 0, days: int = 0) -> dt.date:
+    """Datum um Monate (auf Monatsende begrenzt) und Tage zurückverschieben."""
+    if months:
+        y, m = divmod(d.year * 12 + (d.month - 1) - months, 12)
+        m += 1
+        last = (dt.date(y + (m == 12), m % 12 + 1, 1) - dt.timedelta(days=1)).day
+        d = dt.date(y, m, min(d.day, last))
+    return d - dt.timedelta(days=days)
+
+
+def _pairs(dates: Sequence[str], values: Sequence[Optional[float]]) -> list[tuple[str, float]]:
+    return [(d[:10], v) for d, v in zip(dates, values) if v is not None]
+
+
+def perf_since(
+    dates: Sequence[str], closes: Sequence[Optional[float]], *, months: int = 0, days: int = 0
+) -> Optional[float]:
+    """Veränderung gegenüber dem letzten Schlusskurs am oder vor (letzter Tag − Zeitraum)."""
+    pairs = _pairs(dates, closes)
+    if len(pairs) < 2:
+        return None
+    cutoff = shift_date(dt.date.fromisoformat(pairs[-1][0]), months, days).isoformat()
+    base: Optional[float] = None
+    for d, c in pairs:
+        if d > cutoff:
+            break
+        base = c
+    return pct(pairs[-1][1], base)
+
+
+def window_high_low(
+    dates: Sequence[str], highs: Sequence[Optional[float]], lows: Sequence[Optional[float]], days: int = 365
+) -> tuple[Optional[float], Optional[float]]:
+    """Hoch und Tief der letzten `days` Kalendertage (52 Wochen ≈ 365 Tage)."""
+    if not dates:
+        return None, None
+    start = (dt.date.fromisoformat(dates[-1][:10]) - dt.timedelta(days=days)).isoformat()
+    hs = [h for d, h in zip(dates, highs) if h is not None and d[:10] > start]
+    ls = [l for d, l in zip(dates, lows) if l is not None and d[:10] > start]
+    return (max(hs) if hs else None, min(ls) if ls else None)
+
+
+def dist_from_high_dated(
+    dates: Sequence[str], closes: Sequence[Optional[float]], highs: Sequence[Optional[float]]
+) -> Optional[float]:
+    vals = _clean(closes)
+    hi, _ = window_high_low(dates, highs, highs)
+    if not vals or hi is None:
+        return None
+    return pct(vals[-1], max(hi, vals[-1]))
+
+
+def annual_vol_dated(dates: Sequence[str], closes: Sequence[Optional[float]], days: int = 365) -> Optional[float]:
+    """Annualisierte Volatilität der Tagesrenditen im Kalenderfenster."""
+    if not dates:
+        return None
+    start = (dt.date.fromisoformat(dates[-1][:10]) - dt.timedelta(days=days)).isoformat()
+    window = [c for d, c in zip(dates, closes) if c is not None and d[:10] >= start]
+    return annual_vol(window, window=len(window))
