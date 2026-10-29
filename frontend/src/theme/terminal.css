@@ -264,6 +264,16 @@ a { color: var(--link); }
 .panel { container-type: inline-size; }
 @container (max-width: 680px) { .t .col-opt1 { display: none; } }
 @container (max-width: 540px) { .t .col-opt2 { display: none; } }
+/* GC: Kurve und Tabelle untereinander, in breiten Panels nebeneinander (alle Laufzeiten sichtbar) */
+.gc-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.gc-chart { flex: 1 1 48%; min-height: 140px; }
+.gc-table { overflow: auto; flex: 0 1 auto; max-height: 52%; }
+.gc-table .t td, .gc-table .t th { padding-top: 1px; padding-bottom: 1px; }
+@container (min-width: 860px) {
+  .gc-body { flex-direction: row; }
+  .gc-chart { flex: 1 1 auto; min-width: 0; min-height: 0; }
+  .gc-table { flex: 0 0 auto; max-height: none; max-width: 58%; border-left: 1px solid var(--rule); }
+}
 .panel-body.flush { overflow: hidden; display: flex; flex-direction: column; }
 
 .statusbar {

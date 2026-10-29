@@ -4,6 +4,7 @@ import { PanelGrid, StatusBar, TickerTape, TopBar } from "./shell/Shell";
 import { FOCUS_EVENT } from "./shell/CommandLine";
 import { LAYOUTS, PAGES, useWorkspace } from "./state/workspace";
 import { Boot, shouldBoot } from "./shell/Boot";
+import { isTextEntry } from "./lib/keys";
 
 export default function App() {
   const ws = useWorkspace();
@@ -19,7 +20,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      const typing = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
+      const typing = isTextEntry(target);
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
         const page = PAGES.find((p) => p.key === e.key || e.code === `Digit${p.key}`);
         if (page) {
@@ -47,14 +48,24 @@ export default function App() {
         }
       }
       if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+      // Auswahlfelder, Checkboxen usw. behalten nach einem Klick den Fokus. Getippte Befehle
+      // gehören trotzdem in die Befehlszeile – sonst springt die Tippsuche eines Auswahlfelds
+      // auf eine andere Funktion. Pfeiltasten bleiben beim Feld.
+      const widget = target !== document.body && target.tagName !== "BUTTON";
       if (e.key === "/") {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent(FOCUS_EVENT));
       } else if (e.key.length === 1 && /[A-Za-z0-9]/.test(e.key)) {
-        // Fokus noch während keydown setzen: der Browser schreibt das Zeichen dann selbst ins Feld
-        window.dispatchEvent(new CustomEvent(FOCUS_EVENT));
-      } else if (e.key === "Escape" && ws.state.maximized !== null) {
-        ws.maximize(null);
+        if (widget) {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent(FOCUS_EVENT, { detail: e.key }));
+        } else {
+          // Fokus noch während keydown setzen: der Browser schreibt das Zeichen dann selbst ins Feld
+          window.dispatchEvent(new CustomEvent(FOCUS_EVENT));
+        }
+      } else if (e.key === "Escape") {
+        if (widget) target.blur();
+        else if (ws.state.maximized !== null) ws.maximize(null);
       }
     };
     window.addEventListener("keydown", onKey);

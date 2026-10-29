@@ -195,9 +195,9 @@ export function GC(_: ScreenProps) {
       <div className="panel-body flush">
         <Q q={q}>
           {(curves) => (
-            <>
-              <div style={{ flex: "1 1 55%", minHeight: 150 }}>{option && <EChart option={option} />}</div>
-              <div style={{ overflow: "auto", flex: "0 1 auto", maxHeight: "45%" }}>
+            <div className="gc-body">
+              <div className="gc-chart">{option && <EChart option={option} />}</div>
+              <div className="gc-table">
                 <table className="t">
                   <thead>
                     <tr>
@@ -244,7 +244,7 @@ export function GC(_: ScreenProps) {
                   </tbody>
                 </table>
               </div>
-            </>
+            </div>
           )}
         </Q>
       </div>

@@ -13,11 +13,14 @@ import {
   fmtPct,
   fmtPerShare,
   fmtPrice,
+  perShareDigits,
   fmtRatio,
+  industryDe,
   isEquity,
   isLiveBar,
   isNum,
   safeUrl,
+  sectorDe,
   tone,
 } from "../lib/format";
 import { useCompany, useDividends, useEarnings, useFinancials, useHistory, useQuotes } from "../lib/queries";
@@ -91,7 +94,7 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
                 )}
               </div>
               <div className="small muted" style={{ padding: "0 10px" }}>
-                {c.sector || DASH} › {c.industry || DASH}
+                {sectorDe(c.sector)} › {industryDe(c.industry)}
               </div>
               <div style={{ padding: "0 10px" }}>
                 <RangeBar low={c.technicals.low52} high={c.technicals.high52} value={price} label="52-Wochen-Spanne" />
@@ -491,6 +494,8 @@ export function DVD({ ticker }: ScreenProps) {
           const byYear = new Map<string, number>();
           d.dividends.forEach((x) => isNum(x.value) && byYear.set(x.exDate.slice(0, 4), (byYear.get(x.exDate.slice(0, 4)) ?? 0) + x.value));
           const years = Array.from(byYear.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+          // Eine Stellenzahl für alle Beträge, damit die Spalte bündig bleibt (3,3570 neben 4,4171)
+          const digits = Math.max(2, ...d.dividends.map((x) => perShareDigits(x.value)));
           const perYear = d.dividends.filter((x) => x.exDate >= `${new Date().getFullYear() - 1}-01-01` && x.exDate < `${new Date().getFullYear()}-01-01`).length;
           return (
             <div style={{ padding: "6px 10px" }}>
@@ -498,7 +503,7 @@ export function DVD({ ticker }: ScreenProps) {
                 <Section title="Überblick">
                   <Kv
                     items={[
-                      ["Dividende (12 Monate)", fmtPerShare(d.ttm)],
+                      ["Dividende (12 Monate)", fmtPerShare(d.ttm, digits)],
                       ["Rendite (12 Monate)", fmtRatio(d.yieldTtm, 2)],
                       ["Letzter Ex-Tag", fmtDate(d.dividends[0]?.exDate)],
                       ["Zahlungen pro Jahr", perYear ? String(perYear) : DASH],
@@ -512,11 +517,12 @@ export function DVD({ ticker }: ScreenProps) {
               {years.length > 1 && (
                 <>
                   <div className="section-title">Dividende je Kalenderjahr</div>
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 90, padding: "6px 0" }}>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 104, padding: "6px 0" }}>
                     {years.map(([y, v]) => {
                       const max = Math.max(...years.map((x) => x[1]));
                       return (
-                        <div key={y} style={{ flex: 1, textAlign: "center", minWidth: 0 }} title={`${y}: ${fmtPerShare(v)}`}>
+                        <div key={y} style={{ flex: 1, textAlign: "center", minWidth: 0 }} title={`${y}: ${fmtPerShare(v, digits)}`}>
+                          <div className="xs" style={{ whiteSpace: "nowrap", overflow: "hidden" }}>{fmt(v, 2)}</div>
                           <div style={{ height: `${(v / max) * 64}px`, background: "var(--label)", opacity: 0.8 }} />
                           <div className="xs muted">{y.slice(2)}</div>
                         </div>
@@ -533,7 +539,7 @@ export function DVD({ ticker }: ScreenProps) {
                   columns={[
                     { key: "ex", label: "Ex-Tag", render: (r) => fmtDate(r.exDate) },
                     { key: "pay", label: "Zahltag", render: (r) => fmtDate(r.payDate) },
-                    { key: "v", label: "Betrag", num: true, render: (r) => `${fmtPerShare(r.value)} ${r.currency || ""}` },
+                    { key: "v", label: "Betrag", num: true, render: (r) => `${fmtPerShare(r.value, digits)} ${r.currency || ""}` },
                   ]}
                 />
               ) : (

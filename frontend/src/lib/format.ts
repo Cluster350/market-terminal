@@ -60,11 +60,17 @@ export function fmtEps(x: number | null | undefined): string {
   return fmt(x, isNum(x) && Math.abs(x) < 1 ? 3 : 2);
 }
 
-/** Beträge je Aktie (Dividenden): zwei Stellen, bei krummen Beträgen bis zu vier. */
-export function fmtPerShare(x: number | null | undefined): string {
+/** Nötige Nachkommastellen für Beträge je Aktie: zwei, bei krummen Beträgen bis zu vier. */
+export function perShareDigits(x: number | null | undefined): number {
+  if (!isNum(x)) return 2;
+  for (const d of [2, 3]) if (Math.abs(x * 10 ** d - Math.round(x * 10 ** d)) < 1e-6) return d;
+  return 4;
+}
+
+/** Beträge je Aktie (Dividenden); ``digits`` für einheitliche Spalten (siehe perShareDigits). */
+export function fmtPerShare(x: number | null | undefined, digits?: number): string {
   if (!isNum(x)) return DASH;
-  for (const d of [2, 3]) if (Math.abs(x * 10 ** d - Math.round(x * 10 ** d)) < 1e-6) return fmt(x, d);
-  return fmt(x, 4);
+  return fmt(x, digits ?? perShareDigits(x));
 }
 
 /** Basispunkte aus Prozentpunkten (0.05 -> +5 bp). */
@@ -224,6 +230,58 @@ const SECTOR_DE: Record<string, string> = {
 /** Sektornamen der Datenquelle (englisch) für die Anzeige übersetzen. */
 export function sectorDe(s: string | null | undefined): string {
   return s ? SECTOR_DE[s] ?? s : DASH;
+}
+
+// Häufige Branchen der EODHD-Klassifikation; unbekannte bleiben im Original
+const INDUSTRY_DE: Record<string, string> = {
+  "Aerospace & Defense": "Luft- und Raumfahrt, Verteidigung",
+  "Asset Management": "Vermögensverwaltung",
+  "Auto Manufacturers": "Automobilhersteller",
+  "Auto Parts": "Autozulieferer",
+  "Banks—Diversified": "Universalbanken",
+  "Banks—Regional": "Regionalbanken",
+  "Biotechnology": "Biotechnologie",
+  "Building Products & Equipment": "Baustoffe und -ausrüstung",
+  "Chemicals": "Chemie",
+  "Communication Equipment": "Kommunikationstechnik",
+  "Consumer Electronics": "Unterhaltungselektronik",
+  "Credit Services": "Kreditdienstleistungen",
+  "Diagnostics & Research": "Diagnostik und Forschung",
+  "Drug Manufacturers—General": "Pharma",
+  "Electronic Gaming & Multimedia": "Spiele und Multimedia",
+  "Entertainment": "Unterhaltung",
+  "Gold": "Gold",
+  "Grocery Stores": "Lebensmittelhandel",
+  "Household & Personal Products": "Haushalts- und Körperpflege",
+  "Information Technology Services": "IT-Dienstleistungen",
+  "Insurance—Diversified": "Versicherungen (diversifiziert)",
+  "Insurance—Property & Casualty": "Sachversicherungen",
+  "Integrated Freight & Logistics": "Logistik",
+  "Internet Content & Information": "Internetinhalte",
+  "Internet Retail": "Onlinehandel",
+  "Luxury Goods": "Luxusgüter",
+  "Medical Devices": "Medizintechnik",
+  "Oil & Gas Integrated": "Öl und Gas (integriert)",
+  "Other Industrial Metals & Mining": "Industriemetalle und Bergbau",
+  "Packaged Foods": "Nahrungsmittel",
+  "REIT—Industrial": "REIT Gewerbeimmobilien",
+  "Real Estate Services": "Immobiliendienstleistungen",
+  "Scientific & Technical Instruments": "Mess- und Prüftechnik",
+  "Semiconductor Equipment & Materials": "Halbleiterausrüstung",
+  "Semiconductors": "Halbleiter",
+  "Software—Application": "Anwendungssoftware",
+  "Software—Infrastructure": "Infrastruktursoftware",
+  "Specialty Chemicals": "Spezialchemie",
+  "Specialty Industrial Machinery": "Maschinenbau",
+  "Specialty Retail": "Fachhandel",
+  "Telecom Services": "Telekommunikation",
+  "Utilities—Diversified": "Versorger (diversifiziert)",
+  "Utilities—Regulated Electric": "Stromversorger",
+  "Utilities—Renewable": "Erneuerbare Energien",
+};
+
+export function industryDe(s: string | null | undefined): string {
+  return s ? (Object.prototype.hasOwnProperty.call(INDUSTRY_DE, s) ? INDUSTRY_DE[s] : s) : DASH;
 }
 
 /**

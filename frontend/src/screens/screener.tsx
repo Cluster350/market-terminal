@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Change, Empty, ErrorState, Flash, Loading, Q, Table, TickerLink } from "../components/ui";
 import { api, ApiError, IS_STATIC } from "../lib/api";
-import { FUNCTIONS, normalizeTicker } from "../lib/commands";
-import { DASH, displayTicker, fmt, fmtBig, fmtPrice, fmtStamp, isNum, sectorDe, tone } from "../lib/format";
+import { FUNCTIONS, normalizeTicker, unknownSecurityMessage } from "../lib/commands";
+import { DASH, displayTicker, fmt, fmtBig, fmtPrice, fmtStamp, industryDe, isNum, sectorDe, tone } from "../lib/format";
 import { useMovers, useQuotes, useScreen, useScreenFields, useStatus } from "../lib/queries";
 import type { ScreenField, ScreenFilter, ScreenOp, ScreenRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
@@ -90,7 +90,7 @@ function toFilter(dr: Draft, fields: Map<string, ScreenField>): ScreenFilter | n
 const RESULT_COLS: { key: string; label: string; num?: boolean; render: (r: ScreenRow) => React.ReactNode }[] = [
   { key: "ticker", label: "Ticker", render: (r) => <TickerLink ticker={r.ticker} /> },
   { key: "name", label: "Name", render: (r) => <span title={r.name ?? ""}>{r.name ?? DASH}</span> },
-  { key: "sector", label: "Sektor", render: (r) => <span className="muted" title={r.industry ?? ""}>{sectorDe(r.sector)}</span> },
+  { key: "sector", label: "Sektor", render: (r) => <span className="muted" title={r.industry ? industryDe(r.industry) : ""}>{sectorDe(r.sector)}</span> },
   { key: "currency", label: "Whg.", render: (r) => <span className="muted">{r.currency ?? DASH}</span> },
   { key: "price", label: "Kurs", num: true, render: (r) => fmtPrice(r.price) },
   { key: "chg_1d", label: "1T %", num: true, render: (r) => <Change value={r.chg1d} /> },
@@ -123,7 +123,7 @@ export function toCsv(rows: ScreenRow[]): string {
     ["Name", (r) => r.name],
     ["Börse", (r) => displayTicker(r.ticker).split(" ").slice(1).join(" ")],
     ["Sektor", (r) => (r.sector ? sectorDe(r.sector) : null)],
-    ["Branche", (r) => r.industry],
+    ["Branche", (r) => (r.industry ? industryDe(r.industry) : null)],
     ["Währung", (r) => r.currency],
     ["Kurs", (r) => r.price],
     ["Veränd. 1T %", (r) => r.chg1d],
@@ -474,7 +474,13 @@ export function W(_: ScreenProps) {
             ws.watchAdd(hit.ticker);
             setInput("");
           } catch (ex) {
-            setErr(ex instanceof ApiError ? ex.message : "Ticker konnte nicht geprüft werden.");
+            setErr(
+              ex instanceof ApiError && ex.status === 404
+                ? unknownSecurityMessage(input, t, ex.message)
+                : ex instanceof ApiError
+                  ? ex.message
+                  : "Ticker konnte nicht geprüft werden.",
+            );
           }
         }}
       >

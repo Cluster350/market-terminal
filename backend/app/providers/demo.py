@@ -223,6 +223,15 @@ CATALOG = Catalog(
 )
 
 
+# Mindestabstand in Tagen je Meldungsart und Unternehmen (größte Unternehmen; kleinere seltener)
+_STORY_WINDOWS: dict[str, int] = {
+    "up": 21, "down": 28, "buyback": 120, "order": 14, "cfo": 240, "outage": 75, "jobs": 150, "product": 45,
+}
+# Fiktive Analystenhäuser und Auftraggeber für abwechslungsreiche Meldungen
+_BROKERS = ["Bergmann Research", "Nordhafen Capital", "Lindqvist & Co", "Meridian Securities", "Kestrel Partners", "Albrecht Bank"]
+_CLIENTS = ["einem US-Großkunden", "einem europäischen Konzern", "einem asiatischen Kunden", "der öffentlichen Hand", "einem Bestandskunden"]
+
+
 class DemoProvider:
     mode = "demo"
     catalog = CATALOG
@@ -1075,28 +1084,29 @@ class DemoProvider:
         return out
 
     def _news_day(self, day: dt.date) -> list[NewsItem]:
-        rng = _rng("news", day.isoformat())
         items: list[NewsItem] = []
         weekend = day.weekday() >= 5
-        weights = [c[5] ** 0.5 for c in D.COMPANIES]
         # Quartalszahlen erscheinen genau an den Berichtsterminen aus ERN
         if not weekend:
             for i, (t, rec) in enumerate(self._report_index().get(day, [])):
                 items.extend(self._earnings_story(_COMPANY[t], rec, day, i))
-        # Unternehmensmeldungen nur an Werktagen
-        count = 0 if weekend else rng.randint(12, 20)
-        for i in range(count):
-            minute = rng.randint(7 * 60, 21 * 60)
-            when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=minute)
-            c = rng.choices(D.COMPANIES, weights=weights)[0]
-            items.append(self._company_story(c, when, rng, i))
-        # Übernahmen: je Unternehmen höchstens eine pro 30-Tage-Fenster, an einem festen Werktag
-        for c in D.COMPANIES:
-            hit = self._mna_day(f"{c[0]}.{c[2]}", day)
-            if hit is not None:
-                r, minute = hit
-                when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=minute)
-                items.append(self._company_story(c, when, r, 0, kind="mna"))
+        # Unternehmensmeldungen: je Unternehmen und Meldungsart höchstens eine pro Zeitfenster,
+        # an einem festen Werktag (sonst stufte "ein Analyst" denselben Titel zweimal am Tag hoch)
+        if not weekend:
+            for c in D.COMPANIES:
+                ticker = f"{c[0]}.{c[2]}"
+                for kind, window in _STORY_WINDOWS.items():
+                    hit = self._story_day(ticker, kind, window * self._news_scale(c), day)
+                    if hit is not None:
+                        r, minute = hit
+                        when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=minute)
+                        items.append(self._company_story(c, when, r, 0, kind=kind))
+                # Übernahmen: höchstens eine je Unternehmen und 30-Tage-Fenster
+                hit = self._mna_day(ticker, day)
+                if hit is not None:
+                    r, minute = hit
+                    when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=minute)
+                    items.append(self._company_story(c, when, r, 0, kind="mna"))
         # Markt- und Makromeldungen aus den synthetischen Kursen und dem Kalender
         items.extend(self._market_stories(day))
         return items
@@ -1151,6 +1161,26 @@ class DemoProvider:
         return items
 
     @staticmethod
+    def _news_scale(c: tuple) -> float:
+        """Kleinere Unternehmen erscheinen seltener in den Nachrichten (längere Fenster)."""
+        biggest = max(x[5] for x in D.COMPANIES)
+        return min(3.0, max(1.0, (biggest / c[5]) ** 0.35))
+
+    @staticmethod
+    def _story_day(ticker: str, kind: str, window: float, day: dt.date) -> tuple[random.Random, int] | None:
+        """Meldung ``kind`` zu ``ticker`` an ``day``? Höchstens eine je Fenster, nur an Werktagen."""
+        size = max(1, round(window))
+        slot = day.toordinal() // size
+        r = _rng("story", ticker, kind, size, slot)
+        start = slot * size
+        # Termin im ersten Teil des Fensters: zwei Meldungen benachbarter Fenster liegen so
+        # mindestens ein Drittel des Fensters auseinander (nicht an zwei Tagen hintereinander)
+        weekdays = [o for o in range(start, start + max(1, 2 * size // 3)) if dt.date.fromordinal(o).weekday() < 5]
+        if not weekdays or dt.date.fromordinal(weekdays[r.randrange(len(weekdays))]) != day:
+            return None
+        return r, r.randint(7 * 60, 21 * 60)
+
+    @staticmethod
     def _mna_day(ticker: str, day: dt.date) -> tuple[random.Random, int] | None:
         """Übernahmemeldung für ``ticker`` an ``day``: (Zufallsquelle, Minute) oder None."""
         slot = day.toordinal() // 30
@@ -1158,13 +1188,14 @@ class DemoProvider:
         if r.random() >= 0.2:
             return None
         start = slot * 30
-        weekdays = [o for o in range(start, start + 30) if dt.date.fromordinal(o).weekday() < 5]
+        weekdays = [o for o in range(start, start + 20) if dt.date.fromordinal(o).weekday() < 5]
         if dt.date.fromordinal(weekdays[r.randrange(len(weekdays))]) != day:
             return None
         return r, r.randint(7 * 60, 9 * 60)
 
     def _company_story(self, c: tuple, when: dt.datetime, rng: random.Random, i: int, kind: str | None = None) -> NewsItem:
-        code, name, exch, sector, industry, _ = c
+        code, name, exch, sector, industry_en, _ = c
+        industry = D.INDUSTRY_DE.get(industry_en, industry_en)
         ticker = f"{code}.{exch}"
         cur = D.EXCHANGE_INFO[exch][0]
         if kind is None:
@@ -1177,6 +1208,8 @@ class DemoProvider:
         amount_num = round(rng.uniform(0.5, 12), 1)
         pct_val = _de(pct_num, 1)
         amount = _de(amount_num, 1)
+        broker = rng.choice(_BROKERS)
+        client = rng.choice(_CLIENTS)
         tr = _rng("target", ticker, month)
         target = f"{tr.choice(D.TARGET_PREFIX)} {tr.choice(D.TARGET_SUFFIX)}"
         templates: dict[str, tuple[str, str, str, float]] = {
@@ -1188,16 +1221,16 @@ class DemoProvider:
                          f"{name} erwartet für das laufende Geschäftsjahr nun ein Umsatzwachstum von rund {pct_val} %. Bisher war das Unternehmen vorsichtiger.", 0.5),
             "guide_down": ("earnings", f"{name} senkt Margenziel",
                            f"{name} rechnet wegen gestiegener Kosten mit einer um {_de(pct_num / 3, 1)} Prozentpunkte niedrigeren operativen Marge.", -0.5),
-            "up": ("analyst", f"Analysten stufen {name} auf ‚Kaufen‘ hoch",
-                   f"Ein Analystenhaus hat {name} auf ‚Kaufen‘ hochgestuft und sieht {pct_val} % Kurspotenzial. Begründung: bessere Preissetzungsmacht im Bereich {industry}.", 0.4),
-            "down": ("analyst", f"{name}: Herabstufung auf ‚Halten‘ nach starkem Lauf",
-                     f"Nach dem Kursanstieg der vergangenen Monate sieht ein Analyst bei {name} kaum noch Aufwärtspotenzial und senkt die Einstufung.", -0.3),
+            "up": ("analyst", f"{broker} stuft {name} auf ‚Kaufen‘ hoch",
+                   f"{broker} hat {name} auf ‚Kaufen‘ hochgestuft und sieht {pct_val} % Kurspotenzial. Begründung: bessere Preissetzungsmacht im Bereich {industry}.", 0.4),
+            "down": ("analyst", f"{broker} senkt {name} auf ‚Halten‘",
+                     f"Nach dem Kursanstieg der vergangenen Monate sieht {broker} bei {name} kaum noch Aufwärtspotenzial und senkt die Einstufung.", -0.3),
             "mna": ("mna", f"{name} übernimmt {target} für {amount} Mrd. {cur}",
                     f"{name} hat eine Vereinbarung zur Übernahme von {target} unterzeichnet. Der Kaufpreis liegt bei {amount} Mrd. {cur}. Die Transaktion soll in zwölf Monaten abgeschlossen sein.", 0.2),
             "buyback": ("company", f"{name} kündigt Aktienrückkauf über {amount} Mrd. {cur} an",
                         f"Der Vorstand von {name} hat ein neues Rückkaufprogramm über {amount} Mrd. {cur} beschlossen.", 0.4),
-            "order": ("company", f"{name} erhält Großauftrag",
-                      f"{name} hat einen mehrjährigen Auftrag mit einem Volumen von rund {round(amount_num * 100)} Mio. {cur} gewonnen.", 0.4),
+            "order": ("company", f"{name} erhält Auftrag über {round(amount_num * 100)} Mio. {cur}",
+                      f"{name} hat von {client} einen mehrjährigen Auftrag mit einem Volumen von rund {round(amount_num * 100)} Mio. {cur} gewonnen.", 0.4),
             "cfo": ("company", f"{name} ernennt neuen Finanzvorstand",
                     f"{name} hat {rng.choice(D.FIRST_NAMES)} {rng.choice(D.LAST_NAMES)} zum neuen Finanzvorstand ernannt. Der Wechsel erfolgt zum Quartalsende.", 0.0),
             "outage": ("company", f"Produktionsausfall bei {name}",

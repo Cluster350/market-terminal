@@ -95,3 +95,20 @@ def test_calendar_periods_respect_publication_lag(client):
     # Vorwert erst, wenn die vorherige Veröffentlichung stattgefunden hat
     assert got[("2026-11-12", "US", "Initial Jobless Claims")]["previous"] is None
     assert got[("2026-11-05", "US", "Initial Jobless Claims")]["previous"] == got[("2026-10-29", "US", "Initial Jobless Claims")]["actual"]
+
+
+def test_company_news_does_not_repeat_within_window(provider):
+    """R3: dieselbe Meldungsart je Unternehmen höchstens einmal je Fenster (z. B. Hochstufung)."""
+    last: dict[tuple[str, str], dt.date] = {}
+    for k in range(90):
+        d = dt.date(2026, 7, 1) + dt.timedelta(days=k)
+        titles = [n.title for n in provider._news_day(d)]
+        assert len(titles) == len(set(titles)), d
+        for n in provider._news_day(d):
+            if n.topic != "analyst":
+                continue
+            kind = "up" if "hoch" in n.title else "down"
+            key = (n.symbols[0], kind)
+            if key in last:
+                assert (d - last[key]).days >= 7, (key, last[key], d)
+            last[key] = d
