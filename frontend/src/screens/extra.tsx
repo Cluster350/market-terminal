@@ -328,8 +328,8 @@ export function InstrumentOverview({ ticker }: { ticker: string }) {
                 items={periods.map(([label, b]) => [
                   label,
                   isYield ? (
-                    <span className={tone(isNum(last) && isNum(b) ? last - b : null)}>
-                      {isNum(last) && isNum(b) ? `${last - b >= 0 ? "+" : ""}${Math.round((last - b) * 100)} bp` : DASH}
+                    <span className={tone(isNum(last) && isNum(b) ? last - b : null, 2)}>
+                      {isNum(last) && isNum(b) ? fmtBp(last - b) : DASH}
                     </span>
                   ) : (
                     <Change value={isNum(last) && isNum(b) && b !== 0 ? (last / b - 1) * 100 : null} />

@@ -1096,6 +1096,9 @@ class DemoProvider:
             for c in D.COMPANIES:
                 ticker = f"{c[0]}.{c[2]}"
                 for kind, window in _STORY_WINDOWS.items():
+                    # Banken, Versicherer und Immobilien erhalten keine "Aufträge" und haben keine Produktion
+                    if kind in ("order", "outage") and c[3] in ("Financial Services", "Real Estate"):
+                        continue
                     hit = self._story_day(ticker, kind, window * self._news_scale(c), day)
                     if hit is not None:
                         r, minute = hit
@@ -1208,6 +1211,8 @@ class DemoProvider:
         amount_num = round(rng.uniform(0.5, 12), 1)
         pct_val = _de(pct_num, 1)
         amount = _de(amount_num, 1)
+        order_mio = amount_num * 100
+        order_amount = f"{_de(order_mio / 1000, 2)} Mrd." if order_mio >= 1000 else f"{round(order_mio)} Mio."
         broker = rng.choice(_BROKERS)
         client = rng.choice(_CLIENTS)
         tr = _rng("target", ticker, month)
@@ -1229,8 +1234,8 @@ class DemoProvider:
                     f"{name} hat eine Vereinbarung zur Übernahme von {target} unterzeichnet. Der Kaufpreis liegt bei {amount} Mrd. {cur}. Die Transaktion soll in zwölf Monaten abgeschlossen sein.", 0.2),
             "buyback": ("company", f"{name} kündigt Aktienrückkauf über {amount} Mrd. {cur} an",
                         f"Der Vorstand von {name} hat ein neues Rückkaufprogramm über {amount} Mrd. {cur} beschlossen.", 0.4),
-            "order": ("company", f"{name} erhält Auftrag über {round(amount_num * 100)} Mio. {cur}",
-                      f"{name} hat von {client} einen mehrjährigen Auftrag mit einem Volumen von rund {round(amount_num * 100)} Mio. {cur} gewonnen.", 0.4),
+            "order": ("company", f"{name} erhält Auftrag über {order_amount} {cur}",
+                      f"{name} hat von {client} einen mehrjährigen Auftrag mit einem Volumen von rund {order_amount} {cur} gewonnen.", 0.4),
             "cfo": ("company", f"{name} ernennt neuen Finanzvorstand",
                     f"{name} hat {rng.choice(D.FIRST_NAMES)} {rng.choice(D.LAST_NAMES)} zum neuen Finanzvorstand ernannt. Der Wechsel erfolgt zum Quartalsende.", 0.0),
             "outage": ("company", f"Produktionsausfall bei {name}",

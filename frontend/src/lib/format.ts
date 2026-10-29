@@ -77,7 +77,8 @@ export function fmtPerShare(x: number | null | undefined, digits?: number): stri
 export function fmtBp(x: number | null | undefined, fromPercent = true): string {
   if (!isNum(x)) return DASH;
   const bp = fromPercent ? x * 100 : x;
-  return `${nf(0, 0, true).format(Math.round(bp))} bp`;
+  const r = Math.round(bp);
+  return r === 0 ? "0 bp" : `${nf(0, 0, true).format(r)} bp`;
 }
 
 /** Große Beträge kompakt: 1,23 Bio. / 4,56 Mrd. / 7,8 Mio. / 12,3 Tsd. */
@@ -279,6 +280,29 @@ const INDUSTRY_DE: Record<string, string> = {
   "Utilities—Regulated Electric": "Stromversorger",
   "Utilities—Renewable": "Erneuerbare Energien",
 };
+
+const COUNTRY_DE: Record<string, string> = {
+  Germany: "Deutschland", "United Kingdom": "Großbritannien", Switzerland: "Schweiz", France: "Frankreich",
+  Netherlands: "Niederlande", "United States": "USA", USA: "USA", Japan: "Japan", Italy: "Italien", Spain: "Spanien",
+  Belgium: "Belgien", Sweden: "Schweden", Denmark: "Dänemark", Norway: "Norwegen", Finland: "Finnland",
+  Austria: "Österreich", Ireland: "Irland", Canada: "Kanada", Australia: "Australien", China: "China",
+  "Hong Kong": "Hongkong", Luxembourg: "Luxemburg", Portugal: "Portugal", Taiwan: "Taiwan", "South Korea": "Südkorea",
+};
+
+export function countryDe(s: string | null | undefined): string {
+  return s ? (Object.prototype.hasOwnProperty.call(COUNTRY_DE, s) ? COUNTRY_DE[s] : s) : DASH;
+}
+
+const EXCHANGE_NAMES: Record<string, string> = {
+  US: "USA", NASDAQ: "Nasdaq", NYSE: "NYSE", "NYSE ARCA": "NYSE Arca", XETRA: "Xetra", F: "Frankfurt",
+  LSE: "London", PA: "Euronext Paris", AS: "Euronext Amsterdam", BR: "Euronext Brüssel", SW: "SIX Swiss",
+  MI: "Borsa Italiana", MC: "Madrid", TO: "Toronto", HK: "Hongkong", KO: "Korea", AU: "ASX",
+};
+
+/** Börsenname für die Anzeige (EODHD-Kürzel wie XETRA oder SW werden ausgeschrieben). */
+export function exchangeName(s: string | null | undefined): string {
+  return s ? (Object.prototype.hasOwnProperty.call(EXCHANGE_NAMES, s) ? EXCHANGE_NAMES[s] : s) : DASH;
+}
 
 export function industryDe(s: string | null | undefined): string {
   return s ? (Object.prototype.hasOwnProperty.call(INDUSTRY_DE, s) ? INDUSTRY_DE[s] : s) : DASH;

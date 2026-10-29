@@ -3,8 +3,10 @@
 import { useState, type ReactNode } from "react";
 import { Change, Empty, Kv, Q, Seg, Spark, Table, useNow } from "../components/ui";
 import {
+  countryDe,
   DASH,
   displayTicker,
+  exchangeName,
   fmt,
   fmtBig,
   fmtDate,
@@ -78,6 +80,9 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
           const price = quote?.last ?? null;
           const upside = isNum(c.analyst.targetPrice) && isNum(price) && price > 0 ? (c.analyst.targetPrice / price - 1) * 100 : null;
           const desc = c.description || "Keine Beschreibung verfügbar.";
+          // 52W-Spanne inkl. heutigem Hoch/Tief (Fundamentaldaten werden seltener aktualisiert als Kurse)
+          const high52 = isNum(quote?.high) && isNum(c.technicals.high52) ? Math.max(quote.high, c.technicals.high52) : c.technicals.high52;
+          const low52 = isNum(quote?.low) && isNum(c.technicals.low52) ? Math.min(quote.low, c.technicals.low52) : c.technicals.low52;
           const website = safeUrl(c.website);
           return (
             <>
@@ -85,7 +90,7 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
                 <span style={{ fontSize: "var(--fs-xl)", fontFamily: "var(--sans)", fontWeight: 600 }}>{c.name}</span>
                 <span className="lbl">{displayTicker(c.ticker)}</span>
                 <span className="muted small">
-                  {[c.exchange, c.currency, c.country].filter(Boolean).join(" · ")}
+                  {[c.exchange ? exchangeName(c.exchange) : null, c.currency, c.country ? countryDe(c.country) : null].filter(Boolean).join(" · ")}
                 </span>
                 {price !== null && (
                   <span style={{ marginLeft: "auto", fontSize: "var(--fs-l)" }}>
@@ -97,7 +102,7 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
                 {sectorDe(c.sector)} › {industryDe(c.industry)}
               </div>
               <div style={{ padding: "0 10px" }}>
-                <RangeBar low={c.technicals.low52} high={c.technicals.high52} value={price} label="52-Wochen-Spanne" />
+                <RangeBar low={low52} high={high52} value={price} label="52-Wochen-Spanne" />
               </div>
               <div style={cols}>
                 <Section title="Bewertung">
@@ -145,7 +150,7 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
                   <Kv
                     items={[
                       ["Beta", fmt(c.technicals.beta, 2)],
-                      ["52W Hoch / Tief", `${fmtPrice(c.technicals.high52)} / ${fmtPrice(c.technicals.low52)}`],
+                      ["52W Hoch / Tief", `${fmtPrice(high52)} / ${fmtPrice(low52)}`],
                       ["SMA 50 / 200", `${fmtPrice(c.technicals.ma50)} / ${fmtPrice(c.technicals.ma200)}`],
                       ["Aktien ausstehend", fmtBig(c.shares.outstanding)],
                       ["Streubesitz", fmtBig(c.shares.floatShares)],

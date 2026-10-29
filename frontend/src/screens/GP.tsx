@@ -6,6 +6,7 @@ import {
   ColorType,
   CrosshairMode,
   LineStyle,
+  TickMarkType,
   createChart,
   type IChartApi,
   type ISeriesApi,
@@ -16,7 +17,7 @@ import {
 import { ErrorState, Loading, Seg } from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
-import { displayTicker, fmt, fmtBig, fmtDate, fmtPct, fmtPrice, fmtTime, isNum, shiftMonths, tone } from "../lib/format";
+import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isNum, shiftMonths, tone } from "../lib/format";
 import { retry, useHistory, useIntraday } from "../lib/queries";
 import type { History, Intraday } from "../lib/types";
 import type { ScreenProps } from "./types";
@@ -110,6 +111,31 @@ export function dailyBars(h: History): Bar[] {
     all.push({ time: t as Time, open: o, high: hi, low: lo, close: c, volume: h.v[i] });
   });
   return all;
+}
+
+const MONTHS_DE = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+
+/**
+ * Achsenbeschriftung auf Deutsch. Tagesmarken mit Monat ("12.10." statt "12"), damit sie
+ * zwischen Monatsnamen nicht wie eine Jahreszahl oder ein Monat wirken.
+ */
+export function tickLabel(time: Time, type: TickMarkType): string {
+  let d: Date;
+  if (typeof time === "number") d = new Date(time * 1000);
+  else if (typeof time === "string") d = new Date(`${time}T00:00:00Z`);
+  else d = new Date(Date.UTC(time.year, time.month - 1, time.day));
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  switch (type) {
+    case TickMarkType.Year:
+      return String(d.getUTCFullYear());
+    case TickMarkType.Month:
+      return MONTHS_DE[d.getUTCMonth()];
+    case TickMarkType.DayOfMonth:
+      return `${dd}.${mm}.`;
+    default:
+      return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  }
 }
 
 /** Bollinger-Bänder (n, k·σ) über Schlusskurse. */
@@ -321,7 +347,7 @@ export default function GP({ ticker }: ScreenProps) {
       layout: { background: { type: ColorType.Solid, color: "#0a0a0a" }, textColor: "#8f8f8f", fontFamily: "IBM Plex Mono, ui-monospace, monospace", fontSize: 11, attributionLogo: false },
       grid: { vertLines: { color: "#151515" }, horzLines: { color: "#151515" } },
       crosshair: { mode: CrosshairMode.Normal, vertLine: { color: "#555", labelBackgroundColor: "#2a2a2a" }, horzLine: { color: "#555", labelBackgroundColor: "#2a2a2a" } },
-      timeScale: { borderColor: "#262626", timeVisible: intradayRange, secondsVisible: false, rightOffset: 3 },
+      timeScale: { borderColor: "#262626", timeVisible: intradayRange, secondsVisible: false, rightOffset: 3, tickMarkFormatter: tickLabel },
     };
     const chart = createChart(host, {
       ...baseOptions,
@@ -545,7 +571,7 @@ export default function GP({ ticker }: ScreenProps) {
           <span className="small" style={{ marginLeft: "auto" }} title="Veränderung gegenüber dem Schlusskurs vor Beginn des Zeitraums">
             <span className="muted">{range}: </span>
             {isYield ? (
-              <span className={tone(rangeChgBp)}>{isNum(rangeChgBp) ? `${rangeChgBp >= 0 ? "+" : ""}${Math.round(rangeChgBp)} bp` : "–"}</span>
+              <span className={tone(rangeChgBp, 0)}>{isNum(rangeChgBp) ? fmtBp(rangeChgBp, false) : "–"}</span>
             ) : (
               <span className={tone(rangeChg)}>{fmtPct(rangeChg)}</span>
             )}
@@ -576,7 +602,7 @@ export default function GP({ ticker }: ScreenProps) {
                 <span>T <b>{fmtPrice(shown.low, ticker)}</b></span>
                 <span>S <b>{fmtPrice(shown.close, ticker)}</b></span>
                 {isNum(prevClose) && !isYield && <span className={tone(shown.close - prevClose)}>{fmtPct((shown.close / prevClose - 1) * 100)}</span>}
-                {isNum(prevClose) && isYield && <span className={tone(shown.close - prevClose)}>{`${shown.close - prevClose >= 0 ? "+" : ""}${Math.round((shown.close - prevClose) * 100)} bp`}</span>}
+                {isNum(prevClose) && isYield && <span className={tone(shown.close - prevClose, 2)}>{fmtBp(shown.close - prevClose)}</span>}
                 {isNum(shown.volume) && <span>Vol <b>{fmtBig(shown.volume)}</b></span>}
               </div>
             )}

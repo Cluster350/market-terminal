@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Change, Empty, ErrorState, Flash, Loading, Q, Table, TickerLink } from "../components/ui";
 import { api, ApiError, IS_STATIC } from "../lib/api";
 import { FUNCTIONS, normalizeTicker, unknownSecurityMessage } from "../lib/commands";
-import { DASH, displayTicker, fmt, fmtBig, fmtPrice, fmtStamp, industryDe, isNum, sectorDe, tone } from "../lib/format";
+import { DASH, displayTicker, fmt, fmtBig, fmtBp, fmtPrice, fmtStamp, industryDe, isNum, sectorDe, tone } from "../lib/format";
 import { useMovers, useQuotes, useScreen, useScreenFields, useStatus } from "../lib/queries";
 import type { ScreenField, ScreenFilter, ScreenOp, ScreenRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
@@ -522,7 +522,7 @@ export function W(_: ScreenProps) {
                     <div className="xs muted">{fmtStamp(r.timestamp)}</div>
                   </td>
                   <td className="num">
-                    {r.ticker.endsWith(".GBOND") ? <span className={tone(r.change)}>{isNum(r.change) ? `${Math.round(r.change * 100)} bp` : DASH}</span> : <Change value={r.changePct} />}
+                    {r.ticker.endsWith(".GBOND") ? <span className={tone(r.change, 2)}>{fmtBp(r.change)}</span> : <Change value={r.changePct} />}
                   </td>
                   <td className="num nowrap" onClick={(e) => e.stopPropagation()}>
                     <button className="tool" title="Nach oben" disabled={i === 0} onClick={() => ws.watchMove(r.ticker, -1)}>↑</button>
