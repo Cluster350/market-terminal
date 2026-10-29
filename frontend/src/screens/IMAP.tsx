@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import EChart, { TOOLTIP, type EOption } from "../components/EChart";
 import { Empty, Q, Seg } from "../components/ui";
-import { displayTicker, fmtBig, fmtPct, isNum } from "../lib/format";
+import { displayTicker, escapeHtml, fmtBig, fmtPct, isNum } from "../lib/format";
 import { useHeatmap, useStatus } from "../lib/queries";
 import type { ScreenRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
@@ -50,14 +50,16 @@ export default function IMAP(_: ScreenProps) {
         full: r.name,
       })),
     }));
+    if (!data.length) return null; // leere Treemap vermeiden, stattdessen "Keine Daten."
     return {
       tooltip: {
         ...TOOLTIP,
         formatter: (p: { data?: { name: string; value: number; chg?: number; full?: string } }) => {
           const x = p.data;
           if (!x) return "";
-          if (x.chg === undefined) return `<b>${x.name}</b><br/>Marktkap. ${fmtBig(x.value)}`;
-          return `<b>${displayTicker(x.name)}</b> ${x.full ?? ""}<br/>Marktkap. ${fmtBig(x.value)}<br/>Veränderung ${fmtPct(x.chg)}`;
+          // Tooltip ist HTML: Namen aus der Datenquelle escapen
+          if (x.chg === undefined) return `<b>${escapeHtml(x.name)}</b><br/>Marktkap. ${fmtBig(x.value)}`;
+          return `<b>${escapeHtml(displayTicker(x.name))}</b> ${escapeHtml(x.full)}<br/>Marktkap. ${fmtBig(x.value)}<br/>Veränderung ${fmtPct(x.chg)}`;
         },
       },
       series: [

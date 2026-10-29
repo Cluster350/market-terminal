@@ -52,7 +52,9 @@ type Action =
 
 const STORAGE_KEY = "mt.workspace.v1";
 
-function initial(): WorkspaceState {
+const isFn = (f: unknown): f is FnCode => typeof f === "string" && Object.prototype.hasOwnProperty.call(FN, f);
+
+export function initial(): WorkspaceState {
   const base: WorkspaceState = {
     version: 1,
     mode: null,
@@ -72,7 +74,8 @@ function initial(): WorkspaceState {
     const pages = { ...base.pages };
     for (const p of PAGES) {
       const sp = saved.pages?.[p.id];
-      if (sp && Array.isArray(sp.panels) && sp.panels.every((f) => f in FN) && sp.panels.length === pages[p.id].panels.length) {
+      // hasOwnProperty statt "in": "toString" o. Ä. aus manipuliertem Speicher ließe das Panel abstürzen
+      if (sp && Array.isArray(sp.panels) && sp.panels.every(isFn) && sp.panels.length === pages[p.id].panels.length) {
         pages[p.id] = { layout: pages[p.id].layout, panels: sp.panels };
       }
     }
@@ -90,11 +93,13 @@ function initial(): WorkspaceState {
   }
 }
 
-function reducer(s: WorkspaceState, a: Action): WorkspaceState {
+export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
   switch (a.type) {
     case "init": {
+      // Gleicher Datenmodus: Auswahl behalten – auch eine bewusst geleerte Watchlist
+      // (früher kamen nach dem Neuladen die Standardwerte zurück und "Zuletzt" war weg)
+      if (s.mode === a.mode) return s.security ? s : { ...s, security: a.watchlist[0] ?? null };
       // Neuer Datenmodus (z. B. Demo -> EODHD): Ticker des alten Modus verwerfen
-      if (s.mode === a.mode && s.security && s.watchlist.length) return s;
       return { ...s, mode: a.mode, security: a.watchlist[0] ?? null, watchlist: a.watchlist, recent: [] };
     }
     case "page":

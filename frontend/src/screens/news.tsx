@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorState, Loading, Seg, TickerLink, useSize } from "../components/ui";
-import { displayTicker, fmtAge, fmtDate, fmtTime, isNum, isToday } from "../lib/format";
+import { displayTicker, fmtAge, fmtDate, fmtTime, isNum, isToday, safeUrl } from "../lib/format";
 import { useNews } from "../lib/queries";
 import type { NewsItem } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
@@ -91,6 +91,7 @@ function NewsRow({ n, selected, read, fresh, onOpen }: { n: NewsItem; selected: 
 }
 
 function Reader({ n, onBack, related }: { n: NewsItem; onBack?: () => void; related: NewsItem[] }) {
+  const link = safeUrl(n.link);
   return (
     <article style={{ padding: "10px 14px", maxWidth: "78ch" }}>
       {onBack && (
@@ -123,9 +124,9 @@ function Reader({ n, onBack, related }: { n: NewsItem; onBack?: () => void; rela
       <div style={{ fontFamily: "var(--sans)", fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
         {n.content || <span className="muted">Kein Volltext verfügbar.</span>}
       </div>
-      {n.link && (
+      {link && (
         <p>
-          <a href={n.link} target="_blank" rel="noreferrer noopener">
+          <a href={link} target="_blank" rel="noreferrer noopener">
             Originalquelle öffnen ↗
           </a>
         </p>
@@ -168,16 +169,18 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
   }, [search]);
 
   const effectiveTickers = tickers ?? (scope === "watch" ? ws.state.watchlist.slice(0, 10) : undefined);
-  const q = useNews({ tickers: effectiveTickers, topic, q: debounced || undefined, limit: 200 });
+  // Leere Watchlist: Eine leere Tickerliste würde sonst wie "alle Quellen" abgefragt
+  const watchEmpty = !tickers && scope === "watch" && !ws.state.watchlist.length;
+  const q = useNews({ tickers: effectiveTickers, topic, q: debounced || undefined, limit: 200 }, !watchEmpty);
 
   // Neue Meldungen seit dem letzten Abruf kurz hervorheben
   const seen = useRef<Set<string> | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const frozen = useRef<NewsItem[] | null>(null);
   const items = useMemo(() => {
-    const all = q.data?.items ?? [];
+    const all = watchEmpty ? [] : q.data?.items ?? []; // keine Platzhalterdaten des vorigen Umfangs
     return urgentOnly ? all.filter((n) => n.urgent) : all;
-  }, [q.data, urgentOnly]);
+  }, [q.data, urgentOnly, watchEmpty]);
   if (!paused) frozen.current = items;
   const shown = paused && frozen.current ? frozen.current : items;
 
@@ -266,7 +269,9 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
       <div ref={listRef} style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: twoCol ? "minmax(0, 11fr) minmax(0, 9fr)" : "minmax(0, 1fr)" }}>
         {(!selected || twoCol) && (
           <div role="listbox" aria-label="Meldungen" style={{ overflow: "auto", minHeight: 0, borderRight: twoCol ? "1px solid var(--rule)" : undefined }}>
-            {q.isPending ? (
+            {watchEmpty ? (
+              <Empty>Die Watchlist ist leer – keine Meldungen.</Empty>
+            ) : q.isPending ? (
               <Loading rows={10} />
             ) : q.isError ? (
               <ErrorState error={q.error} onRetry={() => q.refetch()} />

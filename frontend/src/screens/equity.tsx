@@ -13,6 +13,7 @@ import {
   fmtPrice,
   fmtRatio,
   isNum,
+  safeUrl,
   tone,
 } from "../lib/format";
 import { useCompany, useDividends, useEarnings, useFinancials, useHistory, useQuotes } from "../lib/queries";
@@ -64,6 +65,7 @@ export function DES({ ticker }: ScreenProps) {
           const price = quote?.last ?? null;
           const upside = isNum(c.analyst.targetPrice) && isNum(price) && price > 0 ? (c.analyst.targetPrice / price - 1) * 100 : null;
           const desc = c.description || "Keine Beschreibung verfügbar.";
+          const website = safeUrl(c.website);
           return (
             <>
               <div style={{ padding: "8px 10px 2px", display: "flex", gap: 16, flexWrap: "wrap", alignItems: "baseline" }}>
@@ -158,10 +160,10 @@ export function DES({ ticker }: ScreenProps) {
                       ["Daten vom", fmtDate(c.updatedAt)],
                     ]}
                   />
-                  {c.website && (
+                  {website && (
                     <div className="small" style={{ paddingTop: 4 }}>
-                      <a href={c.website} target="_blank" rel="noreferrer noopener">
-                        {c.website.replace(/^https?:\/\//, "")}
+                      <a href={website} target="_blank" rel="noreferrer noopener">
+                        {website.replace(/^https?:\/\//i, "")}
                       </a>
                     </div>
                   )}
@@ -494,7 +496,8 @@ export function DVD({ ticker }: ScreenProps) {
               {d.dividends.length ? (
                 <Table
                   rows={d.dividends}
-                  rowKey={(r) => r.exDate}
+                  // Sonder- und Regeldividende können denselben Ex-Tag haben: Schlüssel eindeutig machen
+                  rowKey={(r) => `${r.exDate}|${r.payDate ?? ""}|${r.value ?? ""}`}
                   columns={[
                     { key: "ex", label: "Ex-Tag", render: (r) => fmtDate(r.exDate) },
                     { key: "pay", label: "Zahltag", render: (r) => fmtDate(r.payDate) },

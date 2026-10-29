@@ -23,10 +23,15 @@ def perf(closes: Sequence[Optional[float]], days: int) -> Optional[float]:
 
 
 def perf_ytd(dates: Sequence[str], closes: Sequence[Optional[float]], today: Optional[dt.date] = None) -> Optional[float]:
-    """Veränderung seit dem letzten Schlusskurs des Vorjahres."""
+    """Veränderung seit dem letzten Schlusskurs des Vorjahres.
+
+    Mit `today` zählt das laufende Kalenderjahr: Liegt der letzte Kurs noch im Vorjahr
+    (1. Januar, Feiertag), ist YTD 0 statt der kompletten Vorjahresperformance.
+    """
     if not dates:
         return None
-    year = (today or dt.date.fromisoformat(dates[-1][:10])).year
+    last_year = int(dates[-1][:4])
+    year = max(today.year, last_year) if today else last_year
     base: Optional[float] = None
     last: Optional[float] = None
     for d, c in zip(dates, closes):

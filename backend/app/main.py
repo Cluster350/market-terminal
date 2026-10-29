@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import math
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -22,6 +24,28 @@ from .services.terminal import Terminal, request_flags
 
 log = logging.getLogger("terminal")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+def _finite(x: Any) -> Any:
+    if isinstance(x, float) and not math.isfinite(x):
+        return None
+    if isinstance(x, dict):
+        return {k: _finite(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_finite(v) for v in x]
+    return x
+
+
+class SafeJSONResponse(JSONResponse):
+    """JSON ohne NaN/Infinity: Starlette lehnt sie ab (allow_nan=False), was die ganze Antwort
+    zu einem 500er machte. Solche Werte werden zu null; der Normalfall kostet nichts extra."""
+
+    def render(self, content: Any) -> bytes:
+        try:
+            return super().render(content)
+        except ValueError:
+            log.warning("Nicht-endliche Zahl in der Antwort durch null ersetzt.")
+            return super().render(_finite(content))
 
 
 def make_provider(cfg: Settings) -> Provider:
@@ -43,7 +67,7 @@ def create_app(provider: Provider | None = None, cfg: Settings = settings) -> Fa
         yield
         await prov.close()
 
-    app = FastAPI(title="Market Terminal API", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Market Terminal API", version="1.0.0", lifespan=lifespan, default_response_class=SafeJSONResponse)
     app.add_middleware(GZipMiddleware, minimum_size=2048)
 
     @app.middleware("http")

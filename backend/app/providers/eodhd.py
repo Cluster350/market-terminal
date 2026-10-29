@@ -160,7 +160,7 @@ class EODHDProvider:
             f"intraday/{_path_ticker(ticker)}",
             {"interval": interval, "from": int(start.timestamp()), "to": int(now.timestamp())},
         )
-        return mapping.intraday(data, ticker, interval)
+        return mapping.last_sessions(mapping.intraday(data, ticker, interval), days)
 
     async def _fundamentals(self, ticker: str) -> dict:
         data = await self.client.get(f"fundamentals/{_path_ticker(ticker)}")
@@ -241,8 +241,13 @@ class EODHDProvider:
             else:
                 local.append(f)
 
-        sort_field = SCREEN_SORT_MAP.get(sort, "market_capitalization")
+        sort_field = SCREEN_SORT_MAP.get(sort)
+        if sort_field is None:
+            # Feld nur lokal sortierbar (KGV, Sektor …): die größten Werte laden, nicht die
+            # kleinsten Nebenwerte, wenn lokal aufsteigend sortiert wird
+            sort_field, desc = "market_capitalization", True
         rows: list[ScreenRow] = []
+        seen: set[str] = set()
         cap = max(1, min(max_rows, 1000))
         offset = 0
         while offset < cap and offset <= 999:
@@ -256,7 +261,11 @@ class EODHDProvider:
                 params["filters"] = json.dumps(server)
             data = await self.client.get("screener", params)
             chunk = mapping.screen_rows(data)
-            rows.extend(chunk)
+            # Zwischen zwei Seitenabrufen kann sich die Reihenfolge ändern: Doppelte verwerfen
+            for row in chunk:
+                if row.ticker not in seen:
+                    seen.add(row.ticker)
+                    rows.append(row)
             if len(chunk) < page:
                 break
             offset += page

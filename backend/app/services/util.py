@@ -15,7 +15,10 @@ def num(value: Any) -> Optional[float]:
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        f = float(value)
+        try:
+            f = float(value)
+        except OverflowError:  # Ganzzahl jenseits des float-Bereichs (z. B. 10**400)
+            return None
     elif isinstance(value, str):
         s = value.strip().replace(",", "")
         if not s or s.upper() in {"NA", "N/A", "NONE", "NULL", "-", "NAN"}:

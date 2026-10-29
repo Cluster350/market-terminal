@@ -256,7 +256,7 @@ export function SPRD(_: ScreenProps) {
       legend: { top: 4, textStyle: { color: "#8f8f8f", fontSize: 10 }, itemHeight: 6 },
       tooltip: { trigger: "axis", ...TOOLTIP, valueFormatter: (v: number) => (isNum(v) ? `${Math.round(v)} bp` : DASH) },
       xAxis: { type: "category", data: dates, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: string) => fmtDate(v).slice(3) } },
-      yAxis: { type: "value", ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => `${v} bp` } },
+      yAxis: { type: "value", ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => `${fmt(v, Number.isInteger(v) ? 0 : 1)} bp` } },
       dataZoom: [{ type: "inside" }, { type: "slider", height: 16, bottom: 6, borderColor: "#262626", textStyle: { color: "#8f8f8f" }, fillerColor: "rgba(255,160,40,0.12)" }],
       series: q.data.map((s, i) => {
         const m = new Map(s.t.map((t, j) => [t, s.v[j]]));

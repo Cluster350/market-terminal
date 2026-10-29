@@ -83,7 +83,9 @@ export type Command =
  * Ein Ticker allein wechselt das aktive Wertpapier.
  */
 export function parseCommand(input: string): Command | null {
-  const raw = input.trim().replace(/<?GO>?$/i, "").trim();
+  // "<GO>" bzw. ein abschließendes, eigenständiges "GO" entfernen – nicht das Ende eines
+  // Tickers wie WGO oder AGO (sonst würde daraus W bzw. A)
+  const raw = input.trim().replace(/(?:<GO>?|(?:^|\s)GO)$/i, "").trim();
   if (!raw) return null;
   const tokens = raw.split(/\s+/);
   const last = tokens[tokens.length - 1];

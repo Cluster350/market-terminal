@@ -13,7 +13,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { ErrorState, Loading, Seg } from "../components/ui";
-import { fmtBig, fmtDate, fmtPct, fmtPrice, fmtTime, isNum, tone } from "../lib/format";
+import { fmt, fmtBig, fmtDate, fmtPct, fmtPrice, fmtTime, isNum, shiftMonths, tone } from "../lib/format";
 import { useHistory, useIntraday } from "../lib/queries";
 import type { ScreenProps } from "./types";
 
@@ -35,15 +35,11 @@ interface Bar {
   low: number;
   close: number;
   volume: number | null;
+  ts?: number; // Intraday: Original-Zeitstempel (UTC-Sekunden) für die Anzeige
 }
 
 function rangeStart(range: Range, last: string): string {
-  const d = new Date(`${last}T00:00:00Z`);
-  const shift = (months: number) => {
-    const x = new Date(d);
-    x.setUTCMonth(x.getUTCMonth() - months);
-    return x.toISOString().slice(0, 10);
-  };
+  const shift = (months: number) => shiftMonths(last, months); // mit Monatsende-Begrenzung
   switch (range) {
     case "1M": return shift(1);
     case "3M": return shift(3);
@@ -95,7 +91,7 @@ export default function GP({ ticker }: ScreenProps) {
       const bars: Bar[] = [];
       d.t.forEach((ts, i) => {
         const o = d.o[i], h = d.h[i], l = d.l[i], c = d.c[i];
-        if (isNum(o) && isNum(h) && isNum(l) && isNum(c)) bars.push({ time: toLocal(ts), open: o, high: h, low: l, close: c, volume: d.v[i] });
+        if (isNum(o) && isNum(h) && isNum(l) && isNum(c)) bars.push({ time: toLocal(ts), open: o, high: h, low: l, close: c, volume: d.v[i], ts });
       });
       return { bars, maLines: [] };
     }
@@ -152,7 +148,7 @@ export default function GP({ ticker }: ScreenProps) {
       timeScale: { borderColor: "#262626", timeVisible: intradayRange, secondsVisible: false, rightOffset: 3 },
       localization: {
         locale: "de-DE",
-        priceFormatter: (p: number) => (isYield ? `${p.toFixed(3)} %` : fmtPrice(p)),
+        priceFormatter: (p: number) => (isYield ? `${fmt(p, 3)} %` : fmtPrice(p)),
       },
     });
     chartRef.current = chart;
@@ -255,7 +251,9 @@ export default function GP({ ticker }: ScreenProps) {
       <div className="chart-wrap">
         {loading ? (
           <Loading rows={4} />
-        ) : error ? (
+        ) : error && !hasData ? (
+          // Bei vorhandenen Daten bleibt der Chart stehen: Würde der Host bei einem fehlgeschlagenen
+          // Hintergrund-Abruf ausgehängt, bliebe er danach leer (der Chart wird nicht neu erzeugt).
           <ErrorState error={error} onRetry={() => (intradayRange ? intra.refetch() : hist.refetch())} />
         ) : !bars.length ? (
           <div className="state">
@@ -266,7 +264,8 @@ export default function GP({ ticker }: ScreenProps) {
             {shown && (
               <div className="chart-ohlc">
                 <span>
-                  {intradayRange ? `${fmtDate(new Date(((shown.time as number) + new Date().getTimezoneOffset() * 60) * 1000))} ${fmtTime(new Date(((shown.time as number) + new Date().getTimezoneOffset() * 60) * 1000))}` : fmtDate(shown.time as string)}
+                  {/* Original-Zeitstempel statt Rückrechnung mit dem heutigen UTC-Offset (falsch über Sommerzeitwechsel) */}
+                  {intradayRange && shown.ts !== undefined ? `${fmtDate(shown.ts)} ${fmtTime(shown.ts)}` : fmtDate(shown.time as string)}
                 </span>
                 <span>O <b>{fmtPrice(shown.open)}</b></span>
                 <span>H <b>{fmtPrice(shown.high)}</b></span>

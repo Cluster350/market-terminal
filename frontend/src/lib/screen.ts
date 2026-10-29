@@ -6,7 +6,8 @@ import type { ScreenFilter, ScreenResult, ScreenRow } from "./types";
 /** snake_case-Feld des Backends -> camelCase-Feld der Zeile */
 export function rowKey(field: string): keyof ScreenRow {
   const [head, ...rest] = field.split("_");
-  return (head + rest.map((p) => (/^\d/.test(p) ? p : p[0].toUpperCase() + p.slice(1))).join("")) as keyof ScreenRow;
+  // p.charAt statt p[0]: leere Teile ("a__b" aus alten gespeicherten Screens) dürfen nicht abstürzen
+  return (head + rest.map((p) => (/^\d/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join("")) as keyof ScreenRow;
 }
 
 export function matches(row: ScreenRow, f: ScreenFilter): boolean {

@@ -43,9 +43,35 @@ const PRESETS: { name: string; filters: () => Draft[]; sort: string; desc: boole
 
 const SAVED_KEY = "mt.screens";
 
-function loadSaved(): { name: string; filters: Draft[]; sort: string; desc: boolean }[] {
+type Saved = { name: string; filters: Draft[]; sort: string; desc: boolean };
+
+/**
+ * Gespeicherte Screens prüfen und Filter-IDs neu vergeben: Die gespeicherten IDs stammen aus
+ * früheren Sitzungen und kollidierten mit neuen Filtern (Bearbeiten/Löschen traf dann beide).
+ * Ein beschädigter Eintrag (kein Array) ließ das Panel bei jedem Laden abstürzen.
+ */
+export function parseSaved(json: string | null): Saved[] {
   try {
-    return JSON.parse(localStorage.getItem(SAVED_KEY) || "[]");
+    const raw: unknown = JSON.parse(json || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((s) => s && typeof s.name === "string" && Array.isArray(s.filters))
+      .map((s) => ({
+        name: s.name,
+        sort: typeof s.sort === "string" ? s.sort : "market_cap",
+        desc: s.desc !== false,
+        filters: (s.filters as Partial<Draft>[])
+          .filter((f) => f && typeof f.field === "string")
+          .map((f) => d(f.field!, OPS.some((o) => o.value === f.op) ? f.op! : "gt", String(f.value ?? ""))),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function loadSaved(): Saved[] {
+  try {
+    return parseSaved(localStorage.getItem(SAVED_KEY));
   } catch {
     return [];
   }

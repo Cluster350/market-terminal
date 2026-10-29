@@ -6,6 +6,7 @@ import asyncio
 import datetime as dt
 import json
 import logging
+import math
 from contextvars import ContextVar
 from typing import Any, Awaitable, Callable, Optional
 
@@ -181,17 +182,36 @@ class Terminal:
             q = query.lower()
             items = [n for n in items if q in n.title.lower() or q in n.content.lower() or any(q in s.lower() for s in n.symbols)]
         if since:
-            items = [n for n in items if n.date > since]
+            cutoff = self._since(since)
+            items = [n for n in items if n.date > cutoff]
         limit = max(1, min(limit, 300))
         note = None
         if self.p.mode == "eodhd" and not tickers:
             note = "Allgemeiner Feed aus den Standard-Tickern (EODHD liefert News je Ticker)."
         return NewsPage(items=items[offset : offset + limit], sources_note=note)
 
+    @staticmethod
+    def _since(raw: str) -> str:
+        """since in das Format der Meldungen bringen (UTC, 'Z'), sonst vergleicht der
+        Textvergleich Offsets wie +02:00 oder ein Leerzeichen statt 'T' falsch."""
+        try:
+            d = dt.datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise BadRequest(f"since „{raw}“ ist kein ISO-Zeitpunkt.") from exc
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=dt.timezone.utc)
+        return d.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     # --- Makro ------------------------------------------------------------------------
+
+    def _today(self) -> dt.date:
+        """Heutiges Datum (UTC); die Demo-Quelle hat eine eigene Uhr."""
+        now = getattr(self.p, "now", None)
+        return (now() if callable(now) else dt.datetime.now(dt.timezone.utc)).date()
 
     async def _market_rows(self, instruments: list[Instrument]) -> list[MarketRow]:
         tickers = [i.ticker for i in instruments]
+        today = self._today()
         try:
             quotes = {q.ticker: q for q in await self.quotes(tickers)}
         except TerminalError as exc:
@@ -227,7 +247,9 @@ class Terminal:
                 change_pct=(q.change_pct if q and q.change_pct is not None else pct(last, prev)),
                 chg_1w=metrics.perf(closes, 5),
                 chg_1m=metrics.perf(closes, 21),
-                chg_ytd=metrics.perf_ytd(dates, closes) if dates else None,
+                # YTD ab dem heutigen Kalenderjahr, nicht ab dem Jahr des letzten Kurses: sonst zeigt
+                # ein Index ohne Handel am 1. Januar noch die Vorjahresperformance als YTD
+                chg_ytd=metrics.perf_ytd(dates, closes, today=today) if dates else None,
                 spark=metrics.last_n(closes, 30),
                 as_of=(q.timestamp if q and q.timestamp else (dates[-1] if dates else None)),
             )
@@ -290,7 +312,7 @@ class Terminal:
             ("us_de10", "USA − Deutschland 10J", "US10Y.GBOND", "DE10Y.GBOND"),
             ("it_de10", "Italien − Deutschland 10J", "IT10Y.GBOND", "DE10Y.GBOND"),
         ]
-        cutoff = (dt.date.today() - dt.timedelta(days=365 * years)).isoformat()
+        cutoff = (self._today() - dt.timedelta(days=365 * years)).isoformat()
 
         async def spread(key: str, label: str, a: str, b: str) -> Optional[Series]:
             try:
@@ -313,6 +335,9 @@ class Terminal:
     async def calendar(
         self, start: dt.date, end: dt.date, country: Optional[str], min_importance: int = 1
     ) -> list[EconEvent]:
+        if start.year < 1900 or end.year > 2200:
+            # Randdaten wie 0001-01-01 oder 9999-12-31 ließen die Datumsarithmetik überlaufen
+            raise BadRequest("Datum außerhalb des unterstützten Bereichs (1900–2200).")
         if end < start:
             raise BadRequest("Enddatum liegt vor Startdatum.")
         if (end - start).days > 62:
@@ -364,22 +389,33 @@ class Terminal:
         return fields
 
     @staticmethod
-    def parse_filters(raw: list[dict]) -> list[ScreenFilter]:
+    def parse_filters(raw: Any) -> list[ScreenFilter]:
+        def scalar(x: Any) -> bool:
+            return isinstance(x, (str, int, float)) and not isinstance(x, bool)
+
+        # Eingaben kommen ungeprüft aus dem JSON-Body: falsche Typen sind 400, nicht 500
+        if not isinstance(raw, list):
+            raise BadRequest("filters muss eine Liste sein.")
         out: list[ScreenFilter] = []
         if len(raw) > 30:
             raise BadRequest("Maximal 30 Filter.")
         for item in raw:
+            if not isinstance(item, dict):
+                raise BadRequest("Jeder Filter braucht die Felder field, op und value.")
             field, op, value = item.get("field"), item.get("op"), item.get("value")
-            if field not in _FIELD:
+            if not isinstance(field, str) or field not in _FIELD:
                 raise BadRequest(f"Unbekanntes Filterfeld: {field}")
-            if op not in _OPS:
+            if not isinstance(op, str) or op not in _OPS:
                 raise BadRequest(f"Unbekannter Operator: {op}")
             kind = _FIELD[field].kind
             if kind in ("number", "percent", "money") and op not in ("in", "contains"):
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                if not scalar(value) or isinstance(value, str) or (isinstance(value, float) and not math.isfinite(value)):
                     raise BadRequest(f"Filter {field}: Zahl erwartet.")
-            if op == "in" and not isinstance(value, list):
-                raise BadRequest(f"Filter {field}: Liste erwartet.")
+            if op == "in":
+                if not isinstance(value, list) or not all(scalar(x) for x in value):
+                    raise BadRequest(f"Filter {field}: Liste erwartet.")
+            elif not scalar(value):
+                raise BadRequest(f"Filter {field}: einzelner Wert erwartet.")
             out.append(ScreenFilter(field=field, op=op, value=value))
         return out
 
@@ -440,12 +476,15 @@ class Terminal:
         late_filters = [f for f in filters if f.field in _ENRICHED]
         needs_enrich = enrich or bool(late_filters) or sort in _ENRICHED
         server_sort = sort if sort not in _ENRICHED else "market_cap"
+        # Kennzahlen gibt es nur für die ersten enrich_limit Treffer: dafür die größten Werte
+        # laden – auch bei aufsteigender Sortierung (sonst nur die kleinsten Nebenwerte)
+        server_desc = desc if sort not in _ENRICHED else True
         max_rows = 300 if self.p.mode == "eodhd" else 1000
         key = "screen:" + json.dumps(
-            [[f.field, f.op, f.value] for f in base_filters] + [server_sort, desc, max_rows], sort_keys=True, default=str
+            [[f.field, f.op, f.value] for f in base_filters] + [server_sort, server_desc, max_rows], sort_keys=True, default=str
         )
         rows, local, notes = await self._cached(
-            key, "screen", lambda: self.p.screener(base_filters, server_sort, desc, max_rows)
+            key, "screen", lambda: self.p.screener(base_filters, server_sort, server_desc, max_rows)
         )
         notes = list(notes)
         rows = [r for r in rows if all(self._match(r, f) for f in local)]

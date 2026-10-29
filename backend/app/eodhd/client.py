@@ -133,7 +133,7 @@ class EODHDClient:
             try:
                 async with self._sem:
                     resp = await self._client.get(url, params=query)
-            except (httpx.TimeoutException, httpx.TransportError) as exc:
+            except httpx.RequestError as exc:  # Timeout, Netz, kaputte Kompression (DecodingError) …
                 if attempt <= self._retries:
                     await asyncio.sleep(self._backoff * 2 ** (attempt - 1))
                     continue

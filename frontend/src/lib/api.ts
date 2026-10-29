@@ -134,6 +134,11 @@ async function file<T>(name: string): Promise<T> {
 
 const safe = (t: string) => t.replace(/[^A-Za-z0-9.\-_]/g, "_");
 
+export const emptyQuote = (ticker: string): Quote => ({
+  ticker, name: null, last: null, change: null, changePct: null, open: null, high: null, low: null,
+  prevClose: null, volume: null, timestamp: null, delayed: true, currency: null,
+});
+
 function normalizeStatic(t: string): string {
   return t.includes(".") ? t.toUpperCase() : `${t.toUpperCase()}.US`;
 }
@@ -169,7 +174,8 @@ const staticApi = {
   },
   async quotes(tickers: string[]): Promise<Quote[]> {
     const all = await file<Record<string, Quote>>("quotes.json");
-    return tickers.map((t) => all[normalizeStatic(t)] || ({ ticker: t } as Quote));
+    // Unbekannte Ticker wie im Live-Modus als Quote mit null-Feldern (nicht undefined)
+    return tickers.map((t) => all[normalizeStatic(t)] || emptyQuote(t));
   },
   history: async (t: string) => (await series(t)).history,
   async intraday(t: string, days: number): Promise<Intraday> {
@@ -232,7 +238,13 @@ const staticApi = {
     return runScreen(universe, body.filters, body.sort, body.desc, body.limit);
   },
   movers: () => file<Movers>("market/movers.json"),
-  heatmap: () => file<ScreenResult>("market/heatmap.json"),
+  async heatmap(exchange?: string): Promise<ScreenResult> {
+    const all = await file<ScreenResult>("market/heatmap.json");
+    if (!exchange || exchange === "ALL") return all;
+    // Börsenauswahl wie im Live-Modus anwenden (exportiert ist "alle Börsen")
+    const rows = all.rows.filter((r) => r.exchange === exchange);
+    return { ...all, rows, total: rows.length, truncated: false };
+  },
 };
 
 // --- Öffentliche API -------------------------------------------------------------------

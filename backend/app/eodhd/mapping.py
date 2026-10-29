@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import re
 from typing import Any, Iterable, Optional
 
 from ..models import (
@@ -63,6 +64,9 @@ def quote(raw: dict, ticker: str) -> Quote:
     prev = num(raw.get("previousClose"))
     change = num(raw.get("change"))
     change_pct = num(raw.get("change_p"))
+    if prev == 0:
+        # Vorschlusskurs 0 = fehlt (Neuemission, Datenlücke); daraus abgeleitete Veränderungen wären absurd
+        prev = change = change_pct = None
     if change is None and last is not None and prev is not None:
         change = last - prev
     if change_pct is None:
@@ -113,6 +117,8 @@ def history(data: Any, ticker: str) -> History:
         date = text(r.get("date"))
         close = num(r.get("close"))
         adj = num(r.get("adjusted_close"))
+        if adj == 0 and close not in (None, 0):
+            adj = None  # adjusted_close 0 ist ein Datenfehler: unbereinigten Schluss verwenden statt Kurs 0
         if not date or (close is None and adj is None):
             continue
         # OHLC mit demselben Faktor bereinigen wie den Schlusskurs (Splits, Dividenden)
@@ -148,6 +154,27 @@ def intraday(data: Any, ticker: str, interval: str) -> Intraday:
         out.c.append(close)
         out.v.append(num(r.get("volume")))
     return out
+
+
+def last_sessions(data: Intraday, days: int) -> Intraday:
+    """Nur die letzten `days` Handelstage (UTC-Datum) behalten – wie Demo- und Statikmodus.
+
+    Der Abruf umfasst zur Überbrückung von Wochenenden mehr Kalendertage; ohne diesen
+    Schnitt zeigte "1T" mehrere Sitzungen.
+    """
+    if not data.t or days <= 0:
+        return data
+    dates = [dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc).date() for ts in data.t]
+    keep = set(sorted(set(dates))[-days:])
+    idx = [i for i, d in enumerate(dates) if d in keep]
+
+    def pick(xs: list) -> list:
+        return [xs[i] for i in idx]
+
+    return Intraday(
+        ticker=data.ticker, interval=data.interval,
+        t=pick(data.t), o=pick(data.o), h=pick(data.h), l=pick(data.l), c=pick(data.c), v=pick(data.v),
+    )
 
 
 # --- Fundamentaldaten ----------------------------------------------------------
@@ -415,7 +442,8 @@ def dividends(div_data: Any, split_data: Any, ticker: str, today: Optional[dt.da
     ]
     splits.sort(key=lambda s: s.date, reverse=True)
     cutoff = (today - dt.timedelta(days=365)).isoformat()
-    ttm_vals = [d.value for d in divs if d.ex_date > cutoff and d.value is not None]
+    # Nur bereits erfolgte Ex-Tage: angekündigte künftige Dividenden zählen nicht zu den letzten 12 Monaten
+    ttm_vals = [d.value for d in divs if cutoff < d.ex_date <= today.isoformat() and d.value is not None]
     return Dividends(
         ticker=ticker,
         dividends=divs[:40],
@@ -445,10 +473,31 @@ TOPIC_RULES: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 
+# Deutsche Wortteile stehen oft mitten in Komposita (Leitzins, Firmenübernahme) und
+# werden als Teilstring gesucht; alle anderen nur am Wortanfang, damit "steps" nicht
+# als "eps", "headquarters" nicht als "quarter" und "operating" nicht als "rating" zählt.
+_INFIX_WORDS = {"zins", "übernahme", "quartal", "kursziel"}
+
+
+def _word_pattern(words: Iterable[str]) -> re.Pattern[str]:
+    parts = []
+    for w in words:
+        if w in _INFIX_WORDS:
+            parts.append(re.escape(w))
+        elif w.endswith(" "):  # "fed " = ganzes Wort
+            parts.append(r"\b" + re.escape(w.strip()) + r"\b")
+        else:
+            parts.append(r"\b" + re.escape(w))
+    return re.compile("|".join(parts))
+
+
+_TOPIC_PATTERNS = [(topic, _word_pattern(words)) for topic, words in TOPIC_RULES]
+
+
 def classify_topic(title: str, tags: Iterable[str]) -> str:
     hay = (title + " " + " ".join(tags)).lower()
-    for topic, words in TOPIC_RULES:
-        if any(w in hay for w in words):
+    for topic, pattern in _TOPIC_PATTERNS:
+        if pattern.search(hay):
             return topic
     return "company"
 
@@ -529,6 +578,7 @@ def importance(event: str) -> int:
 
 def econ_events(data: Any) -> list[EconEvent]:
     out: list[EconEvent] = []
+    seen: set[str] = set()  # doppelt gelieferte Termine nur einmal (eindeutige IDs fürs Frontend)
     for r in _as_list(data):
         name = text(r.get("type")) or text(r.get("event"))
         date = text(r.get("date"))
@@ -540,6 +590,9 @@ def econ_events(data: Any) -> list[EconEvent]:
         comparison = text(r.get("comparison"))
         label = f"{name} {comparison.upper()}" if comparison and comparison.lower() in ("mom", "yoy", "qoq") else name
         ident = hashlib.sha1(f"{country}|{label}|{iso}".encode()).hexdigest()[:16]
+        if ident in seen:
+            continue
+        seen.add(ident)
         out.append(
             EconEvent(
                 id=ident,

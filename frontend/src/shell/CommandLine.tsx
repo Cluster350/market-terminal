@@ -140,8 +140,9 @@ export function CommandLine() {
     const cmd = parseCommand(value);
     if (!cmd) return;
     if (cmd.kind === "error") {
-      // Tippfehler-freundlich: genau ein Suchtreffer -> direkt öffnen
-      const hits = search.data ?? [];
+      // Tippfehler-freundlich: genau ein Suchtreffer -> direkt öffnen. Nur wenn die Treffer zur
+      // aktuellen Eingabe gehören – nach schnellem Weitertippen stammen sie noch vom alten Begriff.
+      const hits = debounced === value ? search.data ?? [] : [];
       if (hits.length === 1) return choose({ kind: "sec", ticker: hits[0].ticker, label: "", desc: "", meta: "", fn: null });
       setError(cmd.message);
       return;

@@ -50,6 +50,9 @@ from .base import (
 START = dt.date(2016, 1, 4)
 ANCHOR = dt.date(2025, 12, 31)  # Stichtag für die Ziel-Marktkapitalisierung
 UTC = dt.timezone.utc
+# Frühester Zeitpunkt der Demo-Uhr: zwei abgeschlossene Handelstage. Davor gäbe es keine
+# Kurse, und Kennzahlen, Kurven und Screener scheiterten an leeren Reihen.
+EARLIEST = dt.datetime(2016, 1, 5, 23, 59, tzinfo=dt.timezone.utc)
 
 
 def _seed(*parts: Any) -> int:
@@ -163,7 +166,8 @@ class DemoProvider:
 
     def now(self) -> dt.datetime:
         n = self._now_fn()
-        return n if n.tzinfo else n.replace(tzinfo=UTC)
+        n = n if n.tzinfo else n.replace(tzinfo=UTC)
+        return max(n, EARLIEST)
 
     def today(self) -> dt.date:
         return last_business_day(self.now().date())
@@ -727,8 +731,10 @@ class DemoProvider:
                 "epsActual": round(actual, 4), "epsEstimate": round(est, 4),
                 "epsDifference": round(actual - est, 4), "surprisePercent": round(surprise, 2),
             }
-        nq = quarters[0] + dt.timedelta(days=92)
-        nq = dt.date(nq.year, nq.month, 1) - dt.timedelta(days=1)  # Monatsende
+        # Nächstes Quartalsende: Letzter Tag des Monats drei Monate nach quarters[0]
+        # (früher +92 Tage und Monatsanfang−1, was für Q2/Q3 den 31.08./30.11. ergab)
+        y, m = divmod(quarters[0].year * 12 + quarters[0].month - 1 + 3 + 1, 12)
+        nq = dt.date(y, m + 1, 1) - dt.timedelta(days=1)
         next_rep = last_business_day(nq + dt.timedelta(days=_rng("next", ticker).randint(22, 38)))
         if next_rep <= self.today():
             next_rep = self.today() + dt.timedelta(days=_rng("next2", ticker).randint(3, 25))

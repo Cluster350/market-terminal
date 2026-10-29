@@ -164,7 +164,7 @@ async def screener(request: Request, body: dict = Body(...)):
     desc = bool(body.get("desc", True))
     try:
         limit = int(body.get("limit", 100))
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:  # OverflowError: limit = Infinity
         raise BadRequest("limit muss eine Zahl sein.") from exc
     return await term.screen(filters, sort, desc, limit, bool(body.get("enrich", False)))
 
