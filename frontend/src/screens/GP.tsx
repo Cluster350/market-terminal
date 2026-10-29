@@ -15,6 +15,7 @@ import {
 import { ErrorState, Loading, Seg } from "../components/ui";
 import { fmt, fmtBig, fmtDate, fmtPct, fmtPrice, fmtTime, isNum, shiftMonths, tone } from "../lib/format";
 import { useHistory, useIntraday } from "../lib/queries";
+import type { History, Intraday } from "../lib/types";
 import type { ScreenProps } from "./types";
 
 type Range = "1T" | "5T" | "1M" | "3M" | "6M" | "YTD" | "1J" | "5J" | "MAX";
@@ -28,7 +29,7 @@ const MA = [
   { n: 200, color: "#c77dff" },
 ];
 
-interface Bar {
+export interface Bar {
   time: Time;
   open: number;
   high: number;
@@ -74,6 +75,37 @@ function sma(values: (number | null)[], n: number): (number | null)[] {
   return out;
 }
 
+/**
+ * Intraday-Balken mit Ortszeit-Achse. lightweight-charts verlangt streng aufsteigende Zeiten:
+ * Bei der Zeitumstellung im Herbst wiederholt sich eine Ortsstunde (z. B. BTC rund um die Uhr),
+ * deren zweite Hälfte wird übersprungen statt den Chart mit ungeordneten Daten zu füttern.
+ */
+export function intradayBars(d: Intraday, toTime: (ts: number) => UTCTimestamp = toLocal): Bar[] {
+  const bars: Bar[] = [];
+  d.t.forEach((ts, i) => {
+    const o = d.o[i], h = d.h[i], l = d.l[i], c = d.c[i];
+    const time = toTime(ts);
+    if (bars.length && time <= (bars[bars.length - 1].time as number)) return;
+    if (isNum(o) && isNum(h) && isNum(l) && isNum(c)) bars.push({ time, open: o, high: h, low: l, close: c, volume: d.v[i], ts });
+  });
+  return bars;
+}
+
+/** Tagesbalken; doppelte oder unsortierte Tage (Datenfehler der Quelle) werden übersprungen. */
+export function dailyBars(h: History): Bar[] {
+  const all: Bar[] = [];
+  h.t.forEach((t, i) => {
+    const c = h.c[i];
+    if (!isNum(c)) return;
+    if (all.length && t <= (all[all.length - 1].time as string)) return;
+    const o = isNum(h.o[i]) ? h.o[i]! : c;
+    const hi = isNum(h.h[i]) ? Math.max(h.h[i]!, o, c) : Math.max(o, c);
+    const lo = isNum(h.l[i]) ? Math.min(h.l[i]!, o, c) : Math.min(o, c);
+    all.push({ time: t as Time, open: o, high: hi, low: lo, close: c, volume: h.v[i] });
+  });
+  return all;
+}
+
 export default function GP({ ticker }: ScreenProps) {
   const [range, setRange] = useState<Range>("1J");
   const [kind, setKind] = useState<Kind>("candle");
@@ -88,27 +120,12 @@ export default function GP({ ticker }: ScreenProps) {
     if (intradayRange) {
       const d = intra.data;
       if (!d) return { bars: [] as Bar[], maLines: [] as { n: number; color: string; data: { time: Time; value: number }[] }[] };
-      const bars: Bar[] = [];
-      d.t.forEach((ts, i) => {
-        const o = d.o[i], h = d.h[i], l = d.l[i], c = d.c[i];
-        if (isNum(o) && isNum(h) && isNum(l) && isNum(c)) bars.push({ time: toLocal(ts), open: o, high: h, low: l, close: c, volume: d.v[i], ts });
-      });
-      return { bars, maLines: [] };
+      return { bars: intradayBars(d), maLines: [] };
     }
     const h = hist.data;
     if (!h || !h.t.length) return { bars: [] as Bar[], maLines: [] };
     const start = rangeStart(range, h.t[h.t.length - 1]);
-    const all: Bar[] = [];
-    const idx: number[] = [];
-    h.t.forEach((t, i) => {
-      const c = h.c[i];
-      if (!isNum(c)) return;
-      const o = isNum(h.o[i]) ? h.o[i]! : c;
-      const hi = isNum(h.h[i]) ? Math.max(h.h[i]!, o, c) : Math.max(o, c);
-      const lo = isNum(h.l[i]) ? Math.min(h.l[i]!, o, c) : Math.min(o, c);
-      all.push({ time: t as Time, open: o, high: hi, low: lo, close: c, volume: h.v[i] });
-      idx.push(i);
-    });
+    const all = dailyBars(h);
     const first = all.findIndex((b) => (b.time as string) >= start);
     const from = first < 0 ? 0 : first;
     const closes = all.map((b) => b.close);

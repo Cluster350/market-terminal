@@ -72,7 +72,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       throw new ApiError(0, aborted ? "timeout" : "network", aborted ? "Zeitüberschreitung – der Server antwortet nicht." : "Server nicht erreichbar. Läuft das Backend?");
     }
     let body: unknown = null;
-    const text = await res.text();
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (e) {
+      // Abbruch während der Übertragung (Timeout, Netz): als ApiError, nicht als roher AbortError
+      const aborted = (e as Error).name === "AbortError";
+      throw new ApiError(0, aborted ? "timeout" : "network", aborted ? "Zeitüberschreitung beim Laden der Antwort." : "Verbindung während der Übertragung abgebrochen.");
+    }
     if (text) {
       try {
         body = JSON.parse(text);

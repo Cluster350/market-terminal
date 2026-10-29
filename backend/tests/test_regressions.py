@@ -64,6 +64,21 @@ def test_history_adjusted_close_zero_falls_back_to_close():
     assert h.o[0] == 10.0 and h.h[0] == 11.0 and h.l[0] == 9.0
 
 
+def test_history_and_intraday_drop_duplicate_times():
+    h = mapping.history(
+        [
+            {"date": "2026-10-27", "close": 10, "adjusted_close": 10},
+            {"date": "2026-10-26", "close": 9, "adjusted_close": 9},
+            {"date": "2026-10-27", "close": 11, "adjusted_close": 11},
+        ],
+        "X.US",
+    )
+    assert h.t == ["2026-10-26", "2026-10-27"] and h.c == [9.0, 11.0]
+    assert len(h.o) == len(h.h) == len(h.l) == len(h.v) == 2
+    i = mapping.intraday([{"timestamp": 200, "close": 2}, {"timestamp": 100, "close": 1}, {"timestamp": 200, "close": 3}], "X.US", "5m")
+    assert i.t == [100, 200] and i.c == [1.0, 3.0] and len(i.v) == 2
+
+
 @pytest.mark.parametrize(
     "title,topic",
     [

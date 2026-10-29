@@ -130,6 +130,11 @@ def history(data: Any, ticker: str) -> History:
             val = num(r.get(key))
             return None if val is None else round(val * factor, 6)
 
+        if t and t[-1] == date[:10]:
+            # Doppelter Tag (Datenkorrektur der Quelle): letzter Eintrag gilt – Charts brauchen
+            # streng aufsteigende Zeiten
+            for arr in (t, o, h, l, c, v):
+                arr.pop()
         t.append(date[:10])
         o.append(scaled("open"))
         h.append(scaled("high"))
@@ -147,6 +152,9 @@ def intraday(data: Any, ticker: str, interval: str) -> Intraday:
         close = num(r.get("close"))
         if ts is None or close is None:
             continue
+        if out.t and out.t[-1] == int(ts):  # doppelter Zeitstempel: letzter Eintrag gilt
+            for arr in (out.t, out.o, out.h, out.l, out.c, out.v):
+                arr.pop()
         out.t.append(int(ts))
         out.o.append(num(r.get("open")))
         out.h.append(num(r.get("high")))
