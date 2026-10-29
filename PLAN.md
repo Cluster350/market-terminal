@@ -3,7 +3,16 @@
 Ein Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace, gespeist aus der EODHD-API (EOD Historical Data).
 Drei Module: **Aktien-Dashboard**, **Makro-Dashboard**, **Aktien-Screener**.
 
-Stand: 29.10.2026 · Status: Planung
+Stand: 29.10.2026 · Status: **umgesetzt** (Bedienung und Start siehe [README.md](README.md))
+
+> **Abweichungen vom Plan bei der Umsetzung**
+> - Zusätzlich gebaut: News-Terminal `TOP` mit Filtern, Suche, Eilmeldungen und Leseansicht.
+> - Screener: Stufe 1 (EODHD-Screener-API) plus lokale Filter für KGV und technische Kennzahlen,
+>   die aus Kursreihen berechnet werden. Ein eigenes DuckDB-Universum (Stufe 2) ist noch offen.
+> - Datenhaltung: In-Memory-Cache mit TTL statt DuckDB-Datei.
+> - Layout: feste Seitenlayouts mit frei wählbarer Funktion je Panel statt frei andockbarer Panels.
+> - Nicht umgesetzt: FRED-Anbindung, WebSocket-Kurse, Docker Compose (Start über `start.sh`).
+> - Demo-Modus mit fiktiven Unternehmen, damit das Terminal ohne EODHD-Abo und ohne Netz läuft.
 
 ---
 
