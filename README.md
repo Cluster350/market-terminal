@@ -10,9 +10,18 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 | **3 SCREENER** | EQS · IMAP · MOST | Aktien-Screener, Markt-Heatmap, Top-Bewegungen |
 | **4 NEWS** | TOP · W | News-Terminal mit Leseansicht, Watchlist |
 
-Jedes Panel kann über sein Auswahlfeld oder die Befehlszeile jede Funktion zeigen.
-Weitere Funktionen: HP (Kurshistorie), ERN (Earnings), DVD (Dividenden), ANR (Analysten),
+Jedes Panel kann über sein Auswahlfeld oder die Befehlszeile jede Funktion zeigen; das Layout
+jeder Seite ist umschaltbar (1, 2, 3 oder 4 Panels). Weitere Funktionen: HP (Kurshistorie),
+ERN (Earnings), DVD (Dividenden), ANR (Analysten), RV (Peer-Vergleich), EVTS (Earnings-Kalender),
 CMDT (Rohstoffe), SPRD (Zinsspreads), ECST (Länderdaten), HELP.
+
+**Mehrere Monitore:** „⧉ FENSTER“ öffnet die aktuelle Seite, „⧉“ im Panelkopf eine einzelne
+Funktion in einem eigenen Browserfenster. Wertpapier, Watchlist und Verlauf sind zwischen den
+Fenstern verknüpft (über localStorage), „LINK“ löst ein Fenster davon.
+
+**Start:** Beim ersten Öffnen einer Sitzung zeigt ein kurzes Startprotokoll die echten Ladeschritte
+(Datenquelle, Indizes, Watchlist, Kalender, News); eine Taste überspringt es, bei „Bewegung
+reduzieren“ entfällt es.
 
 ## Starten
 
@@ -39,9 +48,13 @@ Kursfunktionen; Panels ohne Planabdeckung zeigen eine klare Meldung.
 ## Bedienung
 
 - **Befehlszeile**: `/` drücken oder einfach lostippen. Erst Ticker, dann Funktion, dann Enter.
-  Beispiele: `AAPL US GP`, `SAP GR DES`, `ECO`, `TOP`, `HELP`. Ticker im EODHD-Format
-  (`SAP.XETRA`) oder mit Bloomberg-Börsenkürzel (`SAP GR`, `VOD LN`); ohne Börse gilt US.
-- **Alt+1–4** Seiten · **Alt+←/→** aktives Panel · **Alt+M** Panel maximieren · **Esc** zurück.
+  Beispiele: `AAPL US GP`, `SAP GR DES`, `DAX Index GP`, `EURUSD Curncy`, `ECO`, `TOP`, `HELP`.
+  Ticker im EODHD-Format (`SAP.XETRA`) oder im Bloomberg-Stil mit Börsenkürzel bzw. gelber Taste;
+  ohne Börse gilt US. Unbekannte Ticker werden abgewiesen, ↑ holt frühere Befehle zurück.
+- **Alt+1–4** Seiten · **Alt+←/→** aktives Panel · **Alt+M** Panel maximieren · **Alt+L** Layout ·
+  **Esc** zurück.
+- **Chart (GP):** Zeiträume 1T–MAX (Rendite gegen den Schluss vor Periodenbeginn), SMA 20/50/200,
+  Bollinger 20, RSI 14 als eigener Bereich, Vergleich mit Index oder bis zu vier Werten.
 - Ein Klick auf einen Ticker (Tabellen, News, Heatmap, Laufband) macht ihn zum aktiven
   Wertpapier; alle Aktien-Panels folgen.
 
@@ -65,6 +78,14 @@ EODHD API
 - `backend/app/services/terminal.py` – Caching, Makro-Aggregation, Screener (serverseitige
   EODHD-Filter + lokale Filter für KGV und technische Kennzahlen).
 
+## Datenqualität im Demo-Modus
+
+Der Demo-Datensatz ist synthetisch, aber in sich konsistent: Börsenfeiertage je Handelsplatz,
+Handelszeiten mit Sommerzeit, arbitragefreie Devisen-Kreuzkurse, Quartalszahlen und News zu
+denselben Berichtsterminen, Wirtschaftsdaten mit korrekten Bezugsperioden (Vorwert = letzter
+Ist-Wert). Kennzahlen wie 1M/12M oder 52W werden überall über Kalenderfenster berechnet;
+Marktkapitalisierungen im Screener sind in USD umgerechnet.
+
 ## Tests
 
 ```bash
@@ -81,6 +102,7 @@ eine Version ohne Backend, die alle Demo-Daten als JSON mitbringt.
 ## Grenzen
 
 - EODHD-Kurse sind verzögert (ca. 15–20 Min.); Echtzeit-WebSocket ist nicht angebunden.
+- Charts: [TradingView Lightweight Charts](https://www.tradingview.com/) (Apache 2.0), Verweis im Chart-Panel.
 - EODHD-Makroindikatoren sind überwiegend Jahreswerte (Weltbank-Basis).
 - Rohstoffe werden im EODHD-Modus über ETFs als Stellvertreter abgebildet.
 - News liefert EODHD je Ticker; der allgemeine Feed setzt sich aus den Standard-Tickern zusammen.

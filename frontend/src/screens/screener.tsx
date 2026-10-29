@@ -532,7 +532,9 @@ export function HELP(_: ScreenProps) {
           Beispiele: <code className="lbl">{displayTicker(example)} GP</code>, <code className="lbl">{example.split(".")[0]} DES</code>, <code className="lbl">ECO</code>, <code className="lbl">TOP</code>.
         </p>
         <p style={{ margin: "4px 0" }}>
-          Ticker gehen im EODHD-Format (<code>SAP.XETRA</code>) oder mit Börsenkürzel wie bei Bloomberg (<code>SAP GR</code>, <code>VOD LN</code>). Ohne Börse wird US angenommen.
+          Ticker gehen im EODHD-Format (<code>SAP.XETRA</code>) oder wie bei Bloomberg mit Börsenkürzel bzw. gelber Taste (<code>SAP GR</code>, <code>VOD LN</code>,{" "}
+          <code>DAX Index</code>, <code>SPX Index</code>, <code>EURUSD Curncy</code>, <code>US10Y Govt</code>). Ohne Börse wird US angenommen. Unbekannte Ticker werden
+          vor dem Umschalten abgewiesen.
           Ein Ticker allein wechselt das aktive Wertpapier; alle Aktien-Panels folgen ihm.
         </p>
       </div>
@@ -542,10 +544,11 @@ export function HELP(_: ScreenProps) {
           {[
             ["/ oder einfach lostippen", "Befehlszeile"],
             ["Esc", "Befehlszeile leeren"],
-            ["↑ ↓ / Tab", "Vorschläge wählen / übernehmen"],
+            ["↑ ↓ / Tab", "Vorschläge wählen / übernehmen; ↑ bei leerer Zeile holt frühere Befehle"],
             ["Alt + 1 … 4", "Seite AKTIE, MAKRO, SCREENER, NEWS"],
             ["Alt + ← →", "Aktives Panel wechseln"],
             ["Alt + M", "Aktives Panel maximieren"],
+            ["Alt + L", "Layout der Seite wechseln (1, 2, 3 oder 4 Panels)"],
             ["↑ ↓ (im aktiven News-Panel)", "Meldungen durchblättern"],
           ].map(([k, v]) => (
             <tr key={k}>
@@ -573,6 +576,14 @@ export function HELP(_: ScreenProps) {
           </table>
         </div>
       ))}
+      <div className="section-title">Mehrere Monitore</div>
+      <div style={{ fontFamily: "var(--sans)", fontSize: 13, lineHeight: 1.5, maxWidth: "80ch" }}>
+        <p style={{ margin: "4px 0" }}>
+          <b className="lbl">⧉ FENSTER</b> in der Kopfzeile öffnet die aktuelle Seite in einem neuen Fenster, <b className="lbl">⧉</b> im Panelkopf eine einzelne
+          Funktion. Die Fenster lassen sich auf weitere Monitore ziehen und merken sich ihr Layout. Wertpapier, Watchlist und Verlauf sind zwischen allen
+          Fenstern verknüpft; mit <b className="lbl">LINK</b> löst sich ein Fenster vom gemeinsamen Wertpapier.
+        </p>
+      </div>
       <div className="section-title">Datenquelle</div>
       <p style={{ fontFamily: "var(--sans)", fontSize: 13, maxWidth: "80ch" }}>
         {IS_STATIC
