@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSaved } from "./screener";
+import { parseSaved, toCsv } from "./screener";
 
 describe("parseSaved (gespeicherte Screens aus localStorage)", () => {
   it("vergibt eindeutige, neue Filter-IDs (Regression: Kollision mit neuen Filtern)", () => {
@@ -26,5 +26,23 @@ describe("parseSaved (gespeicherte Screens aus localStorage)", () => {
     expect(s[0].filters.map((f) => [f.field, f.op, f.value])).toEqual([["pe", "gt", "5"]]);
     expect(s[0].sort).toBe("market_cap");
     expect(s[0].desc).toBe(true);
+  });
+});
+
+describe("toCsv", () => {
+  it("Dezimalkomma, Semikolon und Schutz vor Formel-Injektion in Excel", () => {
+    const row = {
+      ticker: "X.US", name: "=HYPERLINK(\"http://x\")", exchange: "US", sector: "-Tech", industry: "@SUM", currency: "USD",
+      price: 12.3456789, chg1d: -1.5, chg5d: null, marketCap: 1.5e9, marketCapLocal: 1.5e9, eps: null, pe: null, divYield: null,
+      avgVol: null, perf1m: null, perf3m: null, perf12m: null, rsi14: null, vol1y: null, dist52wHigh: null,
+    };
+    const [head, line] = toCsv([row]).split("\n");
+    expect(head.startsWith("Ticker;Name;")).toBe(true);
+    const cells = line.split(";");
+    expect(cells[1]).toBe(`"'=HYPERLINK(""http://x"")"`);
+    expect(cells[3]).toBe("'-Tech");
+    expect(cells[4]).toBe("'@SUM");
+    expect(cells[6]).toBe("12,3457");
+    expect(cells[7]).toBe("-1,5"); // negative Zahlen bleiben Zahlen
   });
 });

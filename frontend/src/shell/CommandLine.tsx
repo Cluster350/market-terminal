@@ -36,6 +36,7 @@ export function CommandLine() {
   const [histIdx, setHistIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const requestId = useRef(0);
 
   // Tippen irgendwo im Terminal landet in der Befehlszeile
   useEffect(() => {
@@ -138,6 +139,8 @@ export function CommandLine() {
   useEffect(() => setCursor(-1), [value]);
 
   function close() {
+    requestId.current++; // Esc bricht eine laufende Prüfung ab
+    setChecking(false);
     setValue("");
     setOpen(false);
     setError(null);
@@ -164,15 +167,20 @@ export function CommandLine() {
   async function activate(ticker: string, fn: FnCode | null, verified: boolean) {
     let t = ticker;
     if (!verified) {
+      // Nur die jüngste Prüfung zählt: Kommt eine ältere Antwort später an (zweimal Enter,
+      // inzwischen weitergetippt), darf sie weder umschalten noch die neue Eingabe löschen
+      const id = ++requestId.current;
       setChecking(true);
       try {
         t = (await api.resolve(ticker)).ticker;
       } catch (e) {
+        if (id !== requestId.current) return;
         setChecking(false);
         setOpen(true);
         setError(e instanceof ApiError ? e.message : "Ticker konnte nicht geprüft werden.");
         return;
       }
+      if (id !== requestId.current) return;
       setChecking(false);
     }
     remember(value);
@@ -198,6 +206,7 @@ export function CommandLine() {
   }
 
   function submit() {
+    if (checking) return; // Prüfung läuft noch (GO ist gesperrt, Enter ebenso)
     if (cursor >= 0 && suggestions[cursor]) return choose(suggestions[cursor]);
     const cmd = parseCommand(value);
     if (!cmd) return;
@@ -235,6 +244,11 @@ export function CommandLine() {
           setError(null);
           setHistIdx(-1);
           setOpen(true);
+          // Weitertippen verwirft eine noch laufende Prüfung des vorherigen Befehls
+          if (checking) {
+            requestId.current++;
+            setChecking(false);
+          }
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={(e) => {

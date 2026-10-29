@@ -206,7 +206,7 @@ export function RV({ ticker }: ScreenProps) {
                   ))}
                   <tr className="em" style={{ borderTop: "1px solid var(--rule-strong)" }}>
                     <td className="lbl">Median</td>
-                    <td className="muted">ohne Gewichtung</td>
+                    <td className="muted" title="Ungewichteter Median der Vergleichswerte, ohne das Wertpapier selbst">Vergleichswerte</td>
                     {RV_COLS.map((c) => (
                       <td key={c.key} className="num">{c.render(p.median)}</td>
                     ))}
@@ -289,7 +289,8 @@ export function InstrumentOverview({ ticker }: { ticker: string }) {
           const periods: [string, number | null][] = [
             ["1 Monat", base(cut(1))],
             ["3 Monate", base(cut(3))],
-            ["Seit Jahresbeginn", base(`${Number(lastDate?.slice(0, 4)) - 1}-12-31`)],
+            // Laufendes Kalenderjahr, nicht das Jahr des letzten Kurses (am 1.1. sonst Vorjahresperformance)
+            ["Seit Jahresbeginn", base(`${Math.max(Number(lastDate?.slice(0, 4)), new Date().getFullYear()) - 1}-12-31`)],
             ["1 Jahr", base(cut(12))],
             ["5 Jahre", base(cut(60))],
           ];

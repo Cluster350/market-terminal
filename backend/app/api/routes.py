@@ -128,9 +128,13 @@ def _date(raw: Optional[str], default: dt.date) -> dt.date:
     if not raw:
         return default
     try:
-        return dt.date.fromisoformat(raw)
+        d = dt.date.fromisoformat(raw)
     except ValueError as exc:
         raise BadRequest(f"Datum „{raw}“ ungültig (Format JJJJ-MM-TT).") from exc
+    # Randdaten (9999-12-31 + 6 Tage als Standard-Ende) ließen die Datumsarithmetik überlaufen
+    if not 1900 <= d.year <= 2200:
+        raise BadRequest("Datum außerhalb des unterstützten Bereichs (1900–2200).")
+    return d
 
 
 @router.get("/macro/calendar", response_model=list[EconEvent])

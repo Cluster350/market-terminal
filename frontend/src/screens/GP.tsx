@@ -42,13 +42,16 @@ export interface Bar {
   ts?: number; // Intraday: Original-Zeitstempel (UTC-Sekunden) für die Anzeige
 }
 
-function rangeStart(range: Range, last: string): string {
+export function rangeStart(range: Range, last: string): string {
   const shift = (months: number) => shiftMonths(last, months); // mit Monatsende-Begrenzung
   switch (range) {
     case "1M": return shift(1);
     case "3M": return shift(3);
     case "6M": return shift(6);
-    case "YTD": return `${last.slice(0, 4)}-01-01`;
+    // Stichtag 31.12. des Vorjahres: Der erste Balken des Jahres (auch ein 1. Januar, z. B. bei
+    // Krypto) liegt danach. Mit "01-01" als Stichtag fand sich am 1.1. kein Balken und der Chart
+    // fiel auf die gesamte Historie zurück.
+    case "YTD": return `${Number(last.slice(0, 4)) - 1}-12-31`;
     case "1J": return shift(12);
     case "5J": return shift(60);
     default: return "0000-00-00";
@@ -171,6 +174,28 @@ export function closeBefore(h: History | undefined, isoDate: string): number | n
   return base;
 }
 
+type RsiPoint = { time: Time; value?: number };
+
+/**
+ * RSI-Punkte auf die Zeitachse des Kurscharts bringen. Im Vergleichsmodus enthält die Achse
+ * auch Handelstage der Vergleichswerte (andere Feiertage); ohne Leerpunkte für diese Tage
+ * liefe der über den logischen Bereich gekoppelte RSI-Chart seitlich versetzt.
+ */
+export function alignRsi(rsi: RsiPoint[], lines: { data: { time: Time }[] }[]): RsiPoint[] {
+  const times = new Set(rsi.map((p) => String(p.time)));
+  const before = times.size;
+  for (const l of lines) for (const p of l.data) times.add(String(p.time));
+  if (times.size === before) return rsi;
+  const by = new Map(rsi.map((p) => [String(p.time), p]));
+  return Array.from(times)
+    .sort()
+    .map((t) => by.get(t) ?? { time: t as Time });
+}
+
+// Stabile Referenz: useQueries liefert ohne combine bei jedem Render ein neues Array, wodurch
+// der Daten-Effekt bei jeder Mausbewegung (Hover) alle Serien neu gesetzt hätte.
+const combineCompare = (results: { data?: History; isError: boolean }[]) => results.map((r) => ({ data: r.data, isError: r.isError }));
+
 const BENCHMARK: Record<string, string> = {
   US: "GSPC.INDX", XETRA: "GDAXI.INDX", PA: "FCHI.INDX", AS: "STOXX50E.INDX", SW: "SSMI.INDX", LSE: "FTSE.INDX",
 };
@@ -196,6 +221,7 @@ export default function GP({ ticker }: ScreenProps) {
 
   const compareQ = useQueries({
     queries: compare.map((t) => ({ queryKey: ["history", t], queryFn: () => api.history(t), staleTime: 60_000, retry })),
+    combine: combineCompare,
   });
 
   const view = useMemo(() => {
@@ -277,6 +303,10 @@ export default function GP({ ticker }: ScreenProps) {
   const hasData = bars.length > 0;
   const maKey = mas.slice().sort().join(",");
   const cmpKey = comparing ? compare.join(",") : "";
+  // Der Preisformatierer lebt so lange wie der Chart; bei Tickerwechsel mit Daten im Cache wird
+  // der Chart nicht neu gebaut – sonst zeigte EUR/USD nach einer Aktie nur zwei Nachkommastellen
+  const tickerRef = useRef(ticker);
+  tickerRef.current = ticker;
 
   // Chart nur bei neuer Darstellungsart aufbauen; neue Daten werden per setData eingespielt,
   // damit Zoom und Ausschnitt bei der automatischen Aktualisierung erhalten bleiben.
@@ -295,7 +325,7 @@ export default function GP({ ticker }: ScreenProps) {
       rightPriceScale: { borderColor: "#262626", scaleMargins: { top: 0.08, bottom: comparing ? 0.05 : 0.22 } },
       localization: {
         locale: "de-DE",
-        priceFormatter: (p: number) => (comparing ? `${p >= 0 ? "+" : ""}${fmt(p, 1)} %` : isYield ? `${fmt(p, 3)} %` : fmtPrice(p, ticker)),
+        priceFormatter: (p: number) => (comparing ? `${p >= 0 ? "+" : ""}${fmt(p, 1)} %` : isYield ? `${fmt(p, 3)} %` : fmtPrice(p, tickerRef.current)),
       },
     });
     chartRef.current = chart;
@@ -387,14 +417,14 @@ export default function GP({ ticker }: ScreenProps) {
       s.bands[1].setData(bands.lower);
     }
     compareLines.forEach((l, i) => s.cmp[i]?.setData(l.data));
-    s.rsi?.setData(rsi as never);
+    s.rsi?.setData((comparing ? alignRsi(rsi, compareLines) : rsi) as never);
     const key = `${ticker}|${range}|${kind}|${maKey}|${cmpKey}|${showRsi}`;
     if (fitKey.current !== key) {
       chart.timeScale().fitContent();
       rsiChartRef.current?.timeScale().fitContent();
       fitKey.current = key;
     }
-  }, [bars, maLines, bands, rsi, compareLines, kind, range, ticker, maKey, cmpKey, showRsi]);
+  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi]);
 
   function addCompare(raw: string) {
     const t = normalizeTicker(raw);

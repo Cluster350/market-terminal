@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { UTCTimestamp } from "lightweight-charts";
-import { dailyBars, intradayBars } from "./GP";
+import type { Time, UTCTimestamp } from "lightweight-charts";
+import { alignRsi, dailyBars, intradayBars, rangeStart } from "./GP";
 import type { History, Intraday } from "../lib/types";
 
 // Ortszeit wie in Europe/Berlin: bis 25.10.2026 01:00 UTC UTC+2, danach UTC+1
@@ -41,5 +41,30 @@ describe("dailyBars", () => {
     expect(bars.map((b) => b.time)).toEqual(["2026-10-26", "2026-10-27"]);
     expect(bars[0]).toMatchObject({ open: 10, high: 10, low: 9, close: 10 });
     expect(bars[1]).toMatchObject({ open: 11, close: 11 }); // fehlende Eröffnung = Schluss
+  });
+});
+
+describe("rangeStart / YTD am Jahreswechsel", () => {
+  it("YTD-Stichtag ist der 31.12. des Vorjahres, damit ein Balken vom 1. Januar dazugehört", () => {
+    expect(rangeStart("YTD", "2027-01-01")).toBe("2026-12-31");
+    // Krypto handelt am 1.1.: der erste Balken nach dem Stichtag muss gefunden werden
+    const h: History = {
+      ticker: "BTC-USD.CC", currency: "USD", t: ["2026-12-30", "2026-12-31", "2027-01-01"],
+      o: [1, 2, 3], h: [1, 2, 3], l: [1, 2, 3], c: [1, 2, 3], v: [null, null, null],
+    };
+    const all = dailyBars(h);
+    const first = all.findIndex((b) => (b.time as string) > rangeStart("YTD", "2027-01-01"));
+    expect(first).toBe(2);
+    expect(rangeStart("1M", "2026-03-31")).toBe("2026-02-28");
+  });
+});
+
+describe("alignRsi", () => {
+  it("füllt Handelstage der Vergleichswerte mit Leerpunkten auf (gleiche logische Achse)", () => {
+    const rsi = [{ time: "2026-11-25" as Time, value: 55 }, { time: "2026-11-27" as Time, value: 60 }];
+    // DAX handelt an Thanksgiving (26.11.), die US-Aktie nicht
+    const lines = [{ data: [{ time: "2026-11-25" as Time }, { time: "2026-11-26" as Time }, { time: "2026-11-27" as Time }] }];
+    expect(alignRsi(rsi, lines)).toEqual([{ time: "2026-11-25", value: 55 }, { time: "2026-11-26" }, { time: "2026-11-27", value: 60 }]);
+    expect(alignRsi(rsi, [{ data: rsi }])).toBe(rsi); // nichts zu ergänzen
   });
 });

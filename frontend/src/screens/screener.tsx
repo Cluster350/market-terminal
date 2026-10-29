@@ -127,8 +127,10 @@ export function toCsv(rows: ScreenRow[]): string {
   ];
   const esc = (v: unknown) => {
     if (v === null || v === undefined) return "";
-    const s = typeof v === "number" ? String(Math.round(v * 10000) / 10000).replace(".", ",") : String(v);
-    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    let s = typeof v === "number" ? String(Math.round(v * 10000) / 10000).replace(".", ",") : String(v);
+    // Texte aus Fremddaten, die mit = + - @ beginnen, führte Excel als Formel aus (CSV-Injection)
+    if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return [cols.map(([, h]) => h).join(";"), ...rows.map((r) => cols.map(([k]) => esc(r[rowKey(k)])).join(";"))].join("\n");
 }

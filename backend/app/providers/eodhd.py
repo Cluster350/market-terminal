@@ -262,10 +262,11 @@ class EODHDProvider:
                 if f.field == "market_cap" and isinstance(value, (int, float)):
                     # Terminal filtert in USD, EODHD in Handelswährung: serverseitig großzügig
                     # vorfiltern, exakt nach der Umrechnung lokal
+                    # Nur die Untergrenze vorfiltern: in schwachen Währungen (JPY, SEK, GBX …) ist
+                    # der Betrag in Handelswährung viel größer als in USD, eine Obergrenze würde
+                    # dort gültige Werte verlieren.
                     if f.op in ("gt", "gte"):
                         server.append([field, op, value * 0.4])
-                    elif f.op in ("lt", "lte"):
-                        server.append([field, op, value * 2.5])
                     local.append(f)
                     continue
                 server.append([field, op, value])

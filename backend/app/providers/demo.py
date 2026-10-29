@@ -232,7 +232,8 @@ class DemoProvider:
         self._market_cache: dict[int, list[float]] = {}
         self._daily_cache: dict[tuple[str, int], dict[str, list]] = {}
         self._bars_cache: dict[tuple[str, dt.date], list[tuple[int, float, float, float, float, float]]] = {}
-        self._fund_cache: dict[tuple[str, dt.date], dict] = {}
+        self._fund_cache: dict[tuple, dict] = {}
+        self._days_cache: tuple[Optional[dt.date], list[dt.date]] = (None, [])
 
     async def close(self) -> None:
         return None
@@ -248,7 +249,12 @@ class DemoProvider:
         return last_business_day(self.now().date())
 
     def days(self) -> list[dt.date]:
-        return business_days(START, self.today())
+        # Je Tag nur einmal berechnen: _daily ruft das bei jedem Aufruf (auch Cache-Treffern) auf,
+        # das waren bei 60 Anleihen rund 0,8 s der 1,3 s für /macro/curves. Aufrufer kopieren.
+        today = self.today()
+        if self._days_cache[0] != today:
+            self._days_cache = (today, business_days(START, today))
+        return self._days_cache[1]
 
     # --- Instrumente -------------------------------------------------------------
 
@@ -701,6 +707,7 @@ class DemoProvider:
     # --- Fundamentaldaten (im EODHD-Rohformat) --------------------------------------
 
     @staticmethod
+    @lru_cache(maxsize=8192)
     def _report_date(ticker: str, quarter_end: dt.date) -> tuple[dt.date, str]:
         """Berichtstermin (22–38 Tage nach Quartalsende, Werktag) und Zeitpunkt."""
         r = _rng("report", ticker, quarter_end.isoformat())
@@ -708,6 +715,20 @@ class DemoProvider:
         while d.weekday() >= 5:
             d += dt.timedelta(days=1)
         return d, r.choice(["BeforeMarket", "AfterMarket"])
+
+    def _release_time(self, ticker: str, day: dt.date, timing: Optional[str]) -> dt.datetime:
+        """Veröffentlichung: vorbörslich 75 Min. vor Handelsbeginn, sonst 10 Min. nach Schluss."""
+        start, end = self._session_bounds(ticker, day)
+        return start - dt.timedelta(minutes=75) if timing == "BeforeMarket" else end + dt.timedelta(minutes=10)
+
+    def _released(self, ticker: str, quarter_end: dt.date) -> bool:
+        """Sind die Zahlen dieses Quartals schon veröffentlicht? Am Berichtstag zählt die Uhrzeit:
+        Vor einem Bericht nach Börsenschluss zeigte ERN sonst schon das Ist-EPS, die News noch nicht."""
+        rep, timing = self._report_date(ticker, quarter_end)
+        now = self.now()
+        if abs((rep - now.date()).days) > 1:
+            return rep < now.date()
+        return self._release_time(ticker, rep, timing) <= now
 
     def _fiscal(self, ticker: str) -> tuple[list[dt.date], list[dt.date]]:
         """Geschäftsjahre und bereits berichtete Quartale (je Unternehmen verschieden)."""
@@ -718,7 +739,7 @@ class DemoProvider:
         y, q = today.year, 4
         while len(quarters) < 10:
             end = [dt.date(y, 3, 31), dt.date(y, 6, 30), dt.date(y, 9, 30), dt.date(y, 12, 31)][q - 1]
-            if self._report_date(ticker, end)[0] <= today:
+            if self._released(ticker, end):
                 quarters.append(end)
             q -= 1
             if q == 0:
@@ -729,7 +750,10 @@ class DemoProvider:
         self._require(ticker)
         if ticker not in _COMPANY:
             raise NotFound(f"Für {self.name(ticker)} gibt es keine Unternehmensdaten.")
-        key = (ticker, self.today())
+        years, quarters = self._fiscal(ticker)
+        # Neuester veröffentlichter Quartalsbericht im Schlüssel: Am Berichtstag ändern sich die
+        # Daten zur Veröffentlichungszeit, nicht erst am nächsten Tag
+        key = (ticker, self.today(), quarters[0])
         if key in self._fund_cache:
             return self._fund_cache[key]
         code, name, exch, sector, industry, mcap_bn = _COMPANY[ticker]
@@ -740,7 +764,6 @@ class DemoProvider:
         price = series["c"][-1]
         shares = self._shares(ticker, self._daily(ticker)["days"], self._daily(ticker)["c"])
         mcap = shares * price
-        years, quarters = self._fiscal(ticker)
 
         growth = sp[4] + rng.gauss(0, 0.04)
         rev0 = mcap_bn * 1e9 / sp[0] * rng.uniform(0.8, 1.25)
@@ -1014,7 +1037,8 @@ class DemoProvider:
 
     def _report_index(self) -> dict[dt.date, list[tuple[str, dict]]]:
         """Berichtstermine aller Unternehmen (aus den Earnings-Daten), nach Datum."""
-        key = ("reports", self.today())
+        # Wie bei _fundamentals_raw: Schlüssel enthält den Veröffentlichungsstand aller Unternehmen
+        key = ("reports", self.today(), tuple(self._fiscal(t)[1][0] for t in COMPANY_TICKERS))
         cached = self._fund_cache.get(key)  # type: ignore[arg-type]
         if cached is not None:
             return cached  # type: ignore[return-value]
@@ -1050,8 +1074,7 @@ class DemoProvider:
         code, name, exch, sector, industry, _ = c
         ticker = f"{code}.{exch}"
         cur = D.EXCHANGE_INFO[exch][0]
-        start, end = self._session_bounds(ticker, day)
-        when = start - dt.timedelta(minutes=75) if rec.get("beforeAfterMarket") == "BeforeMarket" else end + dt.timedelta(minutes=10)
+        when = self._release_time(ticker, day, rec.get("beforeAfterMarket"))
         surprise = rec.get("surprisePercent") or 0.0
         q = (dt.date.fromisoformat(rec["date"]).month - 1) // 3 + 1
         beat = surprise >= 0
@@ -1332,7 +1355,9 @@ class DemoProvider:
             return "q", y * 4 + q, f"Q{q} {y}"
         if kind == "cb":
             return "cb", d.toordinal(), None
-        current = any(w in name for w in self._CURRENT_MONTH) and d.day >= 15
+        # Nur Schnellschätzungen zu Monatsbeginn (Eurozone-Inflation am 1. Werktag) gelten dem
+        # Vormonat; mit ">= 15" fiel die Michigan-Umfrage (2. Freitag, Tag 8–14) in den Vormonat
+        current = any(w in name for w in self._CURRENT_MONTH) and d.day > 5
         y, m = (d.year, d.month) if current else ((d.year, d.month - 1) if d.month > 1 else (d.year - 1, 12))
         return "m", y * 12 + m, f"{self._MONTHS[m - 1]} {y}"
 

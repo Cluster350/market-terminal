@@ -295,13 +295,23 @@ class Terminal:
                 return CurvePoint(tenor=tenor, years=years)
             except TerminalError:
                 return CurvePoint(tenor=tenor, years=years)
-            c = [x for x in h.c if x is not None]
+            pairs = [(d, x) for d, x in zip(h.t, h.c) if x is not None]
+
+            def ago(months: int) -> Optional[float]:
+                # Kalenderbasiert wie überall sonst: letzter Wert am oder vor dem Stichtag. Feste
+                # Balkenzahlen (22/253) verschoben sich mit den Feiertagen des Handelsplatzes.
+                if not pairs:
+                    return None
+                cutoff = metrics.shift_date(dt.date.fromisoformat(pairs[-1][0][:10]), months).isoformat()
+                before = [x for d, x in pairs if d[:10] <= cutoff]
+                return before[-1] if before else None
+
             return CurvePoint(
                 tenor=tenor,
                 years=years,
-                y=c[-1] if c else None,
-                y_1m=c[-22] if len(c) > 22 else None,
-                y_1y=c[-253] if len(c) > 253 else None,
+                y=pairs[-1][1] if pairs else None,
+                y_1m=ago(1),
+                y_1y=ago(12),
             )
 
         async def curve(cc: str) -> Curve:
@@ -588,9 +598,18 @@ class Terminal:
 
     async def resolve(self, ticker: str) -> SearchHit:
         """Prüft, ob es den Ticker bei der Datenquelle gibt; sonst 404 mit Vorschlägen."""
-        hit = await self._cached(f"resolve:{ticker}", "search", lambda: self.p.resolve(ticker))
-        if hit is not None:
-            return hit
+        async def load() -> SearchHit:
+            found = await self.p.resolve(ticker)
+            if found is None:
+                # "Unbekannt" nicht 24 h cachen: Nach einem kurzzeitigen "NA" der Datenquelle bliebe
+                # ein gültiger Ticker sonst einen Tag lang gesperrt
+                raise NotFound(ticker)
+            return found
+
+        try:
+            return await self._cached(f"resolve:{ticker}", "search", load)
+        except NotFound:
+            pass
         code = ticker.rpartition(".")[0]
         try:
             suggestions = [h.ticker for h in await self.search(code, 4) if h.ticker != ticker][:3]
@@ -632,7 +651,9 @@ class Terminal:
         table = [own] + others
 
         def median(field: str) -> Optional[float]:
-            vals = sorted(v for v in (getattr(r, field) for r in table) if isinstance(v, (int, float)))
+            # Nur die Vergleichswerte: Mit dem Wert selbst im Median wird der Abstand "gegenüber dem
+            # Median" in kleinen Gruppen stark verkleinert (z. B. KGV +1,6 % statt +16 %)
+            vals = sorted(v for v in (getattr(r, field) for r in others) if isinstance(v, (int, float)))
             if not vals:
                 return None
             mid = len(vals) // 2
@@ -640,7 +661,7 @@ class Terminal:
 
         med = ScreenRow(
             ticker="MEDIAN",
-            name="Median der Gruppe",
+            name="Median der Vergleichswerte",
             **{f: median(f) for f in ("price", "chg_1d", "chg_5d", "market_cap", "pe", "div_yield", "perf_1m",
                                       "perf_3m", "perf_12m", "rsi14", "vol_1y", "dist_52w_high")},
         )

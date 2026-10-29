@@ -217,6 +217,8 @@ export function HP({ ticker }: ScreenProps) {
             rows.push({ d: h.t[i], o: h.o[i], h: h.h[i], l: h.l[i], c, v: h.v[i], chg: isNum(c) && isNum(prev) && prev !== 0 ? (c / prev - 1) * 100 : null });
           }
           const isYield = h.ticker.endsWith(".GBOND");
+          // HP gilt für alle Instrumente: Devisen mit Pips (Ticker an fmtPrice), Renditen mit 3 Stellen
+          const px = (v: number | null) => (isYield ? fmt(v, 3) : fmtPrice(v, h.ticker));
           return (
             <>
               <Table
@@ -224,10 +226,10 @@ export function HP({ ticker }: ScreenProps) {
                 rowKey={(r) => r.d}
                 columns={[
                   { key: "d", label: "Datum", render: (r) => fmtDate(r.d) },
-                  { key: "o", label: "Eröffnung", num: true, render: (r) => fmtPrice(r.o) },
-                  { key: "h", label: "Hoch", num: true, render: (r) => fmtPrice(r.h) },
-                  { key: "l", label: "Tief", num: true, render: (r) => fmtPrice(r.l) },
-                  { key: "c", label: "Schluss", num: true, render: (r) => <b>{fmtPrice(r.c)}</b> },
+                  { key: "o", label: "Eröffnung", num: true, render: (r) => px(r.o) },
+                  { key: "h", label: "Hoch", num: true, render: (r) => px(r.h) },
+                  { key: "l", label: "Tief", num: true, render: (r) => px(r.l) },
+                  { key: "c", label: "Schluss", num: true, render: (r) => <b>{px(r.c)}</b> },
                   {
                     key: "chg",
                     label: isYield ? "Veränd. bp" : "Veränd.",

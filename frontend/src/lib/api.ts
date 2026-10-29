@@ -283,14 +283,15 @@ const staticApi = {
     }
     others = others.sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0)).slice(0, 11);
     const rows = [own, ...others];
+    // Median wie im Backend nur über die Vergleichswerte, ohne das Wertpapier selbst
     const med = (k: keyof ScreenRow): number | null => {
-      const v = rows.map((r) => r[k]).filter((x): x is number => typeof x === "number" && Number.isFinite(x)).sort((a, b) => a - b);
+      const v = others.map((r) => r[k]).filter((x): x is number => typeof x === "number" && Number.isFinite(x)).sort((a, b) => a - b);
       if (!v.length) return null;
       const m = Math.floor(v.length / 2);
       return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
     };
     const keys: (keyof ScreenRow)[] = ["price", "chg1d", "chg5d", "marketCap", "pe", "divYield", "perf1m", "perf3m", "perf12m", "rsi14", "vol1y", "dist52wHigh"];
-    const median = { ...own, ticker: "MEDIAN", name: "Median der Gruppe", exchange: null, sector: null, industry: null, currency: null, eps: null, avgVol: null } as ScreenRow;
+    const median = { ...own, ticker: "MEDIAN", name: "Median der Vergleichswerte", exchange: null, sector: null, industry: null, currency: null, eps: null, avgVol: null } as ScreenRow;
     for (const k of keys) (median as unknown as Record<string, number | null>)[k] = med(k);
     return { ticker, basis, group, rows, median };
   },
