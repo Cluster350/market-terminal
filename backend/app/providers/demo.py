@@ -1,0 +1,1210 @@
+"""Demo-Datenquelle: deterministische, synthetische Marktdaten ohne Netzzugang.
+
+- Kurse folgen einem gemeinsamen Marktfaktor (mit Krisenphasen) plus
+  titelspezifischem Rauschen, damit Korrelationen und Indizes plausibel wirken.
+- Fundamentaldaten werden im EODHD-Rohformat erzeugt und durch dieselben
+  Mapping-Funktionen geschickt wie echte Daten.
+- Der heutige Handelstag läuft "live": Intraday-Balken erscheinen erst, wenn ihre
+  Uhrzeit erreicht ist.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import math
+import random
+from typing import Any, Callable, Optional
+
+from ..eodhd import mapping
+from ..errors import NotFound
+from ..models import (
+    Company,
+    CountryValue,
+    Dividends,
+    Earnings,
+    EconEvent,
+    Financials,
+    History,
+    Intraday,
+    NewsItem,
+    Quote,
+    ScreenRow,
+    SearchHit,
+    Sentiment,
+)
+from ..services import metrics
+from ..services.util import pct
+from . import demo_data as D
+from .base import (
+    COUNTRIES,
+    FX,
+    INDICES,
+    MACRO_INDICATORS,
+    Catalog,
+    Instrument,
+    ScreenFilter,
+    curve_catalog,
+)
+
+START = dt.date(2016, 1, 4)
+ANCHOR = dt.date(2025, 12, 31)  # Stichtag für die Ziel-Marktkapitalisierung
+UTC = dt.timezone.utc
+
+
+def _seed(*parts: Any) -> int:
+    h = hashlib.sha256("|".join(str(p) for p in parts).encode()).digest()
+    return int.from_bytes(h[:8], "big")
+
+
+def _rng(*parts: Any) -> random.Random:
+    return random.Random(_seed(*parts))
+
+
+def business_days(start: dt.date, end: dt.date) -> list[dt.date]:
+    days: list[dt.date] = []
+    d = start
+    one = dt.timedelta(days=1)
+    while d <= end:
+        if d.weekday() < 5:
+            days.append(d)
+        d += one
+    return days
+
+
+def last_business_day(d: dt.date) -> dt.date:
+    while d.weekday() >= 5:
+        d -= dt.timedelta(days=1)
+    return d
+
+
+def _regime(d: dt.date) -> tuple[float, float]:
+    """Drift und Volatilität des Marktfaktors (synthetische Krisen und Erholungen)."""
+    iso = d.isoformat()
+    if "2018-10-01" <= iso <= "2018-12-24":
+        return -0.0018, 0.013
+    if "2020-02-20" <= iso <= "2020-03-23":
+        return -0.012, 0.035
+    if "2020-03-24" <= iso <= "2020-06-08":
+        return 0.006, 0.022
+    if "2022-01-03" <= iso <= "2022-10-12":
+        return -0.0011, 0.015
+    if "2025-03-01" <= iso <= "2025-04-08":
+        return -0.004, 0.022
+    if "2025-04-09" <= iso <= "2025-06-30":
+        return 0.0025, 0.014
+    return 0.00045, 0.0085
+
+
+def _interp(knots: list[tuple[str, float, float]], d: dt.date) -> tuple[float, float]:
+    iso = d.isoformat()
+    if iso <= knots[0][0]:
+        return knots[0][1], knots[0][2]
+    for (d0, s0, l0), (d1, s1, l1) in zip(knots, knots[1:]):
+        if d0 <= iso <= d1:
+            a = dt.date.fromisoformat(d0)
+            b = dt.date.fromisoformat(d1)
+            w = (d - a).days / max((b - a).days, 1)
+            return s0 + (s1 - s0) * w, l0 + (l1 - l0) * w
+    return knots[-1][1], knots[-1][2]
+
+
+def _ns_yield(short: float, long: float, years: float, tau: float = 2.0) -> float:
+    """Nelson-Siegel-ähnliche Kurve zwischen kurzem und langem Ende."""
+    x = years / tau
+    load = (1 - math.exp(-x)) / x if x > 0 else 1.0
+    return long + (short - long) * load
+
+
+def _de(x: float, digits: int, sign: bool = False) -> str:
+    """Deutsche Zahlendarstellung: 18.123,45"""
+    s = f"{x:{'+' if sign else ''},.{digits}f}"
+    return s.replace(",", "\u2009").replace(".", ",").replace("\u2009", ".")
+
+
+COMPANY_TICKERS = [f"{c[0]}.{c[2]}" for c in D.COMPANIES]
+_COMPANY = {f"{c[0]}.{c[2]}": c for c in D.COMPANIES}
+_INDEX_NAMES = {i.ticker: i for i in INDICES}
+_FX_NAMES = {i.ticker: i for i in FX}
+_COMMODITY = {c[0]: c for c in D.COMMODITIES}
+_CURVES = curve_catalog()
+_BOND = {t: (cc, tenor, years) for cc, (_, pts) in _CURVES.items() for tenor, years, t in pts}
+
+CATALOG = Catalog(
+    indices=INDICES,
+    fx=FX,
+    commodities=[Instrument(c[0], c[1]) for c in D.COMMODITIES],
+    curves=_CURVES,
+    default_watchlist=["NWND.US", "QBIT.US", "VLTA.US", "ORCX.US", "MDRN.US", "ELBT.XETRA",
+                       "ALPV.XETRA", "NRDW.XETRA", "LMRE.PA", "DLTA.AS", "GLTS.SW", "GSPC.INDX",
+                       "GDAXI.INDX", "EURUSD.FOREX"],
+    default_news=COMPANY_TICKERS,
+    screener_exchanges=["US", "XETRA", "PA", "AS", "SW", "LSE"],
+    heatmap_exchange="ALL",
+    countries=COUNTRIES,
+)
+
+
+class DemoProvider:
+    mode = "demo"
+    catalog = CATALOG
+
+    def __init__(self, now_fn: Optional[Callable[[], dt.datetime]] = None):
+        self._now_fn = now_fn or (lambda: dt.datetime.now(UTC))
+        self._market_cache: dict[int, list[float]] = {}
+        self._daily_cache: dict[tuple[str, int], dict[str, list]] = {}
+        self._bars_cache: dict[tuple[str, dt.date], list[tuple[int, float, float, float, float, float]]] = {}
+        self._fund_cache: dict[tuple[str, dt.date], dict] = {}
+
+    async def close(self) -> None:
+        return None
+
+    # --- Zeit ------------------------------------------------------------------
+
+    def now(self) -> dt.datetime:
+        n = self._now_fn()
+        return n if n.tzinfo else n.replace(tzinfo=UTC)
+
+    def today(self) -> dt.date:
+        return last_business_day(self.now().date())
+
+    def days(self) -> list[dt.date]:
+        return business_days(START, self.today())
+
+    # --- Instrumente -------------------------------------------------------------
+
+    def known(self, ticker: str) -> bool:
+        return (
+            ticker in _COMPANY
+            or ticker in _INDEX_NAMES
+            or ticker in _FX_NAMES
+            or ticker in _COMMODITY
+            or ticker in _BOND
+            or ticker == "VIX.INDX"
+        )
+
+    def _require(self, ticker: str) -> None:
+        if not self.known(ticker):
+            raise NotFound(
+                f"{ticker} ist im Demo-Datensatz nicht enthalten. Für echte Ticker EODHD_API_KEY setzen."
+            )
+
+    def name(self, ticker: str) -> str:
+        if ticker in _COMPANY:
+            return _COMPANY[ticker][1]
+        if ticker in _INDEX_NAMES:
+            return _INDEX_NAMES[ticker].name
+        if ticker in _FX_NAMES:
+            return _FX_NAMES[ticker].name
+        if ticker in _COMMODITY:
+            return _COMMODITY[ticker][1]
+        if ticker in _BOND:
+            cc, tenor, _ = _BOND[ticker]
+            return f"{_CURVES[cc][0]} Staatsanleihe {tenor}"
+        return ticker
+
+    def currency(self, ticker: str) -> Optional[str]:
+        if ticker in _COMPANY:
+            return D.EXCHANGE_INFO[_COMPANY[ticker][2]][0]
+        if ticker in _FX_NAMES:
+            return ticker[3:6] if ticker.endswith(".FOREX") else "USD"
+        if ticker in _COMMODITY:
+            return "USD"
+        if ticker in _BOND:
+            return "%"
+        return None
+
+    def session_group(self, ticker: str) -> str:
+        if ticker in _COMPANY:
+            return D.EXCHANGE_INFO[_COMPANY[ticker][2]][2]
+        if ticker in D.INDEX_PARAMS:
+            return D.INDEX_PARAMS[ticker][2]
+        if ticker == "VIX.INDX" or ticker in _COMMODITY:
+            return "us"
+        if ticker in _FX_NAMES:
+            return "fx"
+        return "eu"
+
+    # --- Zeitreihen ----------------------------------------------------------------
+
+    def _market(self, n: int) -> list[float]:
+        cached = self._market_cache.get(n)
+        if cached is not None:
+            return cached
+        rng = _rng("market-factor")
+        out: list[float] = []
+        for d in business_days(START, START + dt.timedelta(days=n * 2 + 10))[:n]:
+            mu, sigma = _regime(d)
+            out.append(mu + sigma * rng.gauss(0, 1))
+        self._market_cache = {n: out}
+        return out
+
+    def _daily(self, ticker: str) -> dict[str, list]:
+        days = self.days()
+        key = (ticker, len(days))
+        cached = self._daily_cache.get(key)
+        if cached is not None:
+            return cached
+        n = len(days)
+        mkt = self._market(n)
+        rng = _rng("series", ticker)
+        closes: list[float] = []
+        kind = "price"
+
+        if ticker in _COMPANY:
+            _, _, _, sector, _, _ = _COMPANY[ticker]
+            sp = D.SECTORS[sector]
+            vol, beta = sp[7] * rng.uniform(0.8, 1.3), sp[8] * rng.uniform(0.8, 1.2)
+            idio = math.sqrt(max(vol**2 / 252 - (beta * 0.0085) ** 2, 0.006**2))
+            alpha = sp[4] / 252 * 0.5 + rng.gauss(0, 0.00025) - beta * 0.00035
+            p = rng.uniform(15, 160)
+            for m in mkt:
+                p *= math.exp(beta * m + alpha + idio * rng.gauss(0, 1))
+                closes.append(p)
+            day_sigma = vol / math.sqrt(252)
+        elif ticker in D.INDEX_PARAMS:
+            base, drift, _ = D.INDEX_PARAMS[ticker]
+            beta = {"NDX.INDX": 1.2, "RUT.INDX": 1.15, "N225.INDX": 0.8, "HSI.INDX": 0.7, "AXJO.INDX": 0.7}.get(ticker, 1.0)
+            p = base
+            for m in mkt:
+                p *= math.exp(beta * m + drift / 252 - beta * 0.0004 + 0.0035 * rng.gauss(0, 1))
+                closes.append(p)
+            day_sigma = 0.011
+        elif ticker == "VIX.INDX":
+            v = 18.0
+            for m in mkt:
+                v = max(11.0, v + 0.05 * (17.0 - v) - 140 * m + 0.45 * rng.gauss(0, 1))
+                closes.append(v)
+            day_sigma = 0.06
+        elif ticker in D.FX_PARAMS:
+            base, vol = D.FX_PARAMS[ticker]
+            drift = 0.5 if ticker.startswith("BTC") else 0.0
+            phi = 0.995 if ticker.startswith("BTC") else 0.997
+            s = vol / math.sqrt(252)
+            x = 0.0  # log-Abweichung vom Trend (mean reverting)
+            for k, m in enumerate(mkt):
+                if ticker.startswith("BTC"):
+                    shock = 1.5 * m
+                elif ticker in ("USDCAD.FOREX", "USDCNH.FOREX"):
+                    shock = -0.2 * m
+                else:
+                    shock = 0.25 * m
+                x = phi * x + shock + s * rng.gauss(0, 1)
+                closes.append(base * math.exp(drift * k / 252 + x))
+            day_sigma = s
+        elif ticker in _COMMODITY:
+            _, _, base, drift, vol = _COMMODITY[ticker]
+            s = vol / math.sqrt(252)
+            x = 0.0
+            for k, m in enumerate(mkt):
+                x = 0.997 * x + 0.4 * (m - 0.00045) + s * rng.gauss(0, 1)
+                closes.append(base * math.exp(drift * k / 252 + x))
+            day_sigma = s
+        elif ticker in _BOND:
+            cc, tenor, years = _BOND[ticker]
+            kind = "yield"
+            noise_rng = _rng("curve-noise", cc)  # gemeinsames Rauschen je Land
+            level = slope = 0.0
+            for d in days:
+                short, long = _interp(D.CURVE_KNOTS[cc], d)
+                level = 0.985 * level + 0.045 * noise_rng.gauss(0, 1)
+                slope = 0.99 * slope + 0.02 * noise_rng.gauss(0, 1)
+                y = _ns_yield(short + slope, long + level, years) + 0.01 * rng.gauss(0, 1)
+                closes.append(y)
+            day_sigma = 0.04
+        else:
+            raise NotFound(ticker)
+
+        o: list[float] = []
+        h: list[float] = []
+        l: list[float] = []
+        vols: list[Optional[float]] = []
+        shares = self._shares(ticker, days, closes) if ticker in _COMPANY else None
+        prev = closes[0]
+        for i, c in enumerate(closes):
+            if kind == "yield":
+                op = prev + rng.gauss(0, 0.01)
+                hi = max(op, c) + abs(rng.gauss(0, 0.015))
+                lo = min(op, c) - abs(rng.gauss(0, 0.015))
+            else:
+                op = prev * math.exp(rng.gauss(0, 0.25 * day_sigma))
+                hi = max(op, c) * math.exp(abs(rng.gauss(0, 0.5 * day_sigma)))
+                lo = min(op, c) * math.exp(-abs(rng.gauss(0, 0.5 * day_sigma)))
+            o.append(op)
+            h.append(hi)
+            l.append(lo)
+            if shares:
+                r = abs(math.log(c / prev)) if prev > 0 and c > 0 else 0.0
+                vols.append(round(shares * 0.004 * math.exp(rng.gauss(0, 0.35)) * (1 + 25 * r)))
+            elif ticker in D.INDEX_PARAMS:
+                vols.append(round(2.5e9 * math.exp(rng.gauss(0, 0.25))))
+            else:
+                vols.append(None)
+            prev = c
+        result = {"days": days, "o": o, "h": h, "l": l, "c": closes, "v": vols, "sigma": day_sigma, "kind": kind}
+        # Cache klein halten: nur Einträge des aktuellen Tages behalten
+        if len(self._daily_cache) > 400:
+            self._daily_cache = {k: v for k, v in self._daily_cache.items() if k[1] == n}
+        self._daily_cache[key] = result
+        return result
+
+    def _shares(self, ticker: str, days: list[dt.date], closes: list[float]) -> float:
+        target = _COMPANY[ticker][5] * 1e9
+        idx = len(days) - 1
+        for i, d in enumerate(days):
+            if d >= ANCHOR:
+                idx = i
+                break
+        return target / closes[idx]
+
+    def _session_bounds(self, ticker: str, day: dt.date) -> tuple[dt.datetime, dt.datetime]:
+        start_min, end_min = D.SESSIONS[self.session_group(ticker)]
+        base = dt.datetime(day.year, day.month, day.day, tzinfo=UTC)
+        return base + dt.timedelta(minutes=start_min), base + dt.timedelta(minutes=end_min)
+
+    def _bars(self, ticker: str, day_index: int) -> list[tuple[int, float, float, float, float, float]]:
+        """5-Minuten-Balken eines Handelstages (vollständig, ohne Zeitfilter)."""
+        series = self._daily(ticker)
+        day = series["days"][day_index]
+        key = (ticker, day)
+        if key in self._bars_cache:
+            return self._bars_cache[key]
+        o, c = series["o"][day_index], series["c"][day_index]
+        h, l = series["h"][day_index], series["l"][day_index]
+        start, end = self._session_bounds(ticker, day)
+        n = max(int((end - start).total_seconds() // 300), 1)
+        rng = _rng("bars", ticker, day.isoformat())
+        walk = [0.0]
+        for _ in range(n):
+            walk.append(walk[-1] + rng.gauss(0, 1))
+        bridge = [w - walk[-1] * k / n for k, w in enumerate(walk)]
+        lin = [o + (c - o) * k / n for k in range(n + 1)]
+        scale = float("inf")
+        for b, base in zip(bridge, lin):
+            if b > 1e-12:
+                scale = min(scale, (h - base) / b)
+            elif b < -1e-12:
+                scale = min(scale, (l - base) / b)
+        if not math.isfinite(scale) or scale < 0:
+            scale = 0.0
+        path = [base + b * scale for base, b in zip(lin, bridge)]
+        daily_vol = series["v"][day_index] or 0.0
+        weights = [1.6 if k < n * 0.12 or k > n * 0.88 else 0.8 for k in range(n)]
+        wsum = sum(weights)
+        bars = []
+        wiggle = 0.0004 if series["kind"] == "price" else 0.002
+        for k in range(n):
+            bo, bc = path[k], path[k + 1]
+            if series["kind"] == "price":
+                bh = min(max(bo, bc) * (1 + abs(rng.gauss(0, wiggle))), max(h, bo, bc))
+                bl = max(min(bo, bc) * (1 - abs(rng.gauss(0, wiggle))), min(l, bo, bc))
+            else:
+                bh = min(max(bo, bc) + abs(rng.gauss(0, wiggle)), max(h, bo, bc))
+                bl = max(min(bo, bc) - abs(rng.gauss(0, wiggle)), min(l, bo, bc))
+            ts = int((start + dt.timedelta(minutes=5 * k)).timestamp())
+            bars.append((ts, bo, bh, bl, bc, daily_vol * weights[k] / wsum))
+        if len(self._bars_cache) > 2000:
+            self._bars_cache.clear()
+        self._bars_cache[key] = bars
+        return bars
+
+    def _visible_bars(self, ticker: str, day_index: int) -> list[tuple[int, float, float, float, float, float]]:
+        bars = self._bars(ticker, day_index)
+        cutoff = self.now().timestamp()
+        return [b for b in bars if b[0] + 300 <= cutoff]
+
+    def _effective(self, ticker: str) -> dict[str, list]:
+        """Tagesreihe inkl. Teil-Balken für einen laufenden Handelstag."""
+        s = self._daily(ticker)
+        days = list(s["days"])
+        o, h, l, c, v = (list(s[k]) for k in ("o", "h", "l", "c", "v"))
+        last = len(days) - 1
+        # Hoch/Tief der letzten Tage an die Intraday-Pfade anpassen
+        for i in range(max(0, last - 4), last + 1):
+            bars = self._bars(ticker, i)
+            h[i] = max(b[2] for b in bars)
+            l[i] = min(b[3] for b in bars)
+        if days[last] == self.now().date():
+            vis = self._visible_bars(ticker, last)
+            if not vis:
+                for arr in (days, o, h, l, c, v):
+                    arr.pop()
+            else:
+                o[last] = vis[0][1]
+                h[last] = max(b[2] for b in vis)
+                l[last] = min(b[3] for b in vis)
+                c[last] = vis[-1][4]
+                v[last] = sum(b[5] for b in vis) if v[last] is not None else None
+        return {"days": days, "o": o, "h": h, "l": l, "c": c, "v": v, "kind": s["kind"]}
+
+    # --- Provider-Schnittstelle: Kurse --------------------------------------------
+
+    async def status(self) -> dict[str, Any]:
+        return {"note": "Synthetische Demo-Daten. Unternehmen sind frei erfunden."}
+
+    async def search(self, query: str, limit: int) -> list[SearchHit]:
+        q = query.strip().lower()
+        if not q:
+            return []
+        hits: list[tuple[int, SearchHit]] = []
+
+        def consider(ticker: str, name: str, typ: str, exch: str, country: Optional[str], cur: Optional[str]) -> None:
+            code = ticker.split(".")[0].lower()
+            nl = name.lower()
+            if code == q:
+                score = 0
+            elif code.startswith(q):
+                score = 1
+            elif nl.startswith(q):
+                score = 2
+            elif q in nl or q in ticker.lower():
+                score = 3
+            else:
+                return
+            hits.append((score, SearchHit(ticker=ticker, name=name, exchange=exch, type=typ, country=country, currency=cur)))
+
+        for t, c in _COMPANY.items():
+            cur, country, _ = D.EXCHANGE_INFO[c[2]]
+            consider(t, c[1], "Common Stock", c[2], country, cur)
+        for inst in INDICES:
+            consider(inst.ticker, inst.name, "INDEX", "INDX", None, None)
+        for inst in FX:
+            consider(inst.ticker, inst.name, "Currency", inst.ticker.split(".")[1], None, None)
+        for t, c in _COMMODITY.items():
+            consider(t, c[1], "Commodity", "COMM", None, "USD")
+        for t in _BOND:
+            consider(t, self.name(t), "Bond", "GBOND", None, None)
+        hits.sort(key=lambda x: (x[0], x[1].ticker))
+        return [h for _, h in hits[:limit]]
+
+    async def quotes(self, tickers: list[str]) -> list[Quote]:
+        out: list[Quote] = []
+        for t in tickers:
+            if not self.known(t):
+                out.append(Quote(ticker=t))
+                continue
+            e = self._effective(t)
+            if len(e["c"]) < 2:
+                out.append(Quote(ticker=t, name=self.name(t)))
+                continue
+            last, prev = e["c"][-1], e["c"][-2]
+            day = e["days"][-1]
+            idx = len(self._daily(t)["days"]) - 1
+            if day == self.now().date():
+                vis = self._visible_bars(t, idx)
+                ts = dt.datetime.fromtimestamp(vis[-1][0] + 300, UTC) if vis else self.now()
+            else:
+                _, end = self._session_bounds(t, day)
+                ts = end
+            change = last - prev
+            out.append(
+                Quote(
+                    ticker=t,
+                    name=self.name(t),
+                    last=round(last, 4),
+                    change=round(change, 4),
+                    change_pct=round(pct(last, prev) or 0.0, 4) if e["kind"] == "price" else None,
+                    open=round(e["o"][-1], 4),
+                    high=round(e["h"][-1], 4),
+                    low=round(e["l"][-1], 4),
+                    prev_close=round(prev, 4),
+                    volume=round(e["v"][-1]) if e["v"][-1] is not None else None,
+                    timestamp=ts.isoformat().replace("+00:00", "Z"),
+                    delayed=False,
+                    currency=self.currency(t),
+                )
+            )
+        return out
+
+    async def history(self, ticker: str) -> History:
+        self._require(ticker)
+        e = self._effective(ticker)
+        r = lambda xs: [None if x is None else round(x, 4) for x in xs]
+        return History(
+            ticker=ticker,
+            currency=self.currency(ticker),
+            t=[d.isoformat() for d in e["days"]],
+            o=r(e["o"]),
+            h=r(e["h"]),
+            l=r(e["l"]),
+            c=r(e["c"]),
+            v=[None if x is None else round(x) for x in e["v"]],
+        )
+
+    async def intraday(self, ticker: str, days: int) -> Intraday:
+        self._require(ticker)
+        series = self._daily(ticker)
+        n = len(series["days"])
+        out = Intraday(ticker=ticker, interval="5m", t=[], o=[], h=[], l=[], c=[], v=[])
+        # Die letzten `days` Sitzungen mit Daten (vor Handelsbeginn zählt der Vortag)
+        sessions: list[int] = []
+        i = n - 1
+        while i >= 0 and len(sessions) < days:
+            if i < n - 1 or self._visible_bars(ticker, i):
+                sessions.append(i)
+            i -= 1
+        for i in reversed(sessions):
+            for ts, bo, bh, bl, bc, bv in self._visible_bars(ticker, i):
+                out.t.append(ts)
+                out.o.append(round(bo, 4))
+                out.h.append(round(bh, 4))
+                out.l.append(round(bl, 4))
+                out.c.append(round(bc, 4))
+                out.v.append(round(bv) if series["v"][i] is not None else None)
+        return out
+
+    # --- Fundamentaldaten (im EODHD-Rohformat) --------------------------------------
+
+    def _fiscal(self) -> tuple[list[dt.date], list[dt.date]]:
+        today = self.today()
+        last_fy = today.year - 1 if today >= dt.date(today.year, 3, 1) else today.year - 2
+        years = [dt.date(last_fy - k, 12, 31) for k in range(6)]
+        quarters: list[dt.date] = []
+        y, q = today.year, 4
+        while len(quarters) < 10:
+            end = [dt.date(y, 3, 31), dt.date(y, 6, 30), dt.date(y, 9, 30), dt.date(y, 12, 31)][q - 1]
+            if end + dt.timedelta(days=40) <= today:
+                quarters.append(end)
+            q -= 1
+            if q == 0:
+                q, y = 4, y - 1
+        return years, quarters
+
+    def _fundamentals_raw(self, ticker: str) -> dict:
+        self._require(ticker)
+        if ticker not in _COMPANY:
+            raise NotFound(f"Für {self.name(ticker)} gibt es keine Unternehmensdaten.")
+        key = (ticker, self.today())
+        if key in self._fund_cache:
+            return self._fund_cache[key]
+        code, name, exch, sector, industry, mcap_bn = _COMPANY[ticker]
+        cur, country, _ = D.EXCHANGE_INFO[exch]
+        sp = D.SECTORS[sector]
+        rng = _rng("fund", ticker)
+        series = self._effective(ticker)
+        price = series["c"][-1]
+        shares = self._shares(ticker, self._daily(ticker)["days"], self._daily(ticker)["c"])
+        mcap = shares * price
+        years, quarters = self._fiscal()
+
+        growth = sp[4] + rng.gauss(0, 0.04)
+        rev0 = mcap_bn * 1e9 / sp[0] * rng.uniform(0.8, 1.25)
+        gross_m = min(max(sp[2] + rng.gauss(0, 0.04), 0.1), 0.95)
+        op_m = min(max(sp[3] + rng.gauss(0, 0.03), 0.02), gross_m - 0.02)
+        rd_share = rng.uniform(0.10, 0.18) if sector in ("Technology", "Healthcare") else rng.uniform(0.0, 0.02)
+        asset_ratio = {"Financial Services": 8.0, "Utilities": 3.0, "Real Estate": 6.0}.get(sector, rng.uniform(1.0, 1.6))
+        eq_ratio = 0.09 if sector == "Financial Services" else rng.uniform(0.3, 0.55)
+        payer = rng.random() < sp[5]
+        payout = sp[6] * rng.uniform(0.8, 1.2) if payer else 0.0
+        capex_share = rng.uniform(0.03, 0.10)
+
+        def income(rev: float, r: random.Random) -> dict[str, float]:
+            gm = gross_m + r.gauss(0, 0.01)
+            om = op_m + r.gauss(0, 0.012)
+            gross = rev * gm
+            rd = rev * rd_share
+            op = rev * om
+            sga = max(gross - op - rd, 0.0)
+            da = rev * 0.04
+            debt = rev * asset_ratio * 0.2
+            interest = debt * 0.04 * (0.25 if sector == "Financial Services" else 1.0)
+            pretax = op - interest
+            tax = pretax * 0.22 if pretax > 0 else 0.0
+            net = pretax - tax
+            return {
+                "totalRevenue": rev, "costOfRevenue": rev - gross, "grossProfit": gross,
+                "researchDevelopment": rd, "sellingGeneralAdministrative": sga, "operatingIncome": op,
+                "ebitda": op + da, "interestExpense": interest, "incomeBeforeTax": pretax,
+                "incomeTaxExpense": tax, "netIncome": net, "_da": da,
+            }
+
+        def fmt(rec: dict[str, float], date: dt.date) -> dict[str, Any]:
+            out: dict[str, Any] = {"date": date.isoformat()}
+            for k, v in rec.items():
+                if not k.startswith("_"):
+                    out[k] = f"{v:.2f}"
+            return out
+
+        def balance(rev: float, r: random.Random) -> dict[str, float]:
+            assets = rev * asset_ratio * r.uniform(0.95, 1.05)
+            equity = assets * eq_ratio
+            debt = assets * (0.15 if sector == "Financial Services" else 0.2)
+            cash = assets * r.uniform(0.08, 0.16)
+            goods = sector in ("Consumer Cyclical", "Consumer Defensive", "Industrials", "Basic Materials", "Technology")
+            return {
+                "cash": cash, "netReceivables": rev * 0.12, "inventory": rev * 0.08 if goods else 0.0,
+                "totalCurrentAssets": assets * 0.35, "totalAssets": assets,
+                "totalCurrentLiabilities": assets * 0.2, "shortLongTermDebtTotal": debt,
+                "totalLiab": assets - equity, "totalStockholderEquity": equity, "netDebt": debt - cash,
+            }
+
+        def cashflow(inc: dict[str, float], r: random.Random, divs: float) -> dict[str, float]:
+            cfo = inc["netIncome"] + inc["_da"] + inc["totalRevenue"] * r.gauss(0.01, 0.015)
+            capex = inc["totalRevenue"] * capex_share
+            buyback = -max(inc["netIncome"], 0) * r.uniform(0.0, 0.35)
+            return {
+                "totalCashFromOperatingActivities": cfo, "capitalExpenditures": capex,
+                "freeCashFlow": cfo - capex, "totalCashflowsFromInvestingActivities": -capex * r.uniform(1.0, 1.4),
+                "totalCashFromFinancingActivities": -divs + buyback + inc["totalRevenue"] * r.gauss(0, 0.02),
+                "dividendsPaid": -divs, "salePurchaseOfStock": buyback,
+            }
+
+        yearly_inc: dict[str, Any] = {}
+        yearly_bal: dict[str, Any] = {}
+        yearly_cf: dict[str, Any] = {}
+        annual_rev: dict[int, float] = {}
+        annual_net: dict[int, float] = {}
+        for k, end in enumerate(years):
+            r = _rng("fy", ticker, end.isoformat())
+            rev = rev0 / (1 + growth) ** k * r.uniform(0.98, 1.02)
+            inc = income(rev, r)
+            annual_rev[end.year] = rev
+            annual_net[end.year] = inc["netIncome"]
+            divs = max(inc["netIncome"], 0) * payout
+            yearly_inc[end.isoformat()] = fmt(inc, end)
+            yearly_bal[end.isoformat()] = fmt(balance(rev, r), end)
+            yearly_cf[end.isoformat()] = fmt(cashflow(inc, r, divs), end)
+
+        season = [0.95, 1.0, 1.0, 1.05]
+        q_inc: dict[str, Any] = {}
+        q_bal: dict[str, Any] = {}
+        q_cf: dict[str, Any] = {}
+        q_net: dict[dt.date, float] = {}
+        q_rev: dict[dt.date, float] = {}
+        latest_year = years[0].year
+        for end in quarters:
+            r = _rng("fq", ticker, end.isoformat())
+            base_rev = annual_rev.get(end.year) or annual_rev[latest_year] * (1 + growth) ** (end.year - latest_year)
+            rev = base_rev / 4 * season[(end.month - 1) // 3] * r.uniform(0.97, 1.03)
+            inc = income(rev, r)
+            q_rev[end] = rev
+            q_net[end] = inc["netIncome"]
+            divs = max(inc["netIncome"], 0) * payout
+            q_inc[end.isoformat()] = fmt(inc, end)
+            q_bal[end.isoformat()] = fmt(balance(rev * 4, r), end)
+            q_cf[end.isoformat()] = fmt(cashflow(inc, r, divs), end)
+
+        last4 = quarters[:4]
+        rev_ttm = sum(q_rev[q] for q in last4)
+        net_ttm = sum(q_net[q] for q in last4)
+        eps_ttm = net_ttm / shares
+        prev4 = quarters[4:8]
+        rev_prev = sum(q_rev[q] for q in prev4) if len(prev4) == 4 else None
+        latest_q, year_ago_q = quarters[0], quarters[4] if len(quarters) > 4 else None
+        ebitda_ttm = sum(float(q_inc[q.isoformat()]["ebitda"]) for q in last4)
+        bal_latest = q_bal[quarters[0].isoformat()]
+        equity = float(bal_latest["totalStockholderEquity"])
+        assets = float(bal_latest["totalAssets"])
+        net_debt = float(bal_latest["netDebt"])
+        ev = mcap + net_debt
+        dps = max(eps_ttm, 0) * payout
+        eps_cy = eps_ttm * (1 + growth * 0.5)
+        eps_ny = eps_cy * (1 + growth)
+
+        hist_closes = self._daily(ticker)["c"]
+        tech_hi, tech_lo = metrics.high_low_52w(series["h"], series["l"])
+        target = price * rng.uniform(0.95, 1.30)
+        n_analysts = rng.randint(6, 38)
+        mood = rng.uniform(-0.3, 1.0)
+        sb = int(n_analysts * max(0.0, 0.25 + 0.25 * mood))
+        b = int(n_analysts * max(0.0, 0.25 + 0.15 * mood))
+        s = int(n_analysts * max(0.0, 0.10 - 0.1 * mood))
+        ss = int(n_analysts * max(0.0, 0.05 - 0.05 * mood))
+        hold = max(n_analysts - sb - b - s - ss, 0)
+        total = max(sb + b + hold + s + ss, 1)
+        rating = (5 * sb + 4 * b + 3 * hold + 2 * s + 1 * ss) / total
+
+        earnings_hist: dict[str, Any] = {}
+        for q in quarters[:8]:
+            r = _rng("eps", ticker, q.isoformat())
+            actual = q_net[q] / shares
+            surprise = r.gauss(4.0, 6.0)
+            est = actual / (1 + surprise / 100) if actual > 0 else actual * (1 + surprise / 100)
+            rep = last_business_day(q + dt.timedelta(days=r.randint(22, 38)))
+            earnings_hist[q.isoformat()] = {
+                "reportDate": rep.isoformat(), "date": q.isoformat(),
+                "beforeAfterMarket": r.choice(["BeforeMarket", "AfterMarket"]), "currency": cur,
+                "epsActual": round(actual, 4), "epsEstimate": round(est, 4),
+                "epsDifference": round(actual - est, 4), "surprisePercent": round(surprise, 2),
+            }
+        nq = quarters[0] + dt.timedelta(days=92)
+        nq = dt.date(nq.year, nq.month, 1) - dt.timedelta(days=1)  # Monatsende
+        next_rep = last_business_day(nq + dt.timedelta(days=_rng("next", ticker).randint(22, 38)))
+        if next_rep <= self.today():
+            next_rep = self.today() + dt.timedelta(days=_rng("next2", ticker).randint(3, 25))
+            next_rep = last_business_day(next_rep) if next_rep.weekday() >= 5 else next_rep
+        earnings_hist[nq.isoformat()] = {
+            "reportDate": next_rep.isoformat(), "date": nq.isoformat(), "beforeAfterMarket": "AfterMarket",
+            "currency": cur, "epsActual": None, "epsEstimate": round(q_net[quarters[0]] / shares * (1 + growth / 4), 4),
+            "epsDifference": None, "surprisePercent": None,
+        }
+
+        q_growth = pct(q_rev[latest_q], q_rev[year_ago_q]) if year_ago_q else None
+        e_growth = pct(q_net[latest_q], q_net[year_ago_q]) if year_ago_q and q_net[year_ago_q] > 0 else None
+        officers = {}
+        for i, title in enumerate(D.OFFICER_TITLES[: rng.randint(3, 5)]):
+            officers[str(i)] = {
+                "Name": f"{rng.choice(D.FIRST_NAMES)} {rng.choice(D.LAST_NAMES)}",
+                "Title": title,
+                "YearBorn": str(rng.randint(1958, 1984)),
+            }
+
+        raw = {
+            "General": {
+                "Code": code, "Type": "Common Stock", "Name": name, "Exchange": exch, "CurrencyCode": cur,
+                "CountryName": country, "Sector": sector, "Industry": industry,
+                "Description": (
+                    f"{name} ist ein frei erfundenes Unternehmen aus dem Demo-Datensatz dieses Terminals. "
+                    f"Es ist im Bereich {industry} ({sector}) tätig und an der Börse {exch} gelistet. "
+                    "Alle Kurse, Kennzahlen, Finanzberichte und Nachrichten sind synthetisch erzeugt und "
+                    "dienen nur dazu, die Funktionen des Terminals ohne Datenabonnement zu zeigen."
+                ),
+                "FullTimeEmployees": int(rev0 / rng.uniform(250_000, 900_000)),
+                "WebURL": None, "IPODate": f"{rng.randint(1985, 2019)}-{rng.randint(1, 12):02d}-15",
+                "ISIN": None, "Officers": officers, "UpdatedAt": self.today().isoformat(),
+            },
+            "Highlights": {
+                "MarketCapitalization": round(mcap), "EBITDA": round(ebitda_ttm),
+                "PERatio": round(price / eps_ttm, 2) if eps_ttm > 0 else None,
+                "PEGRatio": round(price / eps_ttm / max(growth * 100, 1), 2) if eps_ttm > 0 else None,
+                "WallStreetTargetPrice": round(target, 2), "BookValue": round(equity / shares, 2),
+                "DividendShare": round(dps, 4) if payer else 0, "DividendYield": round(dps / price, 5) if payer else 0,
+                "EarningsShare": round(eps_ttm, 4), "EPSEstimateCurrentYear": round(eps_cy, 4),
+                "EPSEstimateNextYear": round(eps_ny, 4), "ProfitMargin": round(net_ttm / rev_ttm, 4),
+                "OperatingMarginTTM": round(op_m, 4), "ReturnOnAssetsTTM": round(net_ttm / assets, 4),
+                "ReturnOnEquityTTM": round(net_ttm / equity, 4), "RevenueTTM": round(rev_ttm),
+                "QuarterlyRevenueGrowthYOY": None if q_growth is None else round(q_growth / 100, 4),
+                "QuarterlyEarningsGrowthYOY": None if e_growth is None else round(e_growth / 100, 4),
+            },
+            "Valuation": {
+                "TrailingPE": round(price / eps_ttm, 2) if eps_ttm > 0 else None,
+                "ForwardPE": round(price / eps_ny, 2) if eps_ny > 0 else None,
+                "PriceSalesTTM": round(mcap / rev_ttm, 2), "PriceBookMRQ": round(mcap / equity, 2),
+                "EnterpriseValue": round(ev), "EnterpriseValueRevenue": round(ev / rev_ttm, 2),
+                "EnterpriseValueEbitda": round(ev / ebitda_ttm, 2) if ebitda_ttm > 0 else None,
+            },
+            "Technicals": {
+                "Beta": round(D.SECTORS[sector][8] * _rng("series", ticker).uniform(0.8, 1.2), 2),
+                "52WeekHigh": round(tech_hi, 2) if tech_hi else None, "52WeekLow": round(tech_lo, 2) if tech_lo else None,
+                "50DayMA": round(metrics.sma(hist_closes, 50) or 0, 2), "200DayMA": round(metrics.sma(hist_closes, 200) or 0, 2),
+            },
+            "SharesStats": {
+                "SharesOutstanding": round(shares), "SharesFloat": round(shares * rng.uniform(0.75, 0.99)),
+                "PercentInsiders": round(rng.uniform(0.1, 12), 2), "PercentInstitutions": round(rng.uniform(35, 85), 2),
+            },
+            "AnalystRatings": {
+                "Rating": round(rating, 2), "TargetPrice": round(target, 2), "StrongBuy": sb, "Buy": b,
+                "Hold": hold, "Sell": s, "StrongSell": ss,
+            },
+            "Earnings": {"History": earnings_hist},
+            "Financials": {
+                "Income_Statement": {"currency_symbol": cur, "yearly": yearly_inc, "quarterly": q_inc},
+                "Balance_Sheet": {"currency_symbol": cur, "yearly": yearly_bal, "quarterly": q_bal},
+                "Cash_Flow": {"currency_symbol": cur, "yearly": yearly_cf, "quarterly": q_cf},
+            },
+            "_meta": {"payer": payer, "dps": dps, "growth": growth, "shares": shares},
+        }
+        if len(self._fund_cache) > 200:
+            self._fund_cache.clear()
+        self._fund_cache[key] = raw
+        return raw
+
+    async def company(self, ticker: str) -> Company:
+        return mapping.company(self._fundamentals_raw(ticker), ticker)
+
+    async def financials(self, ticker: str, period: str) -> Financials:
+        return mapping.financials(self._fundamentals_raw(ticker), ticker, period)
+
+    async def earnings(self, ticker: str) -> Earnings:
+        return mapping.earnings(self._fundamentals_raw(ticker), ticker, today=self.today())
+
+    async def dividends(self, ticker: str) -> Dividends:
+        raw = self._fundamentals_raw(ticker)
+        meta = raw["_meta"]
+        code, _, exch, *_ = _COMPANY[ticker]
+        cur = D.EXCHANGE_INFO[exch][0]
+        divs: list[dict] = []
+        if meta["payer"] and meta["dps"] > 0:
+            today = self.today()
+            for year in range(today.year - 10, today.year + 1):
+                annual = meta["dps"] / (1 + max(meta["growth"], 0.02)) ** (today.year - year)
+                if exch == "US":
+                    dates = [dt.date(year, m, 10) for m in (2, 5, 8, 11)]
+                    per = annual / 4
+                else:
+                    dates = [dt.date(year, 5, 6)]
+                    per = annual
+                for d in dates:
+                    d = d + dt.timedelta(days=(7 - d.weekday()) % 7 if d.weekday() >= 5 else 0)
+                    if d > today:
+                        continue
+                    divs.append({
+                        "date": d.isoformat(), "paymentDate": (d + dt.timedelta(days=21)).isoformat(),
+                        "value": round(per, 4), "currency": cur,
+                    })
+        splits = {
+            "NWND.US": [{"date": "2020-08-31", "split": "2.000000/1.000000"}],
+            "QBIT.US": [{"date": "2021-07-20", "split": "4.000000/1.000000"}],
+            "VLTA.US": [{"date": "2022-08-25", "split": "3.000000/1.000000"}],
+        }.get(ticker, [])
+        out = mapping.dividends(divs, splits, ticker, today=self.today())
+        price = self._effective(ticker)["c"][-1]
+        out.yield_ttm = round(out.ttm / price, 5) if out.ttm and price else None
+        return out
+
+    # --- News ------------------------------------------------------------------------
+
+    def _news_day(self, day: dt.date) -> list[NewsItem]:
+        rng = _rng("news", day.isoformat())
+        items: list[NewsItem] = []
+        if day.weekday() >= 5:
+            count = rng.randint(3, 6)
+        else:
+            count = rng.randint(16, 26)
+        weights = [c[5] ** 0.5 for c in D.COMPANIES]
+        for i in range(count):
+            minute = rng.randint(6 * 60, 22 * 60)
+            when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=minute)
+            c = rng.choices(D.COMPANIES, weights=weights)[0]
+            items.append(self._company_story(c, when, rng, i))
+        # Markt- und Makromeldungen aus den synthetischen Kursen und dem Kalender
+        items.extend(self._market_stories(day))
+        return items
+
+    def _company_story(self, c: tuple, when: dt.datetime, rng: random.Random, i: int) -> NewsItem:
+        code, name, exch, sector, industry, _ = c
+        ticker = f"{code}.{exch}"
+        cur = D.EXCHANGE_INFO[exch][0]
+        kind = rng.choices(
+            ["earn_pos", "earn_neg", "guide_up", "guide_down", "up", "down", "mna", "buyback", "order", "cfo", "outage", "jobs", "product"],
+            weights=[8, 6, 4, 3, 7, 5, 4, 4, 5, 3, 2, 2, 5],
+        )[0]
+        pct_num = round(abs(rng.gauss(6, 4)) + 1, 1)
+        amount_num = round(rng.uniform(0.5, 12), 1)
+        pct_val = _de(pct_num, 1)
+        amount = _de(amount_num, 1)
+        target = rng.choice(D.ACQUISITION_TARGETS)
+        templates: dict[str, tuple[str, str, str, float]] = {
+            "earn_pos": ("earnings", f"{name} übertrifft Gewinnerwartungen deutlich",
+                         f"{name} hat im abgelaufenen Quartal einen Gewinn je Aktie gemeldet, der {pct_val} % über der Konsensschätzung lag. Der Umsatz wuchs vor allem im Kerngeschäft {industry}. Das Management bestätigte den Ausblick.", 0.6),
+            "earn_neg": ("earnings", f"{name} verfehlt Umsatzprognose, Aktie unter Druck",
+                         f"Der Umsatz von {name} lag {pct_val} % unter den Erwartungen der Analysten. Als Gründe nannte das Unternehmen eine schwächere Nachfrage und höhere Kosten.", -0.6),
+            "guide_up": ("earnings", f"{name} hebt Jahresprognose an",
+                         f"{name} erwartet für das laufende Geschäftsjahr nun ein Umsatzwachstum von rund {pct_val} %. Bisher war das Unternehmen vorsichtiger.", 0.5),
+            "guide_down": ("earnings", f"{name} senkt Margenziel",
+                           f"{name} rechnet wegen gestiegener Kosten mit einer um {_de(pct_num / 3, 1)} Prozentpunkte niedrigeren operativen Marge.", -0.5),
+            "up": ("analyst", f"Analysten stufen {name} auf ‚Kaufen‘ hoch",
+                   f"Ein Analystenhaus hat {name} auf ‚Kaufen‘ hochgestuft und sieht {pct_val} % Kurspotenzial. Begründung: bessere Preissetzungsmacht im Bereich {industry}.", 0.4),
+            "down": ("analyst", f"{name}: Herabstufung auf ‚Halten‘ nach starkem Lauf",
+                     f"Nach dem Kursanstieg der vergangenen Monate sieht ein Analyst bei {name} kaum noch Aufwärtspotenzial und senkt die Einstufung.", -0.3),
+            "mna": ("mna", f"{name} übernimmt {target} für {amount} Mrd. {cur}",
+                    f"{name} hat eine Vereinbarung zur Übernahme von {target} unterzeichnet. Der Kaufpreis liegt bei {amount} Mrd. {cur}. Die Transaktion soll in zwölf Monaten abgeschlossen sein.", 0.2),
+            "buyback": ("company", f"{name} kündigt Aktienrückkauf über {amount} Mrd. {cur} an",
+                        f"Der Vorstand von {name} hat ein neues Rückkaufprogramm über {amount} Mrd. {cur} beschlossen.", 0.4),
+            "order": ("company", f"{name} erhält Großauftrag",
+                      f"{name} hat einen mehrjährigen Auftrag mit einem Volumen von rund {round(amount_num * 100)} Mio. {cur} gewonnen.", 0.4),
+            "cfo": ("company", f"{name} ernennt neuen Finanzvorstand",
+                    f"{name} hat {rng.choice(D.FIRST_NAMES)} {rng.choice(D.LAST_NAMES)} zum neuen Finanzvorstand ernannt. Der Wechsel erfolgt zum Quartalsende.", 0.0),
+            "outage": ("company", f"Produktionsausfall bei {name}",
+                       f"Ein technischer Defekt hat die Produktion von {name} an einem Standort für mehrere Tage gestoppt. Die Auswirkungen auf das Quartal sind noch unklar.", -0.5),
+            "jobs": ("company", f"{name} plant Stellenabbau",
+                     f"{name} will rund {round(pct_num)} % der Stellen in der Verwaltung streichen, um die Kosten zu senken.", -0.2),
+            "product": ("company", f"{name} stellt neue Produktgeneration vor",
+                        f"{name} hat eine neue Produktgeneration im Segment {industry} vorgestellt. Der Marktstart ist für das kommende Quartal geplant.", 0.3),
+        }
+        topic, title, content, polarity = templates[kind]
+        polarity = max(-1.0, min(1.0, polarity + rng.gauss(0, 0.15)))
+        urgent = kind in ("earn_pos", "earn_neg", "mna") and rng.random() < 0.5
+        ident = hashlib.sha1(f"{ticker}|{when.isoformat()}|{i}".encode()).hexdigest()[:16]
+        return NewsItem(
+            id=ident,
+            date=when.isoformat().replace("+00:00", "Z"),
+            title=title,
+            content=content,
+            link=None,
+            source="DEMO-WIRE",
+            symbols=[ticker],
+            tags=[topic.upper(), sector.upper()],
+            topic=topic,
+            sentiment=Sentiment(polarity=round(polarity, 3)),
+            urgent=urgent,
+        )
+
+    def _market_stories(self, day: dt.date) -> list[NewsItem]:
+        out: list[NewsItem] = []
+        if day.weekday() >= 5:
+            return out
+        days = self._daily("GSPC.INDX")["days"]
+        if day not in days:
+            return out
+        i = days.index(day)
+        for ticker, label, close_min in (("GDAXI.INDX", "DAX", 16 * 60 + 35), ("GSPC.INDX", "S&P 500", 21 * 60 + 5)):
+            s = self._daily(ticker)
+            if i < 1:
+                continue
+            chg = pct(s["c"][i], s["c"][i - 1]) or 0.0
+            when = dt.datetime(day.year, day.month, day.day, tzinfo=UTC) + dt.timedelta(minutes=close_min)
+            direction = "fester" if chg > 0.15 else "schwächer" if chg < -0.15 else "kaum verändert"
+            title = f"Märkte: {label} schließt {direction} ({_de(chg, 2, sign=True)} %)"
+            out.append(
+                NewsItem(
+                    id=hashlib.sha1(f"mkt|{ticker}|{day}".encode()).hexdigest()[:16],
+                    date=when.isoformat().replace("+00:00", "Z"),
+                    title=title,
+                    content=f"Der {label} beendete den Handel bei {_de(s['c'][i], 2)} Punkten ({_de(chg, 2, sign=True)} %).",
+                    source="DEMO-WIRE",
+                    symbols=[ticker],
+                    tags=["MARKETS"],
+                    topic="markets",
+                    sentiment=Sentiment(polarity=round(max(-1, min(1, chg / 2)), 3)),
+                    urgent=abs(chg) > 2.0,
+                )
+            )
+        for ev in self._calendar_day(day):
+            if ev.importance < 3 or ev.actual is None:
+                continue
+            unit = ev.unit or ""
+            def f(x: Optional[float]) -> str:
+                return "–" if x is None else f"{_de(x, 2 if abs(x) < 1 else 1)}{unit}"
+            surprise = "über" if (ev.surprise or 0) > 0 else "unter" if (ev.surprise or 0) < 0 else "wie"
+            country = {"US": "USA", "DE": "Deutschland", "EU": "Eurozone", "GB": "Großbritannien", "JP": "Japan", "CN": "China"}.get(ev.country, ev.country)
+            out.append(
+                NewsItem(
+                    id=hashlib.sha1(f"eco|{ev.id}".encode()).hexdigest()[:16],
+                    date=ev.date,
+                    title=f"{country}: {ev.event} bei {f(ev.actual)} – {surprise} Prognose ({f(ev.estimate)})",
+                    content=f"Die Veröffentlichung {ev.event} für {ev.period or 'die Berichtsperiode'} lag bei {f(ev.actual)}. Erwartet worden waren {f(ev.estimate)}, der Vorwert lag bei {f(ev.previous)}.",
+                    source="DEMO-WIRE",
+                    symbols=[],
+                    tags=["MACRO", ev.country],
+                    topic="macro",
+                    sentiment=Sentiment(polarity=0.0),
+                    urgent=True,
+                )
+            )
+        return out
+
+    async def news(self, tickers: Optional[list[str]], limit: int) -> list[NewsItem]:
+        now = self.now()
+        cutoff = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        items: list[NewsItem] = []
+        for k in range(0, 10):
+            day = now.date() - dt.timedelta(days=k)
+            items.extend(n for n in self._news_day(day) if n.date <= cutoff)
+        if tickers:
+            wanted = set(tickers)
+            items = [n for n in items if wanted.intersection(n.symbols)]
+        items.sort(key=lambda n: n.date, reverse=True)
+        return items
+
+    # --- Makro -------------------------------------------------------------------------
+
+    _EVENTS: list[tuple[str, str, str, tuple, str, Optional[str], float, float, float]] = [
+        # Land, Ereignis, Uhrzeit UTC, Regel, Einheit-Kürzel, Einheit, Basis, Streuung, Trend/Jahr
+        ("US", "Initial Jobless Claims", "12:30", ("weekday", 3), "K", "K", 225, 12, 0),
+        ("US", "Nonfarm Payrolls", "12:30", ("nth", 1, 4), "K", "K", 170, 60, 0),
+        ("US", "Unemployment Rate", "12:30", ("nth", 1, 4), "%", "%", 4.0, 0.15, 0.05),
+        ("US", "CPI YoY", "12:30", ("dom", 12), "%", "%", 2.9, 0.25, 0),
+        ("US", "Core CPI MoM", "12:30", ("dom", 12), "%", "%", 0.25, 0.08, 0),
+        ("US", "Retail Sales MoM", "12:30", ("dom", 15), "%", "%", 0.3, 0.45, 0),
+        ("US", "ISM Manufacturing PMI", "14:00", ("bd", 1), "", None, 49.5, 1.3, 0),
+        ("US", "Consumer Confidence", "14:00", ("last", 1), "", None, 99, 4, 0),
+        ("US", "PCE Price Index YoY", "12:30", ("last", 4), "%", "%", 2.6, 0.2, 0),
+        ("US", "Fed Interest Rate Decision", "18:00", ("cb", (1, 3, 4, 6, 7, 9, 10, 12), 3), "%", "%", 3.75, 0, 0),
+        ("US", "GDP Growth Rate QoQ Adv", "12:30", ("q", 29), "%", "%", 2.0, 1.0, 0),
+        ("DE", "Ifo Business Climate", "08:00", ("dom", 24), "", None, 87.5, 1.2, 0),
+        ("DE", "ZEW Economic Sentiment", "09:00", ("nth", 3, 1), "", None, 20, 9, 0),
+        ("DE", "Inflation Rate YoY Prel", "12:00", ("dom", 29), "%", "%", 2.2, 0.2, 0),
+        ("DE", "Unemployment Change", "08:55", ("dom", 30), "K", "K", 10, 9, 0),
+        ("DE", "Industrial Production MoM", "06:00", ("dom", 7), "%", "%", 0.0, 0.9, 0),
+        ("EU", "ECB Interest Rate Decision", "12:15", ("cb", (1, 3, 4, 6, 7, 9, 10, 12), 4), "%", "%", 2.0, 0, 0),
+        ("EU", "HCOB Manufacturing PMI Flash", "08:00", ("dom", 23), "", None, 49.0, 1.1, 0),
+        ("EU", "Inflation Rate YoY Flash", "09:00", ("bd", 1), "%", "%", 2.1, 0.2, 0),
+        ("GB", "Inflation Rate YoY", "06:00", ("dom", 17), "%", "%", 3.4, 0.25, 0),
+        ("GB", "GDP MoM", "06:00", ("dom", 13), "%", "%", 0.1, 0.25, 0),
+        ("GB", "BoE Interest Rate Decision", "11:00", ("cb", (2, 3, 5, 6, 8, 9, 11, 12), 4), "%", "%", 3.75, 0, 0),
+        ("JP", "BoJ Interest Rate Decision", "03:00", ("cb", (1, 3, 4, 6, 7, 9, 10, 12), 5), "%", "%", 0.75, 0, 0),
+        ("JP", "Inflation Rate YoY", "23:30", ("dom", 19), "%", "%", 2.8, 0.3, 0),
+        ("CN", "Caixin Manufacturing PMI", "01:45", ("bd", 1), "", None, 50.4, 0.8, 0),
+        ("CN", "Inflation Rate YoY", "01:30", ("dom", 10), "%", "%", 0.4, 0.4, 0),
+        ("CN", "Retail Sales YoY", "02:00", ("dom", 16), "%", "%", 3.5, 0.8, 0),
+        ("CN", "Industrial Production YoY", "02:00", ("dom", 16), "%", "%", 5.6, 0.6, 0),
+        ("US", "Crude Oil Inventories", "14:30", ("weekday", 2), "M", "M", -1.0, 3.0, 0),
+        ("US", "Durable Goods Orders MoM", "12:30", ("dom", 26), "%", "%", 0.3, 1.8, 0),
+        ("US", "Existing Home Sales", "14:00", ("dom", 22), "M", "M", 4.1, 0.15, 0),
+        ("US", "Building Permits", "12:30", ("dom", 18), "M", "M", 1.42, 0.06, 0),
+        ("US", "Michigan Consumer Sentiment", "14:00", ("nth", 2, 4), "", None, 58, 3, 0),
+        ("US", "Trade Balance", "12:30", ("dom", 6), "B", "B", -68, 5, 0),
+        ("US", "ISM Services PMI", "14:00", ("dom", 3), "", None, 51.5, 1.4, 0),
+        ("DE", "GfK Consumer Confidence", "06:00", ("dom", 27), "", None, -22, 2, 0),
+        ("DE", "Factory Orders MoM", "06:00", ("dom", 6), "%", "%", 0.2, 2.0, 0),
+        ("DE", "Retail Sales MoM", "06:00", ("dom", 31 - 1), "%", "%", 0.1, 1.0, 0),
+        ("EU", "Unemployment Rate", "09:00", ("dom", 2), "%", "%", 6.3, 0.1, 0),
+        ("EU", "Retail Sales MoM", "09:00", ("dom", 5), "%", "%", 0.2, 0.5, 0),
+        ("EU", "ZEW Economic Sentiment", "09:00", ("nth", 3, 1), "", None, 25, 8, 0),
+        ("EU", "Consumer Confidence Flash", "14:00", ("dom", 21), "", None, -14.5, 1.2, 0),
+        ("GB", "Retail Sales MoM", "06:00", ("dom", 20), "%", "%", 0.2, 0.8, 0),
+        ("GB", "Unemployment Rate", "06:00", ("dom", 14), "%", "%", 4.6, 0.1, 0),
+        ("JP", "Unemployment Rate", "23:30", ("dom", 28), "%", "%", 2.5, 0.1, 0),
+        ("JP", "Industrial Production MoM", "23:50", ("dom", 29), "%", "%", 0.2, 1.5, 0),
+    ]
+
+    @staticmethod
+    def _matches(rule: tuple, d: dt.date) -> bool:
+        kind = rule[0]
+        if d.weekday() >= 5:
+            return False
+        if kind == "weekday":
+            return d.weekday() == rule[1]
+        if kind == "nth":  # n-ter Wochentag im Monat
+            n, wd = rule[1], rule[2]
+            return d.weekday() == wd and (d.day - 1) // 7 == n - 1
+        if kind == "dom":  # Kalendertag, am Wochenende auf den nächsten Werktag
+            target = dt.date(d.year, d.month, min(rule[1], 28 if d.month == 2 else 30))
+            while target.weekday() >= 5:
+                target += dt.timedelta(days=1)
+            return d == target
+        if kind == "bd":  # n-ter Werktag
+            first = dt.date(d.year, d.month, 1)
+            while first.weekday() >= 5:
+                first += dt.timedelta(days=1)
+            return d == first
+        if kind == "last":  # letzter Wochentag wd im Monat
+            wd = rule[1]
+            nxt = d + dt.timedelta(days=7)
+            return d.weekday() == wd and nxt.month != d.month
+        if kind == "cb":  # Notenbank: 3. Woche, Wochentag
+            months, wd = rule[1], rule[2] - 1
+            return d.month in months and d.weekday() == wd and 15 <= d.day <= 21
+        if kind == "q":
+            return d.month in (1, 4, 7, 10) and DemoProvider._matches(("dom", rule[1]), d)
+        return False
+
+    def _event_value(self, country: str, name: str, base: float, spread: float, d: dt.date) -> tuple[float, float, float]:
+        """(Ist, Prognose, Vorwert) als glatte Zufallsreihe je Monat."""
+        def level(year: int, month: int) -> float:
+            if spread == 0:  # Leitzins: aus der Zinskurve ableiten
+                cc = {"US": "US", "EU": "DE", "GB": "UK", "JP": "JP"}[country]
+                short, _ = _interp(D.CURVE_KNOTS[cc], dt.date(year, month, 15))
+                return round(max(short, 0.0) * 4) / 4 if country != "JP" else round(max(short, 0) * 20) / 20
+            idx = year * 12 + month
+            r1 = _rng("ev", country, name, idx).gauss(0, 1)
+            r2 = _rng("ev", country, name, idx - 1).gauss(0, 1)
+            return base + spread * (0.7 * r1 + 0.5 * r2)
+
+        actual = level(d.year, d.month)
+        pm = d.month - 1 or 12
+        py = d.year if d.month > 1 else d.year - 1
+        previous = level(py, pm)
+        est_noise = _rng("est", country, name, d.isoformat()).gauss(0, spread * 0.35)
+        estimate = actual - est_noise if spread else actual
+        digits = 0 if abs(base) >= 50 and spread >= 1 else 1 if abs(base) >= 5 else 2
+        return round(actual, digits), round(estimate, digits), round(previous, digits)
+
+    def _calendar_day(self, d: dt.date) -> list[EconEvent]:
+        out: list[EconEvent] = []
+        now = self.now()
+        for country, name, time, rule, unit_suffix, unit, base, spread, _ in self._EVENTS:
+            if not self._matches(rule, d):
+                continue
+            hh, mm = (int(x) for x in time.split(":"))
+            when = dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=UTC)
+            actual, estimate, previous = self._event_value(country, name, base, spread, d)
+            released = when <= now
+            period = (d.replace(day=1) - dt.timedelta(days=1)).strftime("%b %Y")
+            ident = hashlib.sha1(f"{country}|{name}|{d}".encode()).hexdigest()[:16]
+            out.append(
+                EconEvent(
+                    id=ident,
+                    date=when.isoformat().replace("+00:00", "Z"),
+                    country=country,
+                    event=name,
+                    period=period,
+                    actual=actual if released else None,
+                    estimate=estimate,
+                    previous=previous,
+                    surprise=round(actual - estimate, 4) if released else None,
+                    importance=mapping.importance(name),
+                    unit=unit,
+                )
+            )
+        return out
+
+    async def calendar(self, start: dt.date, end: dt.date, country: Optional[str]) -> list[EconEvent]:
+        out: list[EconEvent] = []
+        d = start
+        while d <= end:
+            out.extend(self._calendar_day(d))
+            d += dt.timedelta(days=1)
+        if country:
+            out = [e for e in out if e.country == country.upper()]
+        out.sort(key=lambda e: e.date)
+        return out
+
+    async def macro_indicator(self, country: str, indicator: str) -> list[CountryValue]:
+        base = D.MACRO_BASE.get(country)
+        if base is None:
+            raise NotFound(f"Land {country} nicht im Demo-Datensatz.")
+        growth, infl, unemp, (debt0, debt1), (pc0, pc1), gdp_last, real = base
+        last_year = self.today().year - 1
+        out: list[CountryValue] = []
+        for year in range(2000, last_year + 1):
+            r = _rng("macro", country, indicator, year)
+            w = (year - 2000) / max(last_year - 2000, 1)
+            shock = {2009: -4.0, 2020: -5.5, 2021: 4.5}.get(year, 0.0)
+            if indicator == "gdp_growth_annual":
+                g = growth - (3.0 * w if country == "CHN" else 0)
+                v = g + shock * (0.6 if country in ("CHN", "IND") else 1.0) + r.gauss(0, 0.8)
+            elif indicator == "inflation_consumer_prices_annual":
+                spike = {2021: 2.0, 2022: 5.5, 2023: 2.5}.get(year, 0.0) * (0.3 if country in ("CHN", "JPN") else 1.0)
+                v = infl + spike + r.gauss(0, 0.5)
+            elif indicator == "unemployment_total_percent":
+                v = unemp * (1 - 0.3 * w if country in ("DEU", "ESP") else 1) + (1.5 if year in (2009, 2010, 2020) else 0) + r.gauss(0, 0.3)
+            elif indicator == "debt_percent_gdp":
+                v = debt0 + (debt1 - debt0) * w + (8 if year >= 2020 else 0) * (0.5 if country in ("DEU", "AUS") else 1) + r.gauss(0, 1.5)
+                if year == last_year and r.random() < 0.5:
+                    continue  # Schuldenquoten erscheinen oft verspätet
+            elif indicator == "real_interest_rate":
+                v = real + r.gauss(0, 1.2) - (3.0 if year in (2021, 2022) else 0)
+            elif indicator == "gdp_per_capita_usd":
+                v = pc0 * (pc1 / pc0) ** w * (1 + r.gauss(0, 0.02)) * (0.97 if year in (2009, 2020) else 1)
+            elif indicator == "gdp_current_usd":
+                v = gdp_last * 1e9 * (pc0 / pc1) ** (1 - w) * (1 + r.gauss(0, 0.02))
+            else:
+                raise NotFound(f"Indikator {indicator} unbekannt.")
+            out.append(CountryValue(year=year, value=round(v, 3)))
+        return out
+
+    # --- Screener ------------------------------------------------------------------------
+
+    async def screener(
+        self, filters: list[ScreenFilter], sort: str, desc: bool, max_rows: int
+    ) -> tuple[list[ScreenRow], list[ScreenFilter], list[str]]:
+        rows: list[ScreenRow] = []
+        for t, c in _COMPANY.items():
+            raw = self._fundamentals_raw(t)
+            e = self._effective(t)
+            closes = e["c"]
+            hl = raw["Highlights"]
+            price = closes[-1]
+            eps = hl["EarningsShare"]
+            avg_vol = [v for v in e["v"][-200:] if v]
+            rows.append(
+                ScreenRow(
+                    ticker=t,
+                    name=c[1],
+                    exchange=c[2],
+                    sector=c[3],
+                    industry=c[4],
+                    currency=D.EXCHANGE_INFO[c[2]][0],
+                    price=round(price, 4),
+                    chg_1d=metrics.perf(closes, 1),
+                    chg_5d=metrics.perf(closes, 5),
+                    market_cap=hl["MarketCapitalization"],
+                    eps=eps,
+                    pe=round(price / eps, 2) if eps and eps > 0 else None,
+                    div_yield=round((hl["DividendShare"] or 0) / price * 100, 3),
+                    avg_vol=sum(avg_vol) / len(avg_vol) if avg_vol else None,
+                )
+            )
+        return rows, list(filters), ["Quelle: Demo-Universum mit 44 fiktiven Unternehmen."]
