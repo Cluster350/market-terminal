@@ -6,7 +6,9 @@ import logging
 import math
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+import httpx
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,6 +17,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .ai.service import AIService
+from .api.ai_routes import router as ai_router
 from .api.routes import router
 from .cache import TTLCache
 from .config import Settings, settings
@@ -58,13 +62,18 @@ def make_provider(cfg: Settings) -> Provider:
     return DemoProvider()
 
 
-def create_app(provider: Provider | None = None, cfg: Settings = settings) -> FastAPI:
+def create_app(
+    provider: Provider | None = None, cfg: Settings = settings, llm_transport: Optional[httpx.AsyncBaseTransport] = None
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         prov = provider or make_provider(cfg)
         app.state.terminal = Terminal(prov, TTLCache())
-        log.info("Market Terminal gestartet, Datenquelle: %s", prov.mode)
+        app.state.ai = AIService(cfg, app.state.terminal, prov.mode, transport=llm_transport)
+        app.state.ai.start()
+        log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
         yield
+        await app.state.ai.close()
         await prov.close()
 
     app = FastAPI(title="Market Terminal API", version="1.0.0", lifespan=lifespan, default_response_class=SafeJSONResponse)
@@ -106,6 +115,7 @@ def create_app(provider: Provider | None = None, cfg: Settings = settings) -> Fa
         )
 
     app.include_router(router)
+    app.include_router(ai_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

@@ -86,3 +86,22 @@ def normalize_list(raw: str, limit: int = 50) -> list[str]:
         if t not in seen:
             seen.append(t)
     return seen
+
+
+# Umkehrungen für die Anzeige (wie displayTicker im Frontend)
+_BBG_DISPLAY = {
+    "US": "US", "XETRA": "GR", "F": "GF", "LSE": "LN", "PA": "FP", "AS": "NA", "BR": "BB", "SW": "SW", "MI": "IM",
+    "MC": "SM", "TSE": "JT", "HK": "HK", "TO": "CN", "AU": "AU", "ST": "SS", "CO": "DC", "OL": "NO", "HE": "FH",
+    "INDX": "Index", "FOREX": "Curncy", "CC": "Curncy", "GBOND": "Govt", "COMM": "Comdty",
+}
+_INDEX_DISPLAY = {v: k for k, v in INDEX_ALIASES.items() if k != v}
+
+
+def display(ticker: str) -> str:
+    """NWND.US -> "NWND US", SAP.XETRA -> "SAP GR", GDAXI.INDX -> "DAX Index"."""
+    code, _, exch = (ticker or "").rpartition(".")
+    if not code:
+        return ticker
+    if exch == "INDX":
+        code = _INDEX_DISPLAY.get(code, code)
+    return f"{code} {_BBG_DISPLAY.get(exch, exch)}"

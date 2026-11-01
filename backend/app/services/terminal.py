@@ -220,10 +220,13 @@ class Terminal:
 
     # --- Makro ------------------------------------------------------------------------
 
-    def _today(self) -> dt.date:
-        """Heutiges Datum (UTC); die Demo-Quelle hat eine eigene Uhr."""
+    def now(self) -> dt.datetime:
+        """Aktuelle Zeit (UTC); die Demo-Quelle hat eine eigene Uhr."""
         now = getattr(self.p, "now", None)
-        return (now() if callable(now) else dt.datetime.now(dt.timezone.utc)).date()
+        return now() if callable(now) else dt.datetime.now(dt.timezone.utc)
+
+    def _today(self) -> dt.date:
+        return self.now().date()
 
     async def _market_rows(self, instruments: list[Instrument]) -> list[MarketRow]:
         tickers = [i.ticker for i in instruments]

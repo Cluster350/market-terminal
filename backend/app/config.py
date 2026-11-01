@@ -49,6 +49,18 @@ class Settings:
         )
     )
 
+    # KI-Helfer: "auto" nutzt LM Studio, wenn erreichbar, sonst im Demo-Modus die regelbasierte
+    # Demo-KI; "lmstudio" nur LM Studio, "demo" immer Demo-KI, "off" aus
+    llm_mode: str = field(default_factory=lambda: os.environ.get("LLM_MODE", "auto").strip().lower() or "auto")
+    llm_base_url: str = field(
+        default_factory=lambda: os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1").strip().rstrip("/")
+    )
+    llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", "").strip())
+    llm_api_key: str = field(default_factory=lambda: os.environ.get("LLM_API_KEY", "").strip())
+    llm_timeout: int = field(default_factory=lambda: _int("LLM_TIMEOUT_SECONDS", 180))
+    llm_max_concurrency: int = field(default_factory=lambda: max(1, _int("LLM_MAX_CONCURRENCY", 1)))
+    llm_max_steps: int = field(default_factory=lambda: max(1, _int("LLM_MAX_STEPS", 6)))
+
     @property
     def mode(self) -> str:
         """Ohne Key läuft das Terminal immer im Demo-Modus."""
