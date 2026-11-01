@@ -5,22 +5,37 @@ setlocal
 cd /d "%~dp0"
 title Market Terminal
 
-rem --- Python suchen (py-Starter von python.org oder python im PATH) ---
+rem --- Python suchen: py-Starter, python im PATH und uebliche Installationsordner ---
 set "PY="
-py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>nul && set "PY=py -3"
+for %%C in ("py -3.13" "py -3.12" "py -3.11" "py -3.14" "py -3" "py" "python" "python3") do (
+  if not defined PY (
+    %%~C -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>nul && set "PY=%%~C"
+  )
+)
 if not defined PY (
-  python -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>nul && set "PY=python"
+  for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*" "%ProgramFiles%\Python3*" "%USERPROFILE%\anaconda3" "%USERPROFILE%\miniconda3" "%ProgramData%\anaconda3" "%ProgramData%\miniconda3" "%LOCALAPPDATA%\anaconda3") do (
+    if not defined PY if exist "%%~D\python.exe" (
+      "%%~D\python.exe" -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>nul && set PY="%%~D\python.exe"
+    )
+  )
 )
 if not defined PY (
   echo.
-  echo  Python 3.11 oder neuer wurde nicht gefunden.
-  echo  1. https://www.python.org/downloads/ oeffnen und Python installieren.
+  echo  Python 3.11 oder neuer wurde nicht gefunden. Gefunden wurde:
+  py --version 2>nul
+  python --version 2>nul
+  where python 2>nul
+  echo.
+  echo  Steht oben eine Version unter 3.11 oder gar nichts:
+  echo  1. https://www.python.org/downloads/ oeffnen und die aktuelle Version installieren.
   echo  2. Im Installer unten "Add python.exe to PATH" anhaken.
   echo  3. Danach diese Datei erneut doppelklicken.
+  echo  Steht oben 3.11 oder neuer, bitte ein Foto dieses Fensters schicken.
   echo.
   pause
   exit /b 1
 )
+echo  ^> Python gefunden: %PY%
 
 rem --- Node.js pruefen (nur fuer den ersten Start noetig) ---
 if not exist "frontend\dist\index.html" (
