@@ -470,7 +470,7 @@ export function MOST(_: ScreenProps) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
             <MoverTable title="Gewinner" rows={m.gainers} />
             <MoverTable title="Verlierer" rows={m.losers} />
-            <MoverTable title="Meistgehandelt" rows={m.active} volume />
+            <MoverTable title="Meistgehandelt (Ø Volumen)" rows={m.active} volume />
           </div>
         )}
       </Q>

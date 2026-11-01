@@ -117,7 +117,9 @@ describe("Ticker und Fremddaten", () => {
     expect(displayTicker("NWND.US")).toBe("NWND US");
     expect(displayTicker("BTC-USD.CC")).toBe("BTC-USD Curncy");
     expect(displayTicker("SAP.XETRA")).toBe("SAP GR");
-    expect(displayTicker("GDAXI.INDX")).toBe("GDAXI Index");
+    expect(displayTicker("GDAXI.INDX")).toBe("DAX Index");
+    expect(displayTicker("GSPC.INDX")).toBe("SPX Index");
+    expect(displayTicker("HSI.INDX")).toBe("HSI Index");
     expect(displayTicker("US10Y.GBOND")).toBe("US10Y Govt");
     expect(displayTicker("OHNEBOERSE")).toBe("OHNEBOERSE");
   });

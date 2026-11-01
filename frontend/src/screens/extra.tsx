@@ -85,7 +85,7 @@ export function EVTS(_: ScreenProps) {
         </label>
         <input className="field" placeholder="Ticker oder Name" aria-label="Earnings filtern" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 140 }} />
         <span className="small muted" style={{ marginLeft: "auto" }}>
-          {fmtDate(range.from)} – {fmtDate(range.to)} · {rows.length} Berichte
+          {fmtDate(range.from)} – {fmtDate(range.to)} · {rows.length} {rows.length === 1 ? "Bericht" : "Berichte"}
           {reported.length ? ` · ${beats}/${reported.length} über Schätzung` : ""}
         </span>
       </div>

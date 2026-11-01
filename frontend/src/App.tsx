@@ -66,8 +66,8 @@ export default function App() {
       } else if (e.key === "Escape") {
         // Esc: Feld verlassen, Maximieren beenden, sonst im aktiven Panel zurück (z. B. nach HELP)
         if (widget) target.blur();
-        else if (ws.state.maximized !== null) ws.maximize(null);
-        else ws.back();
+        if (ws.state.maximized !== null) ws.maximize(null);
+        else if (!widget) ws.back();
       }
     };
     window.addEventListener("keydown", onKey);

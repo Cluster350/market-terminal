@@ -213,12 +213,20 @@ const BBG_DISPLAY: Record<string, string> = {
   INDX: "Index", FOREX: "Curncy", CC: "Curncy", GBOND: "Govt", COMM: "Comdty",
 };
 
-/** Ticker in Terminal-Schreibweise: NWND.US -> "NWND US", SAP.XETRA -> "SAP GR", GDAXI.INDX -> "GDAXI Index". */
+// Bloomberg-Indexkürzel für die Anzeige (Umkehrung von INDEX_ALIASES in commands.ts)
+const INDEX_DISPLAY: Record<string, string> = {
+  GSPC: "SPX", DJI: "INDU", IXIC: "CCMP", RUT: "RTY", GSPTSE: "SPTSX", GDAXI: "DAX", MDAXI: "MDAX",
+  STOXX50E: "SX5E", FCHI: "CAC", FTSE: "UKX", SSMI: "SMI", N225: "NKY", AXJO: "AS51",
+};
+
+/** Ticker in Terminal-Schreibweise: NWND.US -> "NWND US", SAP.XETRA -> "SAP GR", GDAXI.INDX -> "DAX Index". */
 export function displayTicker(t: string): string {
   const i = t.lastIndexOf(".");
   if (i <= 0) return t;
   const exch = t.slice(i + 1);
-  return `${t.slice(0, i)} ${BBG_DISPLAY[exch] ?? exch}`;
+  const code = t.slice(0, i);
+  const shown = exch === "INDX" && Object.prototype.hasOwnProperty.call(INDEX_DISPLAY, code) ? INDEX_DISPLAY[code] : code;
+  return `${shown} ${BBG_DISPLAY[exch] ?? exch}`;
 }
 
 /** Aktie (mit Fundamentaldaten) oder anderes Instrument (Index, Devise, Anleihe, Rohstoff)? */
@@ -293,6 +301,16 @@ const COUNTRY_DE: Record<string, string> = {
   Austria: "Österreich", Ireland: "Irland", Canada: "Kanada", Australia: "Australien", China: "China",
   "Hong Kong": "Hongkong", Luxembourg: "Luxemburg", Portugal: "Portugal", Taiwan: "Taiwan", "South Korea": "Südkorea",
 };
+
+const TYPE_DE: Record<string, string> = {
+  "Common Stock": "Aktie", "Preferred Stock": "Vorzugsaktie", ETF: "ETF", FUND: "Fonds", Fund: "Fonds", INDEX: "Index",
+  Index: "Index", Currency: "Devisen", FOREX: "Devisen", Bond: "Anleihe", BOND: "Anleihe", Commodity: "Rohstoff",
+};
+
+/** Wertpapierart auf Deutsch ("Common Stock" -> "Aktie"). */
+export function typeDe(s: string | null | undefined): string {
+  return s ? (Object.prototype.hasOwnProperty.call(TYPE_DE, s) ? TYPE_DE[s] : s) : "";
+}
 
 export function countryDe(s: string | null | undefined): string {
   return s ? (Object.prototype.hasOwnProperty.call(COUNTRY_DE, s) ? COUNTRY_DE[s] : s) : DASH;

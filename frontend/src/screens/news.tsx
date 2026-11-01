@@ -267,7 +267,7 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
         </button>
         <span className="small muted" style={{ marginLeft: "auto" }}>
           {shown.length} Meldungen · {unread} ungelesen
-          {!paused && <span className="up"> · LIVE</span>}
+          {!paused && <span className="up" title="Neue Meldungen erscheinen automatisch"> · AUTO</span>}
         </span>
       </div>
       <div ref={listRef} style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: twoCol ? "minmax(0, 11fr) minmax(0, 9fr)" : "minmax(0, 1fr)" }}>

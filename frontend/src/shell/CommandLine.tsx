@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FUNCTIONS, FN, normalizeTicker, parseCommand, resolveFn, unknownSecurityMessage, type FnCode } from "../lib/commands";
-import { displayTicker } from "../lib/format";
+import { countryDe, displayTicker, typeDe } from "../lib/format";
 import { api, ApiError } from "../lib/api";
 import { useResolve, useSearch } from "../lib/queries";
 import { useWorkspace } from "../state/workspace";
@@ -41,6 +41,17 @@ export function secTickerOf(text: string, complete: boolean): string | null {
 /** Hat die Ticker-Prüfung "nicht gefunden" ergeben (und nicht etwa einen Netzfehler)? */
 export function isNotFound(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
+}
+
+/** Eindeutiger Suchtreffer für ein einzelnes Wort: einziger Treffer, gleiches Kürzel oder Namensanfang. */
+export function searchPick(word: string, hits: { ticker: string; name: string }[]): string | null {
+  const w = word.trim().toLowerCase();
+  if (!w || /\s/.test(w) || !hits.length) return null;
+  if (hits.length === 1) return hits[0].ticker;
+  const byCode = hits.filter((h) => h.ticker.toLowerCase().split(".")[0] === w);
+  if (byCode.length === 1) return byCode[0].ticker;
+  const byName = hits.filter((h) => h.name.toLowerCase().startsWith(w));
+  return byName.length === 1 ? byName[0].ticker : null;
 }
 
 export function CommandLine() {
@@ -159,7 +170,7 @@ export function CommandLine() {
         ticker: h.ticker,
         label: displayTicker(h.ticker),
         desc: h.name,
-        meta: [h.type, h.country].filter(Boolean).join(" · "),
+        meta: [typeDe(h.type), h.country ? countryDe(h.country) : ""].filter(Boolean).join(" · "),
         fn: parts.fn,
       });
     }
@@ -210,6 +221,9 @@ export function CommandLine() {
       } catch (e) {
         if (id !== requestId.current) return;
         setChecking(false);
+        // Firmenname oder Kürzel ohne Börse ("northwind", "elbt"): passenden Suchtreffer nehmen
+        const pick = e instanceof ApiError && e.status === 404 ? searchPick(parts.secPart, debounced === value ? search.data ?? [] : []) : null;
+        if (pick) return void activate(pick, fn, true);
         setOpen(true);
         setError(
           e instanceof ApiError && e.status === 404
@@ -253,8 +267,9 @@ export function CommandLine() {
     if (cmd.kind === "error") {
       // Tippfehler-freundlich: genau ein Suchtreffer -> direkt öffnen. Nur wenn die Treffer zur
       // aktuellen Eingabe gehören – nach schnellem Weitertippen stammen sie noch vom alten Begriff.
+      // Nur bei einem einzelnen Wort – "RHNC GR WACC" (unbekannte Funktion) darf nicht still RHNC öffnen
       const hits = debounced === value ? search.data ?? [] : [];
-      if (hits.length === 1) return choose({ kind: "sec", ticker: hits[0].ticker, label: "", desc: "", meta: "", fn: null });
+      if (hits.length === 1 && parts.tokens.length === 1) return choose({ kind: "sec", ticker: hits[0].ticker, label: "", desc: "", meta: "", fn: null });
       setError(cmd.message);
       return;
     }

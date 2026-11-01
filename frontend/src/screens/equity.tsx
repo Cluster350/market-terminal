@@ -90,7 +90,8 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
                 <span style={{ fontSize: "var(--fs-xl)", fontFamily: "var(--sans)", fontWeight: 600 }}>{c.name}</span>
                 <span className="lbl">{displayTicker(c.ticker)}</span>
                 <span className="muted small">
-                  {[c.exchange ? exchangeName(c.exchange) : null, c.currency, c.country ? countryDe(c.country) : null].filter(Boolean).join(" · ")}
+                  {/* "USA · USD · USA": Börse und Land nur einmal, wenn sie gleich heißen */}
+                  {Array.from(new Set([c.exchange ? exchangeName(c.exchange) : null, c.currency, c.country ? countryDe(c.country) : null].filter(Boolean))).join(" · ")}
                 </span>
                 {price !== null && (
                   <span style={{ marginLeft: "auto", fontSize: "var(--fs-l)" }}>
@@ -227,7 +228,11 @@ export function HP({ ticker }: ScreenProps) {
           for (let i = h.t.length - 1; i >= 0 && rows.length < n; i--) {
             const c = h.c[i];
             const prev = i > 0 ? h.c[i - 1] : null;
-            rows.push({ d: h.t[i], o: h.o[i], h: h.h[i], l: h.l[i], c, v: h.v[i], chg: isNum(c) && isNum(prev) && prev !== 0 ? (c / prev - 1) * 100 : null });
+            rows.push({
+              d: h.t[i], o: h.o[i], h: h.h[i], l: h.l[i], c, v: h.v[i],
+              chg: isNum(c) && isNum(prev) && prev !== 0 ? (c / prev - 1) * 100 : null,
+              chgBp: isNum(c) && isNum(prev) ? Math.round((c - prev) * 100) : null,
+            });
           }
           const isYield = h.ticker.endsWith(".GBOND");
           // Während der Sitzung ist die jüngste Zeile ein laufender Kurs, noch kein Schluss
@@ -260,7 +265,8 @@ export function HP({ ticker }: ScreenProps) {
                     key: "chg",
                     label: isYield ? "Veränd. bp" : "Veränd.",
                     num: true,
-                    sort: (r) => r.chg,
+                    // Renditen nach der bp-Veränderung sortieren, nicht nach der %-Veränderung
+                    sort: (r) => (isYield ? r.chgBp : r.chg),
                     render: (r) => {
                       if (!isYield) return <Change value={r.chg} />;
                       const idx = h.t.indexOf(r.d);
@@ -499,6 +505,12 @@ export function DVD({ ticker }: ScreenProps) {
           const byYear = new Map<string, number>();
           d.dividends.forEach((x) => isNum(x.value) && byYear.set(x.exDate.slice(0, 4), (byYear.get(x.exDate.slice(0, 4)) ?? 0) + x.value));
           const years = Array.from(byYear.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+          const counts = new Map<string, number>();
+          d.dividends.forEach((x) => counts.set(x.exDate.slice(0, 4), (counts.get(x.exDate.slice(0, 4)) ?? 0) + 1));
+          const maxCount = Math.max(0, ...counts.values());
+          const thisYear = String(new Date().getFullYear());
+          // Laufendes Jahr und Jahre mit weniger Zahlungen als üblich (Beginn der Historie) kennzeichnen
+          const partialYear = (y: string) => y === thisYear || (counts.get(y) ?? 0) < maxCount;
           // Eine Stellenzahl für alle Beträge, damit die Spalte bündig bleibt (3,3570 neben 4,4171)
           const digits = Math.max(2, ...d.dividends.map((x) => perShareDigits(x.value)));
           const perYear = d.dividends.filter((x) => x.exDate >= `${new Date().getFullYear() - 1}-01-01` && x.exDate < `${new Date().getFullYear()}-01-01`).length;
@@ -529,7 +541,11 @@ export function DVD({ ticker }: ScreenProps) {
                         <div key={y} style={{ flex: 1, textAlign: "center", minWidth: 0 }} title={`${y}: ${fmtPerShare(v, digits)}`}>
                           <div className="xs" style={{ whiteSpace: "nowrap", overflow: "hidden" }}>{fmt(v, 2)}</div>
                           <div style={{ height: `${(v / max) * 64}px`, background: "var(--label)", opacity: 0.8 }} />
-                          <div className="xs muted">{y.slice(2)}</div>
+                          {/* Laufendes Jahr und unvollständiges erstes Jahr kennzeichnen (sonst wirkt es wie eine Kürzung) */}
+                          <div className="xs muted" title={partialYear(y) ? "unvollständiges Jahr" : undefined}>
+                            {y.slice(2)}
+                            {partialYear(y) ? "*" : ""}
+                          </div>
                         </div>
                       );
                     })}
