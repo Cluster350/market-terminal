@@ -7,10 +7,16 @@ cd "$(dirname "$0")"
 if [ ! -d backend/.venv ]; then
   echo "› Python-Umgebung anlegen"
   python3 -m venv backend/.venv
+fi
+# Nach einem Update fehlende Pakete nachinstallieren
+if ! cmp -s backend/requirements.txt backend/.venv/requirements.installed; then
+  echo "› Python-Pakete installieren"
   backend/.venv/bin/pip install -q -r backend/requirements.txt
+  cp backend/requirements.txt backend/.venv/requirements.installed
 fi
 
-if [ ! -f frontend/dist/index.html ] || [ "${REBUILD:-0}" = "1" ]; then
+# Oberfläche bauen, wenn sie fehlt oder von einer älteren Version stammt
+if [ ! -f frontend/dist/index.html ] || ! cmp -s frontend/public/BUILD-VERSION frontend/dist/BUILD-VERSION || [ "${REBUILD:-0}" = "1" ]; then
   echo "› Frontend bauen"
   (cd frontend && npm install --no-audit --no-fund && npm run build)
 fi

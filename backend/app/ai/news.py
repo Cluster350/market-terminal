@@ -7,6 +7,7 @@ import datetime as dt
 import heapq
 import itertools
 import logging
+import re
 import time
 from collections import OrderedDict
 from typing import Awaitable, Callable, Optional
@@ -50,13 +51,21 @@ Antworte ausschließlich mit einem JSON-Objekt nach dem vorgegebenen Schema, auf
 - horizont: kurzfristig (Tage) oder strukturell (Monate und länger)."""
 
 
+_TAG = re.compile(r"<\s*/?\s*meldung\s*>", re.I)
+
+
+def _data(text: str) -> str:
+    """Meldungstext darf die Markierung nicht schließen (sonst stünde Text außerhalb der Daten)."""
+    return _TAG.sub("[meldung]", text)
+
+
 def news_messages(item: NewsInput, names: dict[str, str]) -> list[dict]:
     symbols = ", ".join(f"{s} ({names[s]})" if s in names else s for s in item.symbols) or "keine"
-    content = (item.content or "")[:MAX_CONTENT]
+    content = _data((item.content or "")[:MAX_CONTENT])
     user = (
         f"Wertpapiere laut Datenquelle: {symbols}\n"
-        f"Datum: {item.date or 'unbekannt'} · Quelle: {item.source or 'unbekannt'}\n"
-        f"<meldung>\nTitel: {item.title}\n\n{content}\n</meldung>"
+        f"Datum: {item.date or 'unbekannt'} · Quelle: {_data(item.source or 'unbekannt')}\n"
+        f"<meldung>\nTitel: {_data(item.title)}\n\n{content}\n</meldung>"
     )
     return [{"role": "system", "content": NEWS_SYSTEM}, {"role": "user", "content": user}]
 

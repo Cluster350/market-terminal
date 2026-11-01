@@ -566,3 +566,40 @@ table.t { width: 100%; border-collapse: collapse; }
 .reset-menu button b { color: var(--label); font-weight: 600; }
 .reset-menu button span { color: var(--muted); font-size: var(--fs-xs); line-height: 1.35; white-space: normal; }
 .reset-menu button.danger b { color: var(--down); }
+
+/* ---- KI-Helfer (News-Einordnung, BRIEF, ASK) ------------------------------------ */
+.ai-rel { font-size: 9px; letter-spacing: -1px; line-height: 17px; white-space: nowrap; cursor: help; }
+.ai-rel-off { color: #2a2a2a; }
+.ai-box { border: 1px solid var(--rule-strong); border-left: 3px solid var(--label); background: #0f0d09; padding: 6px 9px; margin: 2px 0 10px; }
+.ai-box-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: var(--fs-s); margin-bottom: 4px; }
+.ai-box-text { font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+.ai-badge { background: transparent; border: 0; padding: 0; font-size: inherit; cursor: pointer; }
+.ai-badge.ok { color: var(--up); }
+.ai-badge.warn { color: var(--key); }
+.ai-badge.err { color: var(--down); }
+.ai-badge:hover { text-decoration: underline; }
+.ai-working { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--fs-s); }
+.ai-spin { width: 10px; height: 10px; border: 2px solid var(--rule-strong); border-top-color: var(--label); border-radius: 50%; animation: ai-spin 0.9s linear infinite; }
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ai-spin { animation: none; } }
+.brief-headline { font-family: var(--sans); font-size: 18px; line-height: 1.3; margin: 2px 0 8px; font-weight: 600; text-wrap: balance; }
+.brief-points { margin: 2px 0 4px; padding-left: 18px; font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+.brief-points li { margin: 2px 0; }
+.brief-points li::marker { color: var(--label); }
+.brief-sources { margin: 2px 0; padding-left: 22px; color: var(--muted); font-family: var(--sans); }
+.src-chip { display: inline-block; margin-left: 5px; padding: 0 4px; border: 1px solid var(--rule-strong); color: var(--muted); font: 600 9px/14px var(--mono); vertical-align: 2px; background: transparent; }
+.src-chip.fn { color: var(--label); border-color: #5a3a10; cursor: pointer; }
+.src-chip.fn:hover { background: var(--label); color: #000; }
+.chat { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+.chat-q { align-self: flex-end; max-width: 85%; background: var(--select); border: 1px solid #22385a; padding: 5px 9px; font-family: var(--sans); font-size: 13px; white-space: pre-wrap; }
+.chat-a { align-self: flex-start; max-width: 95%; border-left: 2px solid var(--label); padding: 2px 0 2px 9px; }
+.ai-answer { font-family: var(--sans); font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+mark.unverified { background: rgba(242, 194, 0, 0.18); color: var(--key); border-bottom: 1px dashed var(--key); padding: 0 1px; }
+.ai-trace { margin-top: 5px; font-size: var(--fs-s); color: var(--muted); }
+.ai-trace summary { cursor: pointer; color: var(--label); }
+.ai-trace ul { margin: 3px 0 0; padding-left: 16px; list-style: none; }
+.ai-examples { display: flex; gap: 6px; flex-wrap: wrap; padding: 5px 12px; border-top: 1px solid var(--rule); flex: none; }
+.ex-chip { background: transparent; border: 1px solid var(--rule-strong); color: var(--muted); padding: 2px 8px; font-size: var(--fs-s); border-radius: 10px; }
+.ex-chip:hover { border-color: var(--label); color: var(--value); }
+.chat-input { display: flex; gap: 6px; padding: 6px 12px 8px; border-top: 1px solid var(--rule); flex: none; align-items: stretch; }
+.chat-input textarea { flex: 1; resize: none; font-family: var(--sans); font-size: 13px; min-height: 38px; }

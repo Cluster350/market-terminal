@@ -20,6 +20,9 @@ export const GLOSSARY: Record<string, string> = {
   "2s10s": "Rendite 10 Jahre minus Rendite 2 Jahre in bp. Negativ = inverse Zinskurve.",
   EIL: "Eilmeldung: besonders kursrelevante Nachricht.",
   Stimmung: "Automatische Einschätzung des Nachrichtentons von −1 (negativ) bis +1 (positiv).",
+  "KI-Einordnung": "Zusammenfassung, Stimmung, Ereignisart und Relevanz einer Meldung – von einem lokalen Sprachmodell in LM Studio oder, ohne LM Studio, von der regelbasierten Demo-KI. Eine automatische Einschätzung, keine Anlageberatung.",
+  "KI-Relevanz": "Wie stark eine Meldung den Kurs bewegen dürfte: 0 unwichtig, 1 gering, 2 kursrelevant, 3 stark kursbewegend (Punkte ●●● in der Nachrichtenliste).",
+  "Ohne Beleg": "Markierte Zahl in einer KI-Antwort: Sie steht in keinem der Datensätze, die die KI abgefragt hat. Bitte selbst prüfen.",
   TTM: "Trailing Twelve Months: die letzten vier berichteten Quartale.",
   FIX: "Fixiertes Panel: behält sein Wertpapier, auch wenn die übrigen Panels wechseln.",
 };

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorState, Loading, Seg, TickerLink, useSize } from "../components/ui";
 import { displayTicker, fmtAge, fmtDate, fmtTime, isNum, isToday, safeUrl } from "../lib/format";
+import { aiAvailable, engineLabel, EVENT_LABEL, RELEVANCE_LABEL, useAiStatus, useNewsInsights, type NewsInsight } from "../lib/ai";
 import { useNews } from "../lib/queries";
 import type { NewsItem } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
@@ -52,7 +53,33 @@ function sentimentLabel(p: number | null): string {
   return "neutral";
 }
 
-function NewsRow({ n, selected, read, fresh, onOpen }: { n: NewsItem; selected: boolean; read: boolean; fresh: boolean; onOpen: () => void }) {
+const fmtSigned = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : "±"}${Math.abs(x).toFixed(2).replace(".", ",")}`;
+
+/** KI-Relevanz als Punkte (0–3), Farbe nach KI-Stimmung. */
+function Relevance({ insight, pending }: { insight?: NewsInsight; pending: boolean }) {
+  if (!insight) {
+    return (
+      <span className="ai-rel dim" title={pending ? "KI ordnet ein …" : "Noch nicht eingeordnet"}>
+        {pending ? "···" : ""}
+      </span>
+    );
+  }
+  const r = Math.max(0, Math.min(3, insight.relevance));
+  return (
+    <span
+      className="ai-rel"
+      style={{ color: sentimentColor(insight.sentiment) }}
+      title={`KI: ${RELEVANCE_LABEL[r]} (${r}/3) · ${EVENT_LABEL[insight.event] ?? insight.event} · Stimmung ${sentimentLabel(insight.sentiment)} (${fmtSigned(insight.sentiment)})\n${insight.summary}`}
+    >
+      {"●".repeat(r)}
+      <span className="ai-rel-off">{"●".repeat(3 - r)}</span>
+    </span>
+  );
+}
+
+function NewsRow({ n, selected, read, fresh, onOpen, ai, insight, pending }: {
+  n: NewsItem; selected: boolean; read: boolean; fresh: boolean; onOpen: () => void; ai: boolean; insight?: NewsInsight; pending: boolean;
+}) {
   return (
     <div
       role="option"
@@ -62,7 +89,7 @@ function NewsRow({ n, selected, read, fresh, onOpen }: { n: NewsItem; selected: 
       className={fresh ? "flash-up" : ""}
       style={{
         display: "grid",
-        gridTemplateColumns: "3px 12ch minmax(0, 1fr)",
+        gridTemplateColumns: ai ? "3px 12ch 3.4ch minmax(0, 1fr)" : "3px 12ch minmax(0, 1fr)",
         gap: 8,
         padding: "4px 8px 4px 0",
         borderBottom: "1px solid #161616",
@@ -76,6 +103,7 @@ function NewsRow({ n, selected, read, fresh, onOpen }: { n: NewsItem; selected: 
         {/* Ältere Meldungen mit Datum und Uhrzeit (vorher nur das Datum) */}
         {isToday(n.date) ? fmtTime(n.date) : `${fmtDate(n.date).slice(0, 6)} ${fmtTime(n.date)}`}
       </span>
+      {ai && <Relevance insight={insight} pending={pending} />}
       <span style={{ minWidth: 0 }}>
         {n.urgent && <span className="tag urgent" style={{ marginRight: 6 }}>EIL</span>}
         <span style={{ fontFamily: "var(--sans)", fontSize: 13, color: read ? "var(--muted)" : "var(--value)", fontWeight: read ? 400 : 500 }}>{n.title}</span>
@@ -91,7 +119,52 @@ function NewsRow({ n, selected, read, fresh, onOpen }: { n: NewsItem; selected: 
   );
 }
 
-function Reader({ n, onBack, related, onOpen }: { n: NewsItem; onBack?: () => void; related: NewsItem[]; onOpen: (id: string) => void }) {
+function InsightBox({ insight, pending, failed }: { insight?: NewsInsight; pending: boolean; failed?: string }) {
+  if (!insight) {
+    return (
+      <div className="ai-box">
+        <div className="ai-box-head">
+          <span className="lbl">KI-EINORDNUNG</span>
+        </div>
+        <div className="small muted">{failed ? `Nicht möglich: ${failed}` : pending ? "Das Sprachmodell ordnet die Meldung ein …" : "Noch nicht eingeordnet."}</div>
+      </div>
+    );
+  }
+  const r = Math.max(0, Math.min(3, insight.relevance));
+  return (
+    <div className="ai-box" aria-label="KI-Einordnung">
+      <div className="ai-box-head">
+        <span className="lbl">KI-EINORDNUNG</span>
+        <span className="tag" title="Relevanz für den Kurs, 0 bis 3">{RELEVANCE_LABEL[r]}</span>
+        <span className="tag">{EVENT_LABEL[insight.event] ?? insight.event}</span>
+        <span className="tag">{insight.horizon}</span>
+        <span style={{ color: sentimentColor(insight.sentiment) }}>
+          Stimmung {sentimentLabel(insight.sentiment)} ({fmtSigned(insight.sentiment)})
+        </span>
+      </div>
+      <div className="ai-box-text">{insight.summary}</div>
+      {insight.reason && <div className="small muted">{insight.reason}</div>}
+      {(insight.tickers.length > 0 || insight.sectors.length > 0) && (
+        <div className="small" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 3 }}>
+          {insight.tickers.map((t) => (
+            <TickerLink key={t} ticker={t} />
+          ))}
+          {insight.sectors.map((sec) => (
+            <span key={sec} className="muted">{sec}</span>
+          ))}
+        </div>
+      )}
+      <div className="xs dim" style={{ marginTop: 3 }}>
+        {engineLabel(insight.engine, insight.model)} · automatische Einschätzung, keine Anlageberatung
+      </div>
+    </div>
+  );
+}
+
+function Reader({ n, onBack, related, onOpen, ai }: {
+  n: NewsItem; onBack?: () => void; related: NewsItem[]; onOpen: (id: string) => void;
+  ai?: { insight?: NewsInsight; pending: boolean; failed?: string } | null;
+}) {
   const link = safeUrl(n.link);
   return (
     <article style={{ padding: "10px 14px", maxWidth: "78ch" }}>
@@ -122,6 +195,7 @@ function Reader({ n, onBack, related, onOpen }: { n: NewsItem; onBack?: () => vo
           ))}
         </div>
       )}
+      {ai && <InsightBox insight={ai.insight} pending={ai.pending} failed={ai.failed} />}
       <div style={{ fontFamily: "var(--sans)", fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
         {n.content || <span className="muted">Kein Volltext verfügbar.</span>}
       </div>
@@ -160,6 +234,7 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
   const [scope, setScope] = useState<"all" | "watch">("all");
   const [search, setSearch] = useState("");
   const [urgentOnly, setUrgentOnly] = useState(false);
+  const [relevantOnly, setRelevantOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [read, setRead] = useState<Set<string>>(loadRead);
   const [paused, setPaused] = useState(false);
@@ -185,7 +260,18 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
     return urgentOnly ? all.filter((n) => n.urgent) : all;
   }, [q.data, urgentOnly, watchEmpty]);
   if (!paused) frozen.current = items;
-  const shown = paused && frozen.current ? frozen.current : items;
+  const unfiltered = paused && frozen.current ? frozen.current : items;
+
+  // KI-Einordnung: die obersten 40 Meldungen im Hintergrund, die gelesene sofort
+  const aiStatus = useAiStatus();
+  const ai = aiAvailable(aiStatus.data);
+  const top = useMemo(() => unfiltered.slice(0, AI_LIST_MAX), [unfiltered]);
+  const listAi = useNewsInsights(top, "normal", aiStatus.data);
+  const selectedItem = unfiltered.find((n) => n.id === selectedId) ?? null;
+  const selectedAi = useNewsInsights(selectedItem ? [selectedItem] : [], "high", aiStatus.data);
+  const insightOf = (id: string): NewsInsight | undefined => selectedAi.data?.insights[id] ?? listAi.data?.insights[id];
+  const pendingIds = new Set([...(listAi.data?.pending ?? []), ...(selectedAi.data?.pending ?? [])]);
+  const shown = ai && relevantOnly ? unfiltered.filter((n) => (insightOf(n.id)?.relevance ?? -1) >= 2) : unfiltered;
 
   useEffect(() => {
     if (!q.data) return;
@@ -206,7 +292,7 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
     seen.current = null;
   }, [topic, scope, debounced, tickers?.join(",")]);
 
-  const selected = shown.find((n) => n.id === selectedId) ?? null;
+  const selected = selectedItem;
   const [listRef, size] = useSize<HTMLDivElement>();
   const twoCol = !compact && size.w > 760;
 
@@ -262,6 +348,12 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
           <input type="checkbox" checked={urgentOnly} onChange={(e) => setUrgentOnly(e.target.checked)} />
           Nur Eilmeldungen
         </label>
+        {ai && (
+          <label className="check" title={`Nur Meldungen, die die KI als kursrelevant einstuft (Relevanz 2 oder 3). Eingeordnet werden die neuesten ${AI_LIST_MAX} Meldungen.`}>
+            <input type="checkbox" checked={relevantOnly} onChange={(e) => setRelevantOnly(e.target.checked)} />
+            KI: kursrelevant
+          </label>
+        )}
         <button className="btn" onClick={() => setPaused((p) => !p)} title={paused ? "Live-Aktualisierung fortsetzen" : "Liste anhalten, um in Ruhe zu lesen"}>
           {paused ? "▶ Fortsetzen" : "❚❚ Anhalten"}
         </button>
@@ -280,10 +372,26 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
             ) : q.isError ? (
               <ErrorState error={q.error} onRetry={() => q.refetch()} />
             ) : !shown.length ? (
-              <Empty>Keine Meldungen für diese Auswahl.</Empty>
+              <Empty>
+                {ai && relevantOnly
+                  ? listAi.data?.pending.length
+                    ? "Die KI ordnet die Meldungen noch ein …"
+                    : `Keine kursrelevanten Meldungen unter den neuesten ${AI_LIST_MAX}.`
+                  : "Keine Meldungen für diese Auswahl."}
+              </Empty>
             ) : (
               shown.map((n) => (
-                <NewsRow key={n.id} n={n} selected={n.id === selectedId} read={read.has(n.id)} fresh={fresh.has(n.id)} onOpen={() => open(n)} />
+                <NewsRow
+                  key={n.id}
+                  n={n}
+                  selected={n.id === selectedId}
+                  read={read.has(n.id)}
+                  fresh={fresh.has(n.id)}
+                  onOpen={() => open(n)}
+                  ai={ai}
+                  insight={insightOf(n.id)}
+                  pending={pendingIds.has(n.id)}
+                />
               ))
             )}
             {q.data?.sourcesNote && <div className="notes">{q.data.sourcesNote}</div>}
@@ -292,8 +400,8 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
         {twoCol && !selected && <Empty>Meldung auswählen (Klick oder ↑/↓), um sie hier zu lesen.</Empty>}
         {selected && (
           <div style={{ overflow: "auto", minHeight: 0 }}>
-            <Reader n={selected} related={related} onOpen={(id) => {
-              const r = shown.find((x) => x.id === id);
+            <Reader n={selected} related={related} ai={ai ? { insight: insightOf(selected.id), pending: pendingIds.has(selected.id), failed: selectedAi.data?.failed[selected.id] } : null} onOpen={(id) => {
+              const r = unfiltered.find((x) => x.id === id);
               if (r) open(r);
             }} onBack={twoCol ? undefined : () => setSelectedId(null)} />
           </div>
@@ -304,6 +412,7 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
 }
 
 const WATCH_NEWS_MAX = 30;
+const AI_LIST_MAX = 40;
 
 export function TOP({ active }: ScreenProps) {
   return <NewsTerminal active={active} />;

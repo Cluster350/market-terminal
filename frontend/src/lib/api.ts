@@ -61,17 +61,39 @@ export const dataHealth = {
 
 const BASE = "/api";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export interface RequestOptions {
+  /** Zeitlimit (Standard 25 s; Fragen an ein lokales Sprachmodell dauern länger) */
+  timeoutMs?: number;
+  /** Nicht in die Datenanzeige der Statusleiste einrechnen (KI-Anfragen) */
+  quiet?: boolean;
+}
+
+export async function request<T>(path: string, init?: RequestInit, opts: RequestOptions = {}): Promise<T> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 25_000);
-  health.inflight++;
-  emit();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, opts.timeoutMs ?? 25_000);
+  // Abbruch durch den Aufrufer (z. B. „Abbrechen“ im Frage-Panel) weiterreichen
+  const outer = init?.signal;
+  const onOuter = () => ctrl.abort();
+  if (outer) {
+    if (outer.aborted) ctrl.abort();
+    else outer.addEventListener("abort", onOuter, { once: true });
+  }
+  const quiet = !!opts.quiet;
+  if (!quiet) {
+    health.inflight++;
+    emit();
+  }
   try {
     let res: Response;
     try {
       res = await fetch(BASE + path, { ...init, signal: ctrl.signal, headers: { Accept: "application/json", ...(init?.headers || {}) } });
     } catch (e) {
       const aborted = (e as Error).name === "AbortError";
+      if (aborted && !timedOut && outer?.aborted) throw new ApiError(0, "aborted", "Abgebrochen.");
       throw new ApiError(0, aborted ? "timeout" : "network", aborted ? "Zeitüberschreitung – der Server antwortet nicht." : "Server nicht erreichbar. Läuft das Backend?");
     }
     let body: unknown = null;
@@ -81,6 +103,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch (e) {
       // Abbruch während der Übertragung (Timeout, Netz): als ApiError, nicht als roher AbortError
       const aborted = (e as Error).name === "AbortError";
+      if (aborted && !timedOut && outer?.aborted) throw new ApiError(0, "aborted", "Abgebrochen.");
       throw new ApiError(0, aborted ? "timeout" : "network", aborted ? "Zeitüberschreitung beim Laden der Antwort." : "Verbindung während der Übertragung abgebrochen.");
     }
     if (text) {
@@ -94,17 +117,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
       throw new ApiError(res.status, err?.code || "http", err?.message || `Fehler ${res.status}`);
     }
-    health.lastOk = Date.now();
-    health.stale = res.headers.get("X-Data-Stale") === "1";
-    health.lastError = null;
+    if (!quiet) {
+      health.lastOk = Date.now();
+      health.stale = res.headers.get("X-Data-Stale") === "1";
+      health.lastError = null;
+    }
     return body as T;
   } catch (e) {
-    if (e instanceof ApiError && (e.status === 0 || e.status >= 500)) health.lastError = e.message;
+    if (!quiet && e instanceof ApiError && (e.status === 0 || e.status >= 500)) health.lastError = e.message;
     throw e;
   } finally {
     clearTimeout(timer);
-    health.inflight--;
-    emit();
+    outer?.removeEventListener("abort", onOuter);
+    if (!quiet) {
+      health.inflight--;
+      emit();
+    }
   }
 }
 
@@ -121,7 +149,7 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 
 const fileCache = new Map<string, Promise<unknown>>();
 
-async function file<T>(name: string): Promise<T> {
+export async function file<T>(name: string): Promise<T> {
   let p = fileCache.get(name);
   if (!p) {
     p = (async () => {

@@ -12,6 +12,9 @@ const macro = () => import("./macro");
 const lazyMacro = (name: "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST") =>
   lazy(async () => ({ default: (await macro())[name] }));
 const IMAP = lazy(() => import("./IMAP"));
+const ai = () => import("./ai");
+const BRIEF = lazy(async () => ({ default: (await ai()).BRIEF }));
+const ASK = lazy(async () => ({ default: (await ai()).ASK }));
 
 export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   GP,
@@ -37,4 +40,6 @@ export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   HELP,
   EVTS,
   RV,
+  BRIEF,
+  ASK,
 };

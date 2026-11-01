@@ -8,6 +8,7 @@ Der statische Build (npm run build:static) liest diese Dateien statt der API.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 import sys
@@ -15,6 +16,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.main import create_app
 from app.providers import demo_data as D
 from app.providers.base import FX, INDICES, MACRO_INDICATORS, curve_catalog
@@ -54,7 +56,8 @@ def main(target: str) -> None:
         path.write_text(text, encoding="utf-8")
         sizes[name.split("/")[0]] = sizes.get(name.split("/")[0], 0) + len(text)
 
-    with TestClient(create_app(provider)) as c:
+    # KI-Teile mit der regelbasierten Demo-KI vorab berechnen (kein LM Studio nötig)
+    with TestClient(create_app(provider, dataclasses.replace(settings, llm_mode="demo"))) as c:
         def get(url: str):
             r = c.get(url)
             r.raise_for_status()
@@ -138,6 +141,34 @@ def main(target: str) -> None:
         write("screener/universe.json", universe.json()["rows"])
         write("market/movers.json", get("/api/market/movers"))
         write("market/heatmap.json", get("/api/market/heatmap"))
+
+        # KI-Helfer: Einordnungen aller Meldungen, ein Briefing und die Beispielfragen
+        def post(url: str, body: dict):
+            r = c.post(url, json=body)
+            r.raise_for_status()
+            return r.json()
+
+        ai_status = get("/api/ai/status")
+        ai_status["message"] = "Statische Demo: vorab berechnete Demo-KI (regelbasiert). Lokal mit LM Studio ordnet ein Sprachmodell ein und beantwortet freie Fragen."
+        write("ai/status.json", ai_status)
+        news_items = get("/api/news?limit=300")["items"]
+        insights: dict = {}
+        for i in range(0, len(news_items), 40):
+            chunk = [
+                {"id": n["id"], "title": n["title"], "content": n["content"], "date": n["date"], "source": n["source"], "symbols": n["symbols"],
+                 "topic": n["topic"], "polarity": n["sentiment"]["polarity"], "urgent": n["urgent"]}
+                for n in news_items[i : i + 40]
+            ]
+            insights.update(post("/api/ai/news", {"items": chunk})["insights"])
+        write("ai/news.json", insights)
+        watchlist = status.get("defaults", {}).get("watchlist", [])
+        write("ai/brief.json", post("/api/ai/brief", {"tickers": watchlist}))
+        example = "NWND US"
+        questions = [
+            f"Wie steht {example}?", f"Ist {example} teuer im Vergleich zur Branche?", f"Wie waren die letzten Quartalszahlen von {example}?",
+            "Wie laufen die Märkte?", "Welche Termine stehen heute an?", "Wer berichtet diese Woche Quartalszahlen?",
+        ]
+        write("ai/ask.json", {q: post("/api/ai/ask", {"question": q, "ticker": "NWND.US", "watchlist": watchlist}) for q in questions})
 
     total = sum(sizes.values())
     print(f"Export nach {out}: {total / 1e6:.1f} MB")

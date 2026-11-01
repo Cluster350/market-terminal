@@ -5,9 +5,9 @@ import { displayTicker } from "./format";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK";
 
-export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "System";
+export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "System";
 
 export interface FnInfo {
   code: FnCode;
@@ -29,6 +29,8 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "RV", title: "Peer-Vergleich", group: "Aktie", needsTicker: true, desc: "Bewertung und Performance gegenüber Branchen-Peers" },
   { code: "TOP", title: "News-Terminal", group: "News", needsTicker: false, desc: "Nachrichtenstrom mit Filtern, Suche und Leseansicht" },
   { code: "EVTS", title: "Earnings-Kalender", group: "News", needsTicker: false, desc: "Quartalszahlen aller Unternehmen nach Termin, mit Schätzung und Ergebnis" },
+  { code: "BRIEF", title: "Morgenbriefing", group: "KI", needsTicker: false, desc: "KI-Zusammenfassung: Märkte, Ihre Werte, Termine heute, Zinsen und Devisen – mit Quellen" },
+  { code: "ASK", title: "KI-Assistent", group: "KI", needsTicker: false, desc: "Fragen an die KI; sie liest nur Terminal-Daten und zeigt, welche Daten sie genutzt hat" },
   { code: "WEI", title: "Weltindizes", group: "Makro", needsTicker: false, desc: "Aktienindizes weltweit" },
   { code: "FX", title: "Devisen", group: "Makro", needsTicker: false, desc: "Währungspaare und Stärke-Ranking" },
   { code: "CMDT", title: "Rohstoffe", group: "Makro", needsTicker: false, desc: "Energie, Metalle, Agrar" },
@@ -57,6 +59,8 @@ const ALIASES: Record<string, FnCode> = {
   QUARTALSZAHLEN: "EVTS", TERMINE: "ECO", WIRTSCHAFT: "ECO", ZINSEN: "GC", ZINSKURVE: "GC", DEVISEN: "FX",
   WAEHRUNGEN: "FX", "WÄHRUNGEN": "FX", ROHSTOFFE: "CMDT", INDIZES: "WEI", "LÄNDER": "ECST", LAENDER: "ECST",
   VERGLEICH: "RV", BEWEGUNGEN: "MOST", GEWINNER: "MOST",
+  KI: "ASK", AI: "ASK", FRAGE: "ASK", FRAGEN: "ASK", AGENT: "ASK", CHAT: "ASK", ASSISTENT: "ASK",
+  BRIEFING: "BRIEF", MORGEN: "BRIEF", MORGENBRIEFING: "BRIEF", MORNING: "BRIEF", BRIEFUNG: "BRIEF",
 };
 
 const BBG_EXCHANGES: Record<string, string> = {

@@ -72,6 +72,16 @@ def _price_digits(x: Optional[float]) -> int:
     return 4 if abs(x) < 10 else 2
 
 
+_WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
+
+
+def _weekday(day: str) -> str:
+    try:
+        return _WEEKDAYS[dt.date.fromisoformat(day).weekday()]
+    except ValueError:
+        return day
+
+
 def _local_time(iso: str) -> str:
     try:
         when = dt.datetime.fromisoformat(iso.replace("Z", "+00:00"))
@@ -242,17 +252,20 @@ def brief(d: BriefData, relevance: dict[str, int]) -> Brief:
 
     dates: list[BriefPoint] = []
     today = d.today
-    events = sorted((e for e in d.events if e.date[:10] == today), key=lambda e: (-e.importance, e.date))
+    events = sorted(d.events, key=lambda e: (-e.importance, e.date))
     for e in events[:3]:
         est = f" (Prognose {de(e.estimate, 1)}{' ' + e.unit if e.unit else ''})" if e.estimate is not None else ""
         clock = _local_time(e.date)
-        dates.append(BriefPoint(text=f"{clock + ' Uhr: ' if clock else ''}{e.country} {e.event}{est}.", sources=["ECO"]))
+        day = "" if e.date[:10] == today else f"{_weekday(e.date[:10])}, "
+        dates.append(BriefPoint(text=f"{day}{clock + ' Uhr: ' if clock else ''}{e.country} {e.event}{est}.", sources=["ECO"]))
     if d.earnings:
         names = ", ".join(r.name or display(r.ticker) for r in d.earnings[:4])
         more = f" und {len(d.earnings) - 4} weitere" if len(d.earnings) > 4 else ""
-        dates.append(BriefPoint(text=f"Quartalszahlen heute: {names}{more}.", sources=["EVTS"]))
+        when = "heute" if d.earnings[0].report_date[:10] == today else f"am {_weekday(d.earnings[0].report_date[:10])}"
+        dates.append(BriefPoint(text=f"Quartalszahlen {when}: {names}{more}.", sources=["EVTS"]))
     if dates:
-        sections.append(BriefSection(title="Termine heute", points=dates))
+        upcoming = all(e.date[:10] != today for e in d.events) and all(r.report_date[:10] != today for r in d.earnings)
+        sections.append(BriefSection(title="Nächste Termine" if upcoming else "Termine heute", points=dates))
 
     rates: list[BriefPoint] = []
     if d.yields:
@@ -270,8 +283,9 @@ def brief(d: BriefData, relevance: dict[str, int]) -> Brief:
     up = sum(1 for r in idx if (r.change_pct or 0) > 0.1)
     down = sum(1 for r in idx if (r.change_pct or 0) < -0.1)
     mood = "überwiegend fester" if up > 2 * max(down, 1) else "überwiegend schwächer" if down > 2 * max(up, 1) else "uneinheitlich"
-    headline = f"Märkte {mood}" + (f": {lead[0].name} {pct(lead[0].change_pct)}" if lead else "")
-    if events:
+    top2 = sorted(lead[:4], key=lambda r: -abs(r.change_pct or 0))[:2]
+    headline = f"Märkte {mood}" + (": " + ", ".join(f"{r.name} {pct(r.change_pct)}" for r in top2) if top2 else "")
+    if events and events[0].date[:10] == today:
         headline += f", im Blick: {events[0].event}"
     return Brief(
         headline=headline + ".",
@@ -408,8 +422,6 @@ async def ask(t: Terminal, req: AskRequest) -> AskResult:
         news = n.get("meldungen") or []
         if news:
             lines.append("- Letzte Meldungen: " + " · ".join(f"„{m['titel']}“" for m in news[:3]))
-    lines.append("")
-    lines.append("(Demo-KI: Antwort nach festen Regeln, ohne Sprachmodell.)")
     answer = "\n".join(lines).strip()
     return AskResult(
         answer=answer,

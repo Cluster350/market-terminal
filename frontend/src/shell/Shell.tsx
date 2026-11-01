@@ -10,6 +10,7 @@ import { isSolo, LAYOUTS, openWindow, PAGES, useWorkspace } from "../state/works
 import { useNow } from "../components/ui";
 import { CommandLine } from "./CommandLine";
 import { resetAndReload } from "../lib/reset";
+import { useAiStatus } from "../lib/ai";
 
 /** Knopf "⟲ STANDARD": Seite, Ansicht oder alles auf den Auslieferungszustand zurücksetzen. */
 function ResetMenu() {
@@ -393,6 +394,25 @@ export function PanelGrid() {
   );
 }
 
+/** KI-Zustand: LM Studio, Demo-KI, offline oder aus (Tooltip mit der Erklärung). */
+function AiBadge() {
+  const ws = useWorkspace();
+  const ai = useAiStatus();
+  const s = ai.data;
+  if (!s || s.mode === "off") return null;
+  const [cls, label] =
+    s.mode === "lmstudio"
+      ? ["ok", `KI: LM Studio · ${s.model ?? ""}${s.queue ? ` · ${s.queue} in Arbeit` : ""}`]
+      : s.mode === "demo"
+        ? ["warn", "KI: Demo"]
+        : ["err", "KI: offline"];
+  return (
+    <button type="button" className={`ai-badge ${cls}`} title={`${s.message}\nKlicken öffnet den KI-Assistenten (ASK).`} onClick={() => ws.openFn("ASK")}>
+      {label}
+    </button>
+  );
+}
+
 export function StatusBar() {
   const status = useStatus();
   const health = useSyncExternalStore(dataHealth.subscribe, dataHealth.get);
@@ -420,6 +440,7 @@ export function StatusBar() {
           {s.account?.apiRequests != null ? ` (EODHD: ${s.account.apiRequests.toLocaleString("de-DE")})` : ""}
         </span>
       )}
+      <AiBadge />
       <span className="right">
         <kbd>/</kbd> Befehl · <kbd>Alt</kbd>+<kbd>1–4</kbd> Seiten · <kbd>Alt</kbd>+<kbd>←→</kbd> Panel · <kbd>Alt</kbd>+<kbd>M</kbd> Max · <kbd>HELP</kbd>
       </span>

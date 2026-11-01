@@ -1,5 +1,9 @@
 # Plan: KI-Agent im Terminal (LM Studio)
 
+> **Stand November 2026:** Phasen 0 bis 3 sind umgesetzt (Anbindung und Prüfprogramm,
+> News-Einordnung, BRIEF, ASK). Bedienung und Einrichtung stehen in der README unter
+> „KI-Helfer mit LM Studio“, der Code in `backend/app/ai/`. Offen ist Phase 4.
+
 Stand: Konzept, noch nicht umgesetzt.
 
 **Ziel:** Ein lokales Sprachmodell aus LM Studio ordnet Nachrichten ein, fasst den Tag

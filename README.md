@@ -8,12 +8,12 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 | **1 AKTIE** | GP · DES · FA · CN | Kurschart, Firmenprofil mit Kennzahlen, Finanzberichte, Firmen-News |
 | **2 MAKRO** | WEI · GC · ECO · FX | Weltindizes, Zinskurven, Wirtschaftskalender, Devisen |
 | **3 SCREENER** | EQS · IMAP · MOST | Aktien-Screener, Markt-Heatmap, Top-Bewegungen |
-| **4 NEWS** | TOP · W | News-Terminal mit Leseansicht, Watchlist |
+| **4 NEWS** | TOP · BRIEF · ASK | News-Terminal mit KI-Einordnung, Morgenbriefing, KI-Assistent |
 
 Jedes Panel kann über sein Auswahlfeld oder die Befehlszeile jede Funktion zeigen; das Layout
 jeder Seite ist umschaltbar (1, 2, 3 oder 4 Panels). Weitere Funktionen: HP (Kurshistorie),
 ERN (Earnings), DVD (Dividenden), ANR (Analysten), RV (Peer-Vergleich), EVTS (Earnings-Kalender),
-CMDT (Rohstoffe), SPRD (Zinsspreads), ECST (Länderdaten), HELP.
+CMDT (Rohstoffe), SPRD (Zinsspreads), ECST (Länderdaten), W (Watchlist), HELP.
 
 **Mehrere Monitore:** „⧉ FENSTER“ öffnet die aktuelle Seite, „⧉“ im Panelkopf eine einzelne
 Funktion in einem eigenen Browserfenster. Wertpapier, Watchlist und Verlauf sind zwischen den
@@ -50,6 +50,48 @@ Echte Daten statt Demo:
 8. Terminal neu starten (Schritt 4).
 
 Mac/Linux: im Terminal in den Projektordner wechseln und `./start.sh` ausführen.
+
+Neue Version installieren:
+- Neue ZIP-Datei herunterladen und entpacken, die Datei **`.env`** aus dem alten Ordner in den
+  neuen kopieren (sie enthält den Schlüssel) und dort `Start-Windows.bat` doppelklicken.
+- Wer die neue Version über den alten Ordner entpackt: `Start-Windows.bat` erkennt die neue
+  Version und baut Oberfläche und Pakete beim nächsten Start selbst neu.
+
+## KI-Helfer mit LM Studio
+
+Das Terminal kann ein Sprachmodell nutzen, das auf dem eigenen Rechner in
+[LM Studio](https://lmstudio.ai) läuft. Es gibt keinen Cloud-Dienst und keine Kosten pro Anfrage;
+die Daten verlassen den Rechner nicht.
+
+| Funktion | Was sie tut |
+|---|---|
+| **KI-Einordnung in TOP/CN** | Zu jeder Meldung: Zusammenfassung, Stimmung (−1 bis +1), Ereignisart, betroffene Werte und Branchen, Relevanz 0–3 (Punkte ●●● in der Liste). Filter „KI: kursrelevant“. Läuft im Hintergrund, die gerade gelesene Meldung zuerst. |
+| **BRIEF** | Morgenbriefing: Märkte, Ihre Werte (Watchlist), Termine heute, Zinsen und Devisen. Jeder Punkt nennt seine Quelle; Kürzel wie WEI oder ECO öffnen sie. |
+| **ASK** | Fragen in eigenen Worten („Ist SAP teuer im Vergleich zur Branche?“). Die KI holt sich die Zahlen über die Terminal-Funktionen, zeigt unter „Verwendete Daten“, was sie abgefragt hat, und markiert Zahlen ohne Beleg gelb. Vorschläge wie „→ SAP GR GP“ öffnen erst per Klick. |
+
+Einrichten (einmalig):
+1. LM Studio installieren und ein Modell laden, das Werkzeuge beherrscht – etwa **Qwen 3 8B**,
+   **Llama 3.1 8B Instruct** oder **Mistral Small** (in LM Studio mit Hammer-Symbol gekennzeichnet).
+   Faustregel: 8B-Modelle brauchen etwa 6–8 GB Grafik- oder Arbeitsspeicher.
+2. In LM Studio links **„Developer“** öffnen und **„Start Server“** einschalten.
+3. **`LLM-pruefen-Windows.bat`** doppelklicken (Mac/Linux:
+   `cd backend && .venv/bin/python -m scripts.verify_llm`). Das Programm prüft Server, Modell,
+   JSON-Ausgabe und Werkzeuge, misst die Zeiten und gibt Empfehlungen.
+4. Terminal starten. Unten rechts steht dann **„KI: LM Studio · Modellname“**.
+
+Ohne LM Studio übernimmt im Demo-Modus eine **regelbasierte Demo-KI** (Anzeige „KI: Demo“): Sie
+zeigt, wie alles aussieht, versteht aber nur einfache Fragen. Mit echten EODHD-Daten und ohne
+LM Studio steht „KI: offline“, die übrigen Funktionen laufen normal weiter.
+
+Einstellungen in der `.env` (alle optional): `LLM_MODE` (`auto` Standard, `lmstudio`, `demo`,
+`off`), `LLM_BASE_URL` (Standard `http://localhost:1234/v1`; LM Studio auf einem anderen Rechner:
+dessen Adresse eintragen und dort „Serve on Local Network“ aktivieren), `LLM_MODEL` (leer = erstes
+geladenes Modell), `LLM_TIMEOUT_SECONDS`, `LLM_MAX_CONCURRENCY`, `LLM_MAX_STEPS`.
+
+Grenzen und Sicherheit: Die KI hat nur **lesende** Werkzeuge. Sie kann nichts kaufen, verkaufen
+oder im Terminal verändern. Meldungstexte gelten für sie als Daten, nicht als Anweisungen. Ihre
+Einschätzungen sind automatische Hilfen, **keine Anlageberatung**. Lokale Modelle irren sich.
+Deshalb nennt jede Antwort ihre Datenquellen und markiert unbelegte Zahlen.
 
 ## Starten
 
@@ -104,8 +146,8 @@ frontend/  React 18 + TypeScript + Vite · lightweight-charts · ECharts
    │  REST /api/*
 backend/   FastAPI · Provider-Schicht (EODHD oder Demo) · TTL-Cache mit Single-Flight
    │       und Stale-Fallback · Call-Budget-Zähler · Kennzahlen (Performance, RSI, Volatilität)
-   │  HTTPS (Key nur im Backend)
-EODHD API
+   │  HTTPS (Key nur im Backend)          │  /api/ai/* → OpenAI-kompatibel (lokal)
+EODHD API                                  LM Studio (http://localhost:1234/v1)
 ```
 
 - `backend/app/eodhd/client.py` – Retry mit Backoff (429/5xx/Timeout), Fehlerübersetzung
@@ -116,6 +158,11 @@ EODHD API
   dasselbe Mapping wie echte Daten.
 - `backend/app/services/terminal.py` – Caching, Makro-Aggregation, Screener (serverseitige
   EODHD-Filter + lokale Filter für KGV und technische Kennzahlen).
+- `backend/app/ai/` – KI-Helfer: `client.py` (LM-Studio-Client, fängt `<think>`-Abschnitte, JSON
+  in Codeblöcken und Server ohne JSON-Schema ab), `news.py` (Einordnung mit Hintergrund-
+  Warteschlange), `brief.py`, `agent.py` (Werkzeugschleife mit Schrittgrenze und Zahlenprüfung),
+  `tools.py` (nur lesende Werkzeuge über die Terminal-Dienste), `demo.py` (regelbasierte Demo-KI),
+  `service.py` (Wahl LM Studio / Demo / aus). Plan und Hintergründe: `docs/PLAN-KI-AGENT.md`.
 
 ## Datenqualität im Demo-Modus
 
@@ -137,6 +184,12 @@ cd backend && .venv/bin/python -m pytest -q
 cd frontend && npx tsc -b && npx vitest run
 ```
 
+`backend/tests/test_ai.py` simuliert LM Studio (feste Antworten, Werkzeugaufrufe, Server ohne
+JSON-Schema, Ausfall) und braucht kein Sprachmodell.
+
+Nach Änderungen an der Oberfläche `frontend/public/BUILD-VERSION` anpassen: Daran erkennen die
+Startdateien, dass sie die Oberfläche neu bauen müssen.
+
 ## Statische Demo
 
 Die REST-API ist unter `/docs` dokumentiert (OpenAPI); `/api/history/{ticker}?from=…&to=…`
@@ -144,7 +197,8 @@ liefert einen Zeitraum.
 
 `npm run build:static` (im Ordner frontend) plus
 `python -m scripts.export_static ../frontend/dist-static/data` (im Ordner backend) erzeugt
-eine Version ohne Backend, die alle Demo-Daten als JSON mitbringt.
+eine Version ohne Backend, die alle Demo-Daten als JSON mitbringt. Die KI-Teile sind dort mit
+der Demo-KI vorab berechnet; ASK beantwortet nur die Beispielfragen.
 
 ## Grenzen
 

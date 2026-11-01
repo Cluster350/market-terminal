@@ -35,7 +35,7 @@ export const PAGES: PageDef[] = [
   { id: "equity", label: "AKTIE", key: "1", hash: "aktie", layout: "quad", panels: ["GP", "DES", "FA", "CN"], pool: ["GP", "DES", "FA", "CN", "RV", "ERN", "HP", "ANR", "DVD"] },
   { id: "macro", label: "MAKRO", key: "2", hash: "makro", layout: "quad", panels: ["WEI", "GC", "ECO", "FX"], pool: ["WEI", "GC", "ECO", "FX", "SPRD", "CMDT", "ECST"] },
   { id: "screener", label: "SCREENER", key: "3", hash: "screener", layout: "wide", panels: ["EQS", "IMAP", "MOST"], pool: ["EQS", "IMAP", "MOST", "W"] },
-  { id: "news", label: "NEWS", key: "4", hash: "news", layout: "split", panels: ["TOP", "W"], pool: ["TOP", "W", "EVTS", "ECO"] },
+  { id: "news", label: "NEWS", key: "4", hash: "news", layout: "wide", panels: ["TOP", "BRIEF", "ASK"], pool: ["TOP", "BRIEF", "ASK", "W", "EVTS", "ECO"] },
 ];
 
 const PAGE_BY_ID = Object.fromEntries(PAGES.map((p) => [p.id, p])) as Record<PageId, PageDef>;
@@ -380,6 +380,8 @@ interface WorkspaceApi {
    */
   setSecurity: (t: string, opts?: { open?: FnCode; stay?: boolean; viaCommand?: boolean }) => void;
   runFn: (fn: FnCode, ticker?: string | null) => void;
+  /** Funktion ohne Wertpapier zeigen (Klick in BRIEF/ASK): vorhandenes Panel, sonst die passende Seite; das angeklickte Panel bleibt */
+  openFn: (fn: FnCode) => void;
   setPanelFn: (panel: number, fn: FnCode) => void;
   setActive: (i: number) => void;
   maximize: (i: number | null) => void;
@@ -485,6 +487,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runFn: (fn, ticker) => {
         if (ticker) dispatch({ type: "security", ticker, viaCommand: true });
         dispatch({ type: "fn", fn });
+      },
+      openFn: (fn) => {
+        if (isSolo(state.window)) {
+          openWindow({ fn });
+          return;
+        }
+        const here = state.pages[state.page].panels.indexOf(fn);
+        if (here >= 0) {
+          dispatch({ type: "active", index: here });
+          return;
+        }
+        const target = pageForFn(fn);
+        const panels = state.pages[target].panels;
+        if (target !== state.page) dispatch({ type: "page", page: target });
+        const existing = panels.indexOf(fn);
+        if (existing >= 0) {
+          dispatch({ type: "active", index: existing });
+          return;
+        }
+        // Auf derselben Seite das Nachbarpanel nutzen, nicht das angeklickte Panel selbst
+        const act = state.active[target] ?? 0;
+        dispatch({ type: "fn", fn, panel: target === state.page && panels.length > 1 ? (act + 1) % panels.length : act });
       },
       setPanelFn: (panel, fn) => dispatch({ type: "fn", fn, panel }),
       setActive: (index) => dispatch({ type: "active", index }),
