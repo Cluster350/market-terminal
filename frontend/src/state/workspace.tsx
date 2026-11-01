@@ -267,7 +267,10 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       // Befehl für ein fixiertes Panel: nur dieses Panel wechselt das Wertpapier
       const act = s.active[s.page];
       const pins = s.pins[s.page] ?? [];
-      if (a.viaCommand && pins[act]) {
+      // Nur wenn das Panel ein Wertpapier zeigt: Nach einem Wechsel auf z. B. WEI bliebe der
+      // (unsichtbare) Pin sonst bestehen, und der Befehl hätte sichtbar gar nichts bewirkt
+      const actFn = s.pages[s.page].panels[act];
+      if (a.viaCommand && pins[act] && actFn && FN[actFn].needsTicker) {
         const next = pins.slice();
         next[act] = a.ticker;
         return { ...s, recent, pins: { ...s.pins, [s.page]: next } };

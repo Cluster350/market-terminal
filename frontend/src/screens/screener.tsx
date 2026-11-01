@@ -268,18 +268,7 @@ export function EQS(_: ScreenProps) {
                 value={dr.field}
                 onChange={(e) => setDrafts((x) => x.map((y) => (y.id === dr.id ? { ...y, field: e.target.value, value: "" } : y)))}
               >
-                <div className="section-title">Begriffe</div>
-      <table className="t" style={{ maxWidth: 900 }}>
-        <tbody>
-          {Object.entries(GLOSSARY).map(([k, v]) => (
-            <tr key={k}>
-              <td className="lbl" style={{ width: "16ch" }}>{k}</td>
-              <td className="wrap">{v}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {groups.map((g) => (
+                {groups.map((g) => (
                   <optgroup key={g.key} label={g.label}>
                     {(fieldsQ.data ?? [])
                       .filter((f) => f.group === g.key)
@@ -490,6 +479,9 @@ export function W(_: ScreenProps) {
   const rows = q.data ?? [];
   // 1M und YTD aus den Tageskursen (geteilter Cache mit GP; hier ohne eigenes Nachladen)
   const hist = useQueries({ queries: list.map((t) => ({ queryKey: ["history", t], queryFn: () => api.history(t), staleTime: 600_000, retry })) });
+  // Abhängigkeit als ein String: Ein Array mit wechselnder Länge (je Watchlist-Wert ein Eintrag)
+  // verletzt die Hook-Regeln, React meldet dann bei jedem Hinzufügen/Entfernen einen Fehler
+  const histKey = hist.map((x) => x.dataUpdatedAt).join(",");
   const perf = useMemo(() => {
     const out = new Map<string, { m1: number | null; ytd: number | null }>();
     list.forEach((t, i) => {
@@ -498,7 +490,7 @@ export function W(_: ScreenProps) {
     });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list, ...hist.map((x) => x.dataUpdatedAt)]);
+  }, [list, histKey]);
 
   return (
     <>
@@ -604,7 +596,7 @@ export function W(_: ScreenProps) {
 }
 
 /** Veränderung seit einem Monat bzw. Jahresbeginn (Renditen in bp, sonst in %). */
-export function periodChanges(h: History): { m1: number | null; ytd: number | null } {
+export function periodChanges(h: History, now = Date.now()): { m1: number | null; ytd: number | null } {
   const n = h.t.length;
   const last = h.c[n - 1];
   if (!n || !isNum(last)) return { m1: null, ytd: null };
@@ -615,7 +607,9 @@ export function periodChanges(h: History): { m1: number | null; ytd: number | nu
   };
   const chg = (b: number | null) => (b === null ? null : yieldLike ? (last - b) * 100 : b !== 0 ? (last / b - 1) * 100 : null);
   const lastDate = h.t[n - 1];
-  return { m1: chg(before(shiftMonths(lastDate, 1))), ytd: chg(before(`${Number(lastDate.slice(0, 4)) - 1}-12-31`)) };
+  // YTD im laufenden Kalenderjahr (am 1. Januar 0 statt der ganzen Vorjahresperformance)
+  const year = Math.max(Number(lastDate.slice(0, 4)), new Date(now).getFullYear());
+  return { m1: chg(before(shiftMonths(lastDate, 1))), ytd: chg(before(`${year - 1}-12-31`)) };
 }
 
 function perfCell(ticker: string, v: number | null | undefined) {
@@ -693,6 +687,18 @@ export function HELP(_: ScreenProps) {
           Fenstern verknüpft; mit <b className="lbl">LINK</b> löst sich ein Fenster vom gemeinsamen Wertpapier.
         </p>
       </div>
+      {/* Glossar (stand versehentlich im Feld-Auswahlmenü des Screeners, dort ungültig und unsichtbar) */}
+      <div className="section-title">Begriffe</div>
+      <table className="t" style={{ maxWidth: 900 }}>
+        <tbody>
+          {Object.entries(GLOSSARY).map(([k, v]) => (
+            <tr key={k}>
+              <td className="lbl" style={{ width: "16ch" }}>{k}</td>
+              <td className="wrap">{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <div className="section-title">Datenquelle</div>
       <p style={{ fontFamily: "var(--sans)", fontSize: 13, maxWidth: "80ch" }}>
         {IS_STATIC

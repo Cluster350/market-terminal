@@ -44,8 +44,10 @@ export function isNotFound(error: unknown): boolean {
 }
 
 /** Eindeutiger Suchtreffer für ein einzelnes Wort: einziger Treffer, gleiches Kürzel oder Namensanfang. */
-export function searchPick(word: string, hits: { ticker: string; name: string }[]): string | null {
+export function searchPick(word: string, all: { ticker: string; name: string }[], exclude?: string): string | null {
   const w = word.trim().toLowerCase();
+  // ``exclude``: der gerade abgelehnte Ticker – er würde sonst ungeprüft geöffnet
+  const hits = exclude ? all.filter((h) => h.ticker !== exclude) : all;
   if (!w || /\s/.test(w) || !hits.length) return null;
   if (hits.length === 1) return hits[0].ticker;
   const byCode = hits.filter((h) => h.ticker.toLowerCase().split(".")[0] === w);
@@ -222,7 +224,8 @@ export function CommandLine() {
         if (id !== requestId.current) return;
         setChecking(false);
         // Firmenname oder Kürzel ohne Börse ("northwind", "elbt"): passenden Suchtreffer nehmen
-        const pick = e instanceof ApiError && e.status === 404 ? searchPick(parts.secPart, debounced === value ? search.data ?? [] : []) : null;
+        // Nie den gerade abgelehnten Ticker selbst: er würde sonst ungeprüft (verified) geöffnet
+        const pick = e instanceof ApiError && e.status === 404 ? searchPick(parts.secPart, debounced === value ? search.data ?? [] : [], ticker) : null;
         if (pick) return void activate(pick, fn, true);
         setOpen(true);
         setError(

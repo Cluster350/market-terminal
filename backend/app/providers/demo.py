@@ -437,10 +437,12 @@ class DemoProvider:
         if ticker not in _COMPANY:
             shocks = {}
         prev = closes[0]
+        # Eigene Zufallsquelle für Eröffnung/Hoch/Tief/Volumen (getrennt vom Kursstrom), damit
+        # vergangene Tage gleich bleiben, wenn Handelstage hinzukommen. Eine Quelle je Instrument
+        # genügt, weil jeder Tag gleich viele Zahlen zieht und die Tagesfolge nur hinten wächst;
+        # eine Quelle je Tag zu seeden kostete ~9 µs × 2 800 Tage × Instrument (Kurven 1,2 -> 3,1 s).
+        rng = _rng("ohlv", ticker)
         for i, c in enumerate(closes):
-            # Eigene Zufallsquelle je Tag: Eröffnung/Hoch/Tief/Volumen eines vergangenen Tages
-            # bleiben gleich, wenn neue Handelstage hinzukommen (vorher verschob sich der Strom)
-            rng = _rng("ohlv", ticker, days[i].toordinal())
             shock = shocks.get(days[i], 0.0)
             if kind == "yield":
                 op = prev + rng.gauss(0, 0.01)
@@ -782,6 +784,7 @@ class DemoProvider:
         """Log-Kurssprung am Reaktionstag je Bericht: Überraschung und Prognose bewegen den Kurs.
         Vorbörsliche Berichte wirken am Berichtstag, nachbörsliche am nächsten Handelstag."""
         out: dict[dt.date, float] = {}
+        group = self.session_group(ticker)
         y, q = first.year - 1, 1
         while True:
             end = [dt.date(y, 3, 31), dt.date(y, 6, 30), dt.date(y, 9, 30), dt.date(y, 12, 31)][q - 1]
@@ -789,7 +792,9 @@ class DemoProvider:
             if rep > last:
                 break
             day = rep if timing == "BeforeMarket" else rep + dt.timedelta(days=1)
-            while day.weekday() >= 5:
+            # Nächster Handelstag des Platzes: An einem Feiertag (z. B. 1. Mai) ginge die
+            # Eröffnungslücke verloren, weil der Tag später aus der Reihe entfernt wird
+            while day.weekday() >= 5 or day in holidays(group, day.year):
                 day += dt.timedelta(days=1)
             surprise = self._eps_surprise(ticker, end)
             guide = self._guidance(ticker, rep, surprise >= 0)
@@ -1241,7 +1246,9 @@ class DemoProvider:
         when = self._release_time(ticker, day, rec.get("beforeAfterMarket"))
         surprise = rec.get("surprisePercent") or 0.0
         q = (dt.date.fromisoformat(rec["date"]).month - 1) // 3 + 1
-        beat = surprise >= 0
+        # Ungerundete Überraschung wie beim Kurssprung (_earnings_shocks): Gerundet wird −0,002 %
+        # zu −0,0 und damit zu "übertrifft" samt anderer Prognose als die Kursreaktion
+        beat = self._eps_surprise(ticker, dt.date.fromisoformat(rec["date"])) >= 0
         title = (
             f"{name} übertrifft Gewinnerwartungen im {q}. Quartal" if beat else f"{name} verfehlt Gewinnerwartungen im {q}. Quartal"
         )

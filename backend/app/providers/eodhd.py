@@ -8,6 +8,7 @@ import json
 from typing import Any, Optional
 from urllib.parse import quote as urlquote
 
+from ..cache import TTLCache
 from ..config import Settings
 from ..eodhd import mapping
 from ..eodhd.client import EODHDClient
@@ -120,6 +121,9 @@ class EODHDProvider:
             max_concurrency=settings.max_concurrency,
             timeout=settings.request_timeout,
         )
+        # GP (Earnings-Marker), DES und FA fragen beim Tickerwechsel gleichzeitig dieselben
+        # Fundamentaldaten an (je 10 Call-Einheiten): ein Abruf für alle, kurz zwischengespeichert
+        self._fund = TTLCache(max_entries=20, stale_max_age=0)
 
     async def close(self) -> None:
         await self.client.close()
@@ -178,9 +182,13 @@ class EODHDProvider:
         return mapping.last_sessions(mapping.intraday(data, ticker, interval), days)
 
     async def _fundamentals(self, ticker: str) -> dict:
-        data = await self.client.get(f"fundamentals/{_path_ticker(ticker)}")
-        if not isinstance(data, dict) or not data:
-            raise NotFound(f"Keine Fundamentaldaten für {ticker}.")
+        async def load() -> dict:
+            data = await self.client.get(f"fundamentals/{_path_ticker(ticker)}")
+            if not isinstance(data, dict) or not data:
+                raise NotFound(f"Keine Fundamentaldaten für {ticker}.")
+            return data
+
+        data, _ = await self._fund.get_or_load(f"fund:{ticker}", 600, load)
         return data
 
     async def company(self, ticker: str) -> Company:
@@ -215,7 +223,8 @@ class EODHDProvider:
             data = await self.client.get("news", {"s": t, "limit": min(limit, 50), "from": frm})
             return mapping.news(data)
 
-        results = await asyncio.gather(*(one(t) for t in targets[:10]), return_exceptions=True)
+        # So viele Ticker wie die API annimmt (30); mit 10 fehlten Watchlist-Werte ab Platz 11 stumm
+        results = await asyncio.gather(*(one(t) for t in targets[:30]), return_exceptions=True)
         items: dict[str, NewsItem] = {}
         errors: list[Exception] = []
         for res in results:

@@ -148,7 +148,9 @@ export function vwapSeries(bars: Bar[]): { time: Time; value: number }[] {
   let pv = 0;
   let vol = 0;
   for (const b of bars) {
-    const d = b.ts !== undefined ? new Date(b.ts).toISOString().slice(0, 10) : String(b.time);
+    // b.ts sind UTC-Sekunden: als Millisekunden gelesen lagen alle Balken im Januar 1970 am
+    // selben Tag, und der VWAP setzte über die 5T-Ansicht nie zurück
+    const d = b.ts !== undefined ? new Date(b.ts * 1000).toISOString().slice(0, 10) : String(b.time);
     if (d !== day) {
       day = d;
       pv = 0;
