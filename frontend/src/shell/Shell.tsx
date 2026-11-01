@@ -196,7 +196,8 @@ function Provenance({ delayed }: { delayed: boolean | undefined }) {
 
 function PanelTitle({ fn, ticker }: { fn: FnCode; ticker: string | null }) {
   const q = useQuotes(FN[fn].needsTicker && ticker ? [ticker] : []);
-  const quote = q.data?.[0];
+  // Platzhalterdaten des vorigen Tickers nicht unter dem neuen Namen zeigen
+  const quote = q.data?.[0]?.ticker === ticker ? q.data[0] : undefined;
   return (
     <span className="panel-title">
       {FN[fn].title}
@@ -231,7 +232,8 @@ function Panel({ fn, index }: { fn: FnCode; index: number }) {
   const active = ws.state.active[ws.state.page] === index;
   const maximized = ws.state.maximized === index;
   const Screen = SCREENS[fn];
-  const ticker = ws.state.security;
+  const pinned = ws.state.pins[ws.state.page]?.[index] ?? null;
+  const ticker = pinned ?? ws.state.security;
   return (
     <section
       className={`panel ${active ? "active" : ""}`}
@@ -242,6 +244,21 @@ function Panel({ fn, index }: { fn: FnCode; index: number }) {
         <span className="fn-chip">{fn}</span>
         <PanelTitle fn={fn} ticker={ticker} />
         <div className="panel-tools">
+          {FN[fn].needsTicker && (
+            <button
+              className={`tool ${pinned ? "pinned" : ""}`}
+              aria-pressed={!!pinned}
+              title={
+                pinned
+                  ? `Fixiert auf ${displayTicker(pinned)}: folgt nicht dem Arbeitsbereich. Klicken zum Lösen.`
+                  : "Panel fixieren: behält sein Wertpapier, z. B. Index neben Aktie oder BTP neben Bund"
+              }
+              onClick={() => ws.pinPanel(index, pinned ? null : ws.state.security)}
+              disabled={!pinned && !ws.state.security}
+            >
+              {pinned ? "◆ FIX" : "◇ FIX"}
+            </button>
+          )}
           {FN[fn].needsTicker && ticker && !ws.state.watchlist.includes(ticker) && (
             <button className="tool" title="Zur Watchlist hinzufügen" onClick={() => ws.watchAdd(ticker)}>
               +W

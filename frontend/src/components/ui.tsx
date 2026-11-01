@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { ApiError } from "../lib/api";
 import { arrow, displayTicker, fmtPct, fmtSigned, isNum, tone } from "../lib/format";
+import { explain } from "../lib/glossary";
 import { useWorkspace } from "../state/workspace";
 import type { FnCode } from "../lib/commands";
 
@@ -236,12 +237,18 @@ function FragmentRow({ header, span, children }: { header: string | null; span: 
 export function Kv({ items }: { items: [ReactNode, ReactNode][] }) {
   return (
     <dl className="kv">
-      {items.map(([k, v], i) => (
-        <div key={i}>
-          <dt>{k}</dt>
-          <dd>{v}</dd>
-        </div>
-      ))}
+      {items.map(([k, v], i) => {
+        // Begriffe mit Erklärung (Glossar) und abgeschnittene Beschriftungen im Tooltip
+        const tip = typeof k === "string" ? explain(k) : undefined;
+        return (
+          <div key={i}>
+            <dt title={typeof k === "string" ? (tip ? `${k}: ${tip}` : k) : undefined} className={tip ? "has-tip" : undefined}>
+              {k}
+            </dt>
+            <dd>{v}</dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }

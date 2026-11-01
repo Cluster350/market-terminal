@@ -17,15 +17,18 @@ import {
 import { ErrorState, Loading, Seg } from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
-import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isNum, shiftMonths, tone } from "../lib/format";
-import { retry, useHistory, useIntraday } from "../lib/queries";
-import type { History, Intraday } from "../lib/types";
+import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
+import { isBool, isNumberList, isOneOf, usePersistentState } from "../lib/persist";
+import { retry, useEarnings, useHistory, useIntraday } from "../lib/queries";
+import type { EarningsItem, History, Intraday } from "../lib/types";
 import type { ScreenProps } from "./types";
 
 type Range = "1T" | "5T" | "1M" | "3M" | "6M" | "YTD" | "1J" | "5J" | "MAX";
 type Kind = "candle" | "line" | "area";
 
-const RANGES: { value: Range; label: string }[] = ["1T", "5T", "1M", "3M", "6M", "YTD", "1J", "5J", "MAX"].map((r) => ({ value: r as Range, label: r }));
+const RANGE_VALUES = ["1T", "5T", "1M", "3M", "6M", "YTD", "1J", "5J", "MAX"] as const;
+const RANGES: { value: Range; label: string }[] = RANGE_VALUES.map((r) => ({ value: r, label: r }));
+const KINDS = ["candle", "line", "area"] as const;
 
 const MA = [
   { n: 20, color: "#66b8ff" },
@@ -138,6 +141,55 @@ export function tickLabel(time: Time, type: TickMarkType): string {
   }
 }
 
+/** VWAP je Handelstag (setzt an jedem neuen Tag zurück); ohne Volumen leer. */
+export function vwapSeries(bars: Bar[]): { time: Time; value: number }[] {
+  const out: { time: Time; value: number }[] = [];
+  let day = "";
+  let pv = 0;
+  let vol = 0;
+  for (const b of bars) {
+    const d = b.ts !== undefined ? new Date(b.ts).toISOString().slice(0, 10) : String(b.time);
+    if (d !== day) {
+      day = d;
+      pv = 0;
+      vol = 0;
+    }
+    if (!isNum(b.volume) || b.volume <= 0) continue;
+    pv += ((b.high + b.low + b.close) / 3) * b.volume;
+    vol += b.volume;
+    out.push({ time: b.time, value: pv / vol });
+  }
+  return out;
+}
+
+/**
+ * Earnings-Marker: am Reaktionstag (vorbörslich: Berichtstag, nachbörslich: nächster Handelstag),
+ * grün bei Übertreffen, rot bei Verfehlen der Schätzung.
+ */
+export function earningsMarkers(items: EarningsItem[], bars: Bar[]) {
+  const times = bars.map((b) => String(b.time));
+  const out: { time: Time; position: "aboveBar"; color: string; shape: "circle"; text: string }[] = [];
+  for (const e of items) {
+    if (!e.reportDate || !isNum(e.epsActual)) continue;
+    const after = e.timing === "AfterMarket";
+    const idx = times.findIndex((t) => (after ? t > e.reportDate! : t >= e.reportDate!));
+    if (idx < 0) continue;
+    const beat = isNum(e.epsEstimate) ? e.epsActual >= e.epsEstimate : true;
+    out.push({ time: bars[idx].time, position: "aboveBar", color: beat ? "#29d17d" : "#ff5252", shape: "circle", text: "E" });
+  }
+  return out.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+}
+
+/** Datum/Zeit im Fadenkreuz auf Deutsch (statt "29 Sep '26"). */
+function crosshairTime(time: Time): string {
+  if (typeof time === "number") {
+    const d = new Date(time * 1000);
+    return `${String(d.getUTCDate()).padStart(2, "0")}.${String(d.getUTCMonth() + 1).padStart(2, "0")}. ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  }
+  const iso = typeof time === "string" ? time : `${time.year}-${String(time.month).padStart(2, "0")}-${String(time.day).padStart(2, "0")}`;
+  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
+}
+
 /** Bollinger-Bänder (n, k·σ) über Schlusskurse. */
 function bollinger(values: number[], n = 20, k = 2): { upper: (number | null)[]; lower: (number | null)[] } {
   const upper: (number | null)[] = [];
@@ -225,14 +277,17 @@ const combineCompare = (results: { data?: History; isError: boolean }[]) => resu
 const BENCHMARK: Record<string, string> = {
   US: "GSPC.INDX", XETRA: "GDAXI.INDX", PA: "FCHI.INDX", AS: "STOXX50E.INDX", SW: "SSMI.INDX", LSE: "FTSE.INDX",
 };
-const COMPARE_COLORS = ["#66b8ff", "#c77dff", "#29d17d", "#ff8a65"];
+// Unterscheidbar vom eigenen Kurs (orange), den SMAs (blau/orange/lila) und dem RSI (lila)
+const COMPARE_COLORS = ["#4dd0e1", "#f06292", "#aed581", "#fff176"];
 
 export default function GP({ ticker }: ScreenProps) {
-  const [range, setRange] = useState<Range>("1J");
-  const [kind, setKind] = useState<Kind>("candle");
-  const [mas, setMas] = useState<number[]>([50, 200]);
-  const [boll, setBoll] = useState(false);
-  const [showRsi, setShowRsi] = useState(false);
+  // Darstellung bleibt über Seiten- und Tickerwechsel sowie das Neuladen erhalten
+  const [range, setRange] = usePersistentState<Range>("gp.range", "1J", isOneOf(RANGE_VALUES));
+  const [kind, setKind] = usePersistentState<Kind>("gp.kind", "candle", isOneOf(KINDS));
+  const [mas, setMas] = usePersistentState<number[]>("gp.mas", [50, 200], isNumberList([20, 50, 200]));
+  const [boll, setBoll] = usePersistentState("gp.boll", false, isBool);
+  const [showRsi, setShowRsi] = usePersistentState("gp.rsi", false, isBool);
+  const [showVwap, setShowVwap] = usePersistentState("gp.vwap", true, isBool);
   const [compare, setCompare] = useState<string[]>([]);
   const [compareInput, setCompareInput] = useState("");
   const [compareErr, setCompareErr] = useState<string | null>(null);
@@ -242,10 +297,14 @@ export default function GP({ ticker }: ScreenProps) {
   const isYield = ticker?.endsWith(".GBOND") ?? false;
   const comparing = compare.length > 0 && !intradayRange;
 
-  // Wertpapierwechsel: Vergleichsliste leeren
+  const earn = useEarnings(ticker && isEquity(ticker) ? ticker : null);
+
+  // Wertpapierwechsel: Vergleichswerte bleiben (ohne das neue Wertpapier selbst und nur gleicher
+  // Art – Renditen werden in bp, Kurse in % verglichen)
   useEffect(() => {
-    setCompare([]);
+    setCompare((c) => c.filter((x) => x !== ticker && x.endsWith(".GBOND") === isYield));
     setCompareErr(null); // Meldung gehörte zum vorherigen Wertpapier
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker]);
 
   const compareQ = useQueries({
@@ -306,13 +365,14 @@ export default function GP({ ticker }: ScreenProps) {
       if (idx < 0) return null;
       const b0 = periodBase(all, idx);
       if (!isNum(b0) || b0 === 0) return null;
-      const data = all.slice(idx).map((b) => ({ time: b.time, value: (b.close / b0 - 1) * 100 }));
+      // Renditen: Veränderung in bp; Kurse: Wertentwicklung in %
+      const data = all.slice(idx).map((b) => ({ time: b.time, value: isYield ? (b.close - b0) * 100 : (b.close / b0 - 1) * 100 }));
       return { label, color, data };
     };
     const own = norm(hist.data, ticker ? displayTicker(ticker) : "", "#ffa028");
     const others = compare.map((t, i) => norm(compareQ[i]?.data, displayTicker(t), COMPARE_COLORS[i % COMPARE_COLORS.length]));
     return [own, ...others].filter((x): x is NonNullable<typeof x> => !!x);
-  }, [comparing, bars, hist.data, compare, compareQ, ticker]);
+  }, [comparing, bars, hist.data, compare, compareQ, ticker, isYield]);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const rsiRef = useRef<HTMLDivElement>(null);
@@ -321,12 +381,14 @@ export default function GP({ ticker }: ScreenProps) {
   const seriesRef = useRef<{
     main: ISeriesApi<"Candlestick"> | ISeriesApi<"Line"> | ISeriesApi<"Area"> | null;
     vol: ISeriesApi<"Histogram"> | null;
+    vwap: ISeriesApi<"Line"> | null;
     ma: Map<number, ISeriesApi<"Line">>;
     bands: ISeriesApi<"Line">[];
     cmp: ISeriesApi<"Line">[];
     rsi: ISeriesApi<"Line"> | null;
   } | null>(null);
   const barsRef = useRef<Map<string, Bar>>(new Map());
+  const prevLineRef = useRef<ReturnType<ISeriesApi<"Line">["createPriceLine"]> | null>(null);
   const fitKey = useRef("");
   const [hover, setHover] = useState<Bar | null>(null);
   const hasData = bars.length > 0;
@@ -349,16 +411,20 @@ export default function GP({ ticker }: ScreenProps) {
       crosshair: { mode: CrosshairMode.Normal, vertLine: { color: "#555", labelBackgroundColor: "#2a2a2a" }, horzLine: { color: "#555", labelBackgroundColor: "#2a2a2a" } },
       timeScale: { borderColor: "#262626", timeVisible: intradayRange, secondsVisible: false, rightOffset: 3, tickMarkFormatter: tickLabel },
     };
+    // Gleich breite Preisachsen: sonst stehen Kurs- und RSI-Bereich gegeneinander versetzt
+    const axisWidth = 76;
     const chart = createChart(host, {
       ...baseOptions,
-      rightPriceScale: { borderColor: "#262626", scaleMargins: { top: 0.08, bottom: comparing ? 0.05 : 0.22 } },
+      rightPriceScale: { borderColor: "#262626", minimumWidth: axisWidth, scaleMargins: { top: 0.08, bottom: comparing ? 0.05 : 0.22 } },
       localization: {
         locale: "de-DE",
-        priceFormatter: (p: number) => (comparing ? `${p >= 0 ? "+" : ""}${fmt(p, 1)} %` : isYield ? `${fmt(p, 3)} %` : fmtPrice(p, tickerRef.current)),
+        timeFormatter: crosshairTime,
+        priceFormatter: (p: number) =>
+          comparing ? (isYield ? fmtBp(p, false) : `${p >= 0 ? "+" : ""}${fmt(p, 1)} %`) : isYield ? `${fmt(p, 3)} %` : fmtPrice(p, tickerRef.current),
       },
     });
     chartRef.current = chart;
-    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, ma: new Map(), bands: [], cmp: [], rsi: null };
+    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], rsi: null };
     if (comparing) {
       for (let i = 0; i < compare.length + 1; i++) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
@@ -379,6 +445,9 @@ export default function GP({ ticker }: ScreenProps) {
       for (const m of MA.filter((m) => maKey.split(",").includes(String(m.n)))) {
         refs.ma.set(m.n, chart.addLineSeries({ color: m.color, lineWidth: 1, lineStyle: LineStyle.Solid, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }));
       }
+      if (intradayRange && showVwap) {
+        refs.vwap = chart.addLineSeries({ color: "#f2c200", lineWidth: 1, lineStyle: LineStyle.Solid, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
+      }
       if (boll && !intradayRange) {
         for (let i = 0; i < 2; i++) {
           refs.bands.push(chart.addLineSeries({ color: "rgba(102,184,255,0.55)", lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }));
@@ -390,8 +459,8 @@ export default function GP({ ticker }: ScreenProps) {
     if (showRsi && rsiRef.current) {
       rsiChart = createChart(rsiRef.current, {
         ...baseOptions,
-        rightPriceScale: { borderColor: "#262626", scaleMargins: { top: 0.1, bottom: 0.1 } },
-        localization: { locale: "de-DE", priceFormatter: (p: number) => fmt(p, 0) },
+        rightPriceScale: { borderColor: "#262626", minimumWidth: axisWidth, scaleMargins: { top: 0.1, bottom: 0.1 } },
+        localization: { locale: "de-DE", timeFormatter: crosshairTime, priceFormatter: (p: number) => fmt(p, 0) },
         timeScale: { ...baseOptions.timeScale, visible: false },
         handleScroll: false,
         handleScale: false,
@@ -406,7 +475,19 @@ export default function GP({ ticker }: ScreenProps) {
       syncers.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange));
     }
     seriesRef.current = refs;
+    prevLineRef.current = null;
     fitKey.current = "";
+    // Panelgröße geändert (Maximieren, Layout, Fenster): Inhalt neu einpassen, sonst blieb nach
+    // dem Maximieren der linke Teil des Charts leer
+    let lastWidth = host.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (Math.abs(host.clientWidth - lastWidth) < 40) return;
+      lastWidth = host.clientWidth;
+      chart.timeScale().fitContent();
+      rsiChart?.timeScale().fitContent();
+    });
+    ro.observe(host);
+    syncers.push(() => ro.disconnect());
     const onMove = (p: MouseEventParams) => {
       setHover(p.time !== undefined ? barsRef.current.get(String(p.time)) ?? null : null);
     };
@@ -421,7 +502,7 @@ export default function GP({ ticker }: ScreenProps) {
       seriesRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasData, kind, intradayRange, isYield, maKey, boll, showRsi, cmpKey]);
+  }, [hasData, kind, intradayRange, isYield, maKey, boll, showRsi, cmpKey, showVwap]);
 
   useEffect(() => {
     const s = seriesRef.current;
@@ -429,6 +510,9 @@ export default function GP({ ticker }: ScreenProps) {
     if (!s || !chart || !bars.length) return;
     barsRef.current = new Map(bars.map((b) => [String(b.time), b]));
     if (s.main) {
+      // Achsenschritte passend zum Instrument (EUR/USD in Pips statt 0,01)
+      const digits = isYield ? 3 : priceDigits(bars[bars.length - 1].close, ticker);
+      s.main.applyOptions({ priceFormat: { type: "price", precision: digits, minMove: 10 ** -digits } });
       if (kind === "candle") {
         (s.main as ISeriesApi<"Candlestick">).setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
       } else {
@@ -441,6 +525,16 @@ export default function GP({ ticker }: ScreenProps) {
         : [],
     );
     for (const m of maLines) s.ma.get(m.n)?.setData(m.data);
+    s.vwap?.setData(vwapSeries(bars));
+    if (s.main) {
+      // Vortagesschluss als Linie im Intraday-Chart; Earnings-Marker im Tageschart
+      if (prevLineRef.current) s.main.removePriceLine(prevLineRef.current);
+      prevLineRef.current =
+        intradayRange && isNum(base)
+          ? s.main.createPriceLine({ price: base, color: "#777", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Vortag" })
+          : null;
+      s.main.setMarkers(!intradayRange && earn.data ? earningsMarkers(earn.data.history, bars) : []);
+    }
     if (bands && s.bands.length === 2) {
       s.bands[0].setData(bands.upper);
       s.bands[1].setData(bands.lower);
@@ -453,7 +547,7 @@ export default function GP({ ticker }: ScreenProps) {
       rsiChartRef.current?.timeScale().fitContent();
       fitKey.current = key;
     }
-  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi]);
+  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, intradayRange, earn.data, isYield]);
 
   // Vergleichswerte erst nach Prüfung übernehmen: ein Tippfehler soll keinen leeren Chip erzeugen
   const [checkingCompare, setCheckingCompare] = useState(false);
@@ -463,6 +557,9 @@ export default function GP({ ticker }: ScreenProps) {
     if (!t) return setCompareErr("Ticker nicht erkannt.");
     if (t === ticker || compare.includes(t)) return setCompareErr("Bereits im Chart.");
     if (compare.length >= 4) return setCompareErr("Höchstens vier Vergleichswerte.");
+    if (t.endsWith(".GBOND") !== isYield) {
+      return setCompareErr(isYield ? "Renditen werden in bp verglichen – bitte eine Anleihe (z. B. DE10Y Govt)." : "Renditen lassen sich nicht in % vergleichen – im Renditechart vergleichen.");
+    }
     setCheckingCompare(true);
     try {
       t = (await api.resolve(t)).ticker;
@@ -524,11 +621,18 @@ export default function GP({ ticker }: ScreenProps) {
             </label>
           </>
         )}
+        {intradayRange && !isYield && (
+          <label className="check" style={{ color: showVwap ? "#f2c200" : undefined }} title="Volumengewichteter Durchschnittskurs je Handelstag">
+            <input type="checkbox" checked={showVwap} onChange={(e) => setShowVwap(e.target.checked)} />
+            VWAP
+          </label>
+        )}
         <label className="check" style={{ color: showRsi ? "#c77dff" : undefined }}>
           <input type="checkbox" checked={showRsi} onChange={(e) => setShowRsi(e.target.checked)} />
           RSI 14
         </label>
-        {!isYield && !intradayRange && (
+        {intradayRange && compare.length > 0 && <span className="small muted">Vergleich ab 1M</span>}
+        {!intradayRange && (
           <>
             <span className="sep" />
             <form
@@ -549,7 +653,7 @@ export default function GP({ ticker }: ScreenProps) {
                   setCompareErr(null);
                 }}
               />
-              {!compare.includes(benchmark) && benchmark !== ticker && (
+              {!isYield && !compare.includes(benchmark) && benchmark !== ticker && (
                 <button type="button" className="btn" disabled={checkingCompare} onClick={() => void addCompare(benchmark)} title={`Mit ${displayTicker(benchmark)} vergleichen`}>
                   Index
                 </button>
@@ -608,11 +712,16 @@ export default function GP({ ticker }: ScreenProps) {
             )}
             {comparing && (
               <div className="chart-ohlc">
-                {compareLines.map((l) => (
-                  <span key={l.label} style={{ color: l.color }}>
-                    {l.label} <b>{fmtPct(l.data[l.data.length - 1]?.value)}</b>
-                  </span>
-                ))}
+                {hover && <span>{fmtDate(hover.time as string)}</span>}
+                {compareLines.map((l) => {
+                  // Beim Überfahren der Wert zum Datum unter dem Fadenkreuz, sonst der letzte
+                  const at = hover ? l.data.find((p) => p.time === hover.time) : l.data[l.data.length - 1];
+                  return (
+                    <span key={l.label} style={{ color: l.color }}>
+                      {l.label} <b>{isYield ? fmtBp(at?.value, false) : fmtPct(at?.value)}</b>
+                    </span>
+                  );
+                })}
               </div>
             )}
             <div style={{ position: "relative", flex: showRsi ? "1 1 74%" : "1 1 100%", minHeight: 0 }}>

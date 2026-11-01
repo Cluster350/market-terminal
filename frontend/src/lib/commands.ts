@@ -88,6 +88,7 @@ export function normalizeTicker(raw: string): string | null {
   if (parts.length === 2 && !parts[0].includes(".")) s = `${parts[0]}.${BBG_EXCHANGES[parts[1]] || parts[1]}`;
   else if (parts.length > 2) return null;
   if (!s.includes(".")) s = `${s}.US`;
+  s = s.replace(/^GB(\d+[MY])\.GBOND$/, "UK$1.GBOND"); // GB10Y wie UK10Y
   return VALID.test(s) ? s : null;
 }
 

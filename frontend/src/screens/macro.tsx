@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import EChart, { AXIS, TOOLTIP, type EOption } from "../components/EChart";
 import { Change, Empty, Flash, Q, Seg, Spark, Table, useNow } from "../components/ui";
-import { DASH, fmt, fmtBig, fmtBp, fmtDate, fmtInt, fmtPct, fmtPrice, fmtStamp, fmtTime, fmtWeekday, isNum, tone } from "../lib/format";
+import { DASH, fmt, fmtBig, fmtBp, fmtDate, fmtInt, fmtPct, fmtPrice, fmtStamp, fmtTime, fmtWeekday, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
+import { isOneOf, isStringList, usePersistentState } from "../lib/persist";
 import { useCalendar, useCommodities, useCountries, useCurves, useFx, useIndices, useSpreads, useStatus } from "../lib/queries";
 import type { EconEvent, MarketRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
@@ -15,7 +16,7 @@ function MarketTable({ rows, grouped, digits }: { rows: MarketRow[]; grouped?: b
     <Table
       rows={rows}
       rowKey={(r) => r.ticker}
-      onRowClick={(r) => ws.setSecurity(r.ticker, { open: "GP" })}
+      onRowClick={(r) => ws.setSecurity(r.ticker, { open: "GP", stay: true })}
       groupBy={grouped ? (r) => r.region || "Weitere" : undefined}
       columns={[
         { key: "name", label: "Name", sort: (r) => r.name, render: (r) => <span title={r.ticker}>{r.name}</span> },
@@ -29,7 +30,7 @@ function MarketTable({ rows, grouped, digits }: { rows: MarketRow[]; grouped?: b
             </Flash>
           ),
         },
-        { key: "chg", label: "Veränd.", num: true, sort: (r) => r.change, render: (r) => <Change value={r.change} pct={false} digits={r.ticker.endsWith(".FOREX") && isNum(r.last) && Math.abs(r.last) < 20 ? 4 : 2} /> },
+        { key: "chg", label: "Veränd.", num: true, sort: (r) => r.change, render: (r) => <Change value={r.change} pct={false} digits={r.ticker.endsWith(".FOREX") && isNum(r.last) ? priceDigits(r.last, r.ticker) : 2} /> },
         { key: "chgp", label: "%", num: true, sort: (r) => r.changePct, render: (r) => <Change value={r.changePct} arrowSign /> },
         { key: "w", label: "1W %", num: true, sort: (r) => r.chg1w, render: (r) => <Change value={r.chg1w} />, className: "col-opt2" },
         { key: "m", label: "1M %", num: true, sort: (r) => r.chg1m, render: (r) => <Change value={r.chg1m} /> },
@@ -132,8 +133,9 @@ const CURVE_COLORS: Record<string, string> = { US: "#ffa028", DE: "#66b8ff", UK:
 export function GC(_: ScreenProps) {
   const status = useStatus();
   const available = status.data?.defaults.curveCountries ?? ["US", "DE", "UK", "FR", "IT", "JP"];
-  const [countries, setCountries] = useState<string[]>(["US", "DE"]);
-  const [compare, setCompare] = useState<"none" | "1m" | "1y">("1y");
+  // Auswahl bleibt über Seitenwechsel und Neuladen erhalten
+  const [countries, setCountries] = usePersistentState<string[]>("gc.countries", ["US", "DE"], isStringList(["US", "DE", "UK", "FR", "IT", "JP"], 6));
+  const [compare, setCompare] = usePersistentState<"none" | "1m" | "1y">("gc.compare", "1y", isOneOf(["none", "1m", "1y"] as const));
   const q = useCurves(countries);
 
   const option = useMemo<EOption | null>(() => {
@@ -174,7 +176,7 @@ export function GC(_: ScreenProps) {
               key={c}
               type="button"
               aria-pressed={countries.includes(c)}
-              onClick={() => setCountries((x) => (x.includes(c) ? (x.length > 1 ? x.filter((y) => y !== c) : x) : [...x, c].slice(-4)))}
+              onClick={() => setCountries((x) => (x.includes(c) ? (x.length > 1 ? x.filter((y) => y !== c) : x) : [...x, c]))}
               style={countries.includes(c) ? { color: CURVE_COLORS[c] } : undefined}
             >
               {c}
@@ -252,18 +254,35 @@ export function GC(_: ScreenProps) {
   );
 }
 
+/** Überraschung als gut/schlecht: Bei Arbeitslosigkeit und Erstanträgen ist "weniger" gut. */
+function surpriseSign(e: EconEvent): number | null {
+  if (!isNum(e.surprise)) return null;
+  return /Unemployment|Jobless|Claims/i.test(e.event) ? -e.surprise : e.surprise;
+}
+
 const SPREAD_COLORS = ["#ffa028", "#66b8ff", "#c77dff", "#29d17d"];
+
+const SPRD_RANGES = [
+  { value: "3", label: "3M" },
+  { value: "6", label: "6M" },
+  { value: "12", label: "1J" },
+  { value: "24", label: "2J" },
+] as const;
 
 export function SPRD(_: ScreenProps) {
   const q = useSpreads();
+  const [months, setMonths] = usePersistentState<string>("sprd.months", "24", isOneOf(SPRD_RANGES.map((r) => r.value)));
   const option = useMemo<EOption | null>(() => {
     if (!q.data?.length) return null;
-    const dates = Array.from(new Set(q.data.flatMap((s) => s.t))).sort();
+    const all = Array.from(new Set(q.data.flatMap((s) => s.t))).sort();
+    const from = all.length ? shiftMonths(all[all.length - 1], Number(months)) : "";
+    const dates = all.filter((d) => d > from);
     return {
       grid: { left: 52, right: 16, top: 30, bottom: 50 },
       legend: { top: 4, textStyle: { color: "#8f8f8f", fontSize: 10 }, itemHeight: 6 },
       tooltip: { trigger: "axis", ...TOOLTIP, valueFormatter: (v: number) => (isNum(v) ? `${Math.round(v)} bp` : DASH) },
-      xAxis: { type: "category", data: dates, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: string) => fmtDate(v).slice(3) } },
+      // Tagesdatum statt "MM.JJJJ": sonst standen zwei gleiche Monatslabels nebeneinander
+      xAxis: { type: "category", data: dates, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: string) => `${v.slice(8, 10)}.${v.slice(5, 7)}.${v.slice(2, 4)}` } },
       yAxis: { type: "value", ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => `${fmt(v, Number.isInteger(v) ? 0 : 1)} bp` } },
       dataZoom: [{ type: "inside" }, { type: "slider", height: 16, bottom: 6, borderColor: "#262626", textStyle: { color: "#8f8f8f" }, fillerColor: "rgba(255,160,40,0.12)" }],
       series: q.data.map((s, i) => {
@@ -272,6 +291,7 @@ export function SPRD(_: ScreenProps) {
           name: s.label,
           type: "line",
           showSymbol: false,
+          connectNulls: true, // Feiertage eines Landes unterbrechen die Linie nicht
           data: dates.map((d) => m.get(d) ?? null),
           lineStyle: { width: 1.5, color: SPREAD_COLORS[i % 4] },
           itemStyle: { color: SPREAD_COLORS[i % 4] },
@@ -279,9 +299,12 @@ export function SPRD(_: ScreenProps) {
         };
       }),
     };
-  }, [q.data]);
+  }, [q.data, months]);
   return (
     <div className="panel-body flush">
+      <div className="toolbar">
+        <Seg label="Zeitraum" value={months} options={SPRD_RANGES.map((r) => ({ value: r.value, label: r.label }))} onChange={setMonths} />
+      </div>
       <Q q={q}>
         {(series) =>
           !series.length ? (
@@ -290,16 +313,20 @@ export function SPRD(_: ScreenProps) {
             <>
               <div style={{ display: "flex", gap: 18, padding: "6px 10px", flexWrap: "wrap", borderBottom: "1px solid var(--rule)" }}>
                 {series.map((s, i) => {
-                  const vals = s.v.filter(isNum);
-                  const last = vals[vals.length - 1];
-                  const prev = vals[vals.length - 22];
+                  // Δ 1M wie in GC: letzter Wert am oder vor demselben Kalendertag des Vormonats
+                  // (vorher 21 Beobachtungen zurück, mit anderem Ergebnis als GC)
+                  const pts = s.t.map((t, j) => [t, s.v[j]] as const).filter((p): p is readonly [string, number] => isNum(p[1]));
+                  const lastPt = pts[pts.length - 1];
+                  const last = lastPt?.[1];
+                  const cut = lastPt ? shiftMonths(lastPt[0], 1) : "";
+                  const prev = [...pts].reverse().find((p) => p[0] <= cut)?.[1];
                   return (
                     <div key={s.key}>
                       <div className="xs" style={{ color: SPREAD_COLORS[i % 4] }}>{s.label}</div>
                       <div style={{ fontSize: "var(--fs-l)" }}>
                         {isNum(last) ? `${Math.round(last)} bp` : DASH}{" "}
                         <span className={`small ${tone(isNum(last) && isNum(prev) ? last - prev : null)}`}>
-                          {isNum(last) && isNum(prev) ? `${last - prev >= 0 ? "+" : ""}${Math.round(last - prev)} (1M)` : ""}
+                          {isNum(last) && isNum(prev) ? `${fmtBp(last - prev, false)} (1M)` : ""}
                         </span>
                       </div>
                     </div>
@@ -343,9 +370,10 @@ function fmtEvent(v: number | null, unit: string | null): string {
 }
 
 export function ECO(_: ScreenProps) {
-  const [week, setWeek] = useState<"prev" | "this" | "next">("this");
-  const [country, setCountry] = useState<string>("");
-  const [importance, setImportance] = useState<"1" | "2" | "3">("1");
+  // Am Wochenende ist die laufende Woche vorbei: dann die kommende zeigen
+  const [week, setWeek] = useState<"prev" | "this" | "next">(() => ([0, 6].includes(new Date().getDay()) ? "next" : "this"));
+  const [country, setCountry] = usePersistentState<string>("eco.country", "", (x): x is string => typeof x === "string" && x.length <= 3);
+  const [importance, setImportance] = usePersistentState<"1" | "2" | "3">("eco.importance", "1", isOneOf(["1", "2", "3"] as const));
   const range = weekRange(week === "prev" ? -1 : week === "next" ? 1 : 0);
   const q = useCalendar({ ...range, country: country || undefined, importance: Number(importance) });
   const now = useNow(30_000);
@@ -427,12 +455,12 @@ export function ECO(_: ScreenProps) {
                               ))}
                             </span>
                           </td>
-                          <td className={`num ${tone(e.surprise)}`} style={{ fontWeight: 600 }}>
+                          <td className={`num ${tone(surpriseSign(e))}`} style={{ fontWeight: 600 }}>
                             {fmtEvent(e.actual, e.unit)}
                           </td>
                           <td className="num">{fmtEvent(e.estimate, e.unit)}</td>
                           <td className="num muted">{fmtEvent(e.previous, e.unit)}</td>
-                          <td className={`num ${tone(e.surprise)}`}>{isNum(e.surprise) ? `${e.surprise > 0 ? "+" : ""}${fmtEvent(e.surprise, e.unit === "%" ? "Pp" : e.unit)}` : DASH}</td>
+                          <td className={`num ${tone(surpriseSign(e))}`}>{isNum(e.surprise) ? `${e.surprise > 0 ? "+" : ""}${fmtEvent(e.surprise, e.unit === "%" ? "Pp" : e.unit)}` : DASH}</td>
                         </tr>
                       </FragmentWithHeader>
                     );

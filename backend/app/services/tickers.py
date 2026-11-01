@@ -64,6 +64,8 @@ def normalize(raw: str, default_exchange: str = "US") -> str:
         raise BadRequest(f"Ticker „{raw}“ nicht erkannt.")
     if "." not in s:
         s = f"{s}.{default_exchange}"
+    # Britische Staatsanleihen: GB10Y (ISO-Land) wie UK10Y
+    s = re.sub(r"^GB(\d+[MY])\.GBOND$", r"UK\1.GBOND", s)
     if not _VALID.match(s):
         raise BadRequest(f"Ticker „{raw}“ enthält ungültige Zeichen.")
     return s

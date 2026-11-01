@@ -225,7 +225,7 @@ export function CommandLine() {
     }
     remember(value);
     if (fn) ws.runFn(fn, t);
-    else ws.setSecurity(t);
+    else ws.setSecurity(t, { viaCommand: true });
     close();
   }
 

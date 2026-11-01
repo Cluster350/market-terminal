@@ -269,6 +269,9 @@ a { color: var(--link); }
 .gc-chart { flex: 1 1 48%; min-height: 140px; }
 .gc-table { overflow: auto; flex: 0 1 auto; max-height: 52%; }
 .gc-table .t td, .gc-table .t th { padding-top: 1px; padding-bottom: 1px; }
+/* Laufzeitspalte bleibt beim seitlichen Scrollen (viele Länder) stehen */
+.gc-table .t td:first-child, .gc-table .t th:first-child { position: sticky; left: 0; background: var(--panel); z-index: 1; }
+.gc-table .t th:first-child { z-index: 3; background: var(--panel-head); }
 @container (min-width: 860px) {
   .gc-body { flex-direction: row; }
   .gc-chart { flex: 1 1 auto; min-width: 0; min-height: 0; }
@@ -525,3 +528,9 @@ table.t { width: 100%; border-collapse: collapse; }
   .boot-dots { display: none; }
   .boot-line > span:nth-child(3) { grid-column: 1 / -1; order: 3; font-size: var(--fs-s); }
 }
+
+.link-row { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 3px 0; color: var(--value); cursor: pointer; }
+.link-row:hover { color: var(--label); }
+.tool.pinned { color: var(--key); }
+.has-tip { text-decoration: underline dotted rgba(143, 143, 143, 0.6); text-underline-offset: 3px; cursor: help; }
+.field.invalid { border-color: var(--down); color: var(--down); }

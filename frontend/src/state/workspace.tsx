@@ -71,6 +71,10 @@ export interface WorkspaceState {
   security: string | null;
   watchlist: string[];
   recent: string[];
+  /** Fixierte Panels: eigenes Wertpapier je Panel (null = folgt dem Arbeitsbereich) */
+  pins: Record<PageId, (string | null)[]>;
+  /** Vorherige Funktionen je Panel für "Zurück" (Esc); wird nicht gespeichert */
+  back: Record<PageId, FnCode[][]>;
 }
 
 interface Shared {
@@ -82,13 +86,15 @@ interface Shared {
 
 type Action =
   | { type: "page"; page: PageId }
-  | { type: "security"; ticker: string }
+  | { type: "security"; ticker: string; viaCommand?: boolean }
+  | { type: "pin"; panel: number; ticker: string | null }
+  | { type: "back" }
   | { type: "fn"; fn: FnCode; panel?: number }
   | { type: "active"; index: number }
   | { type: "maximize"; index: number | null }
   | { type: "layout"; layout: Layout }
   | { type: "resetPage" }
-  | { type: "linked"; linked: boolean }
+  | { type: "linked"; linked: boolean; security?: string | null }
   | { type: "shared"; shared: Shared }
   | { type: "watchAdd"; ticker: string }
   | { type: "watchRemove"; ticker: string }
@@ -151,8 +157,12 @@ export function initial(hash = typeof location !== "undefined" ? location.hash :
     security: null,
     watchlist: [],
     recent: [],
+    pins: emptyPerPanel(PAGE_DEFAULTS, () => null),
+    back: emptyPerPanel(PAGE_DEFAULTS, () => []),
   };
   if (win.solo) base.pages[base.page] = { layout: "single", panels: [win.solo] };
+  base.pins = emptyPerPanel(base.pages, () => null);
+  base.back = emptyPerPanel(base.pages, () => []);
 
   try {
     const legacy = win.key === "main" ? readJson(LEGACY_KEY) : null;
@@ -173,11 +183,22 @@ export function initial(hash = typeof location !== "undefined" ? location.hash :
       // gesperrt). Ein älterer gespeicherter Zustand mit anderer Seite oder Viererlayout bliebe
       // sonst dauerhaft hängen, weil er sich im Fenster nicht mehr ändern lässt.
       if (win.solo && pages[base.page].layout !== "single") pages[base.page] = base.pages[base.page];
+      const finalPages = win.solo && !readJson(winKey(win.key)) ? state.pages : pages;
+      // Fixierte Panels nur übernehmen, wenn sie zum gespeicherten Layout passen
+      const pins = emptyPerPanel(finalPages, () => null as string | null);
+      for (const p of PAGES) {
+        const sp = (saved.pins as Record<string, unknown> | undefined)?.[p.id];
+        if (Array.isArray(sp) && sp.length === finalPages[p.id].panels.length) {
+          pins[p.id] = sp.map((t) => (typeof t === "string" && t.length <= 40 ? t : null));
+        }
+      }
       state = {
         ...state,
+        pins,
+        back: emptyPerPanel(finalPages, () => []),
         mode: typeof saved.mode === "string" ? saved.mode : null,
         page: win.page ?? (win.solo ? base.page : PAGES.some((p) => p.id === saved.page) ? (saved.page as PageId) : state.page),
-        pages: win.solo && !readJson(winKey(win.key)) ? state.pages : pages,
+        pages: finalPages,
         linked: saved.linked !== false,
         security: typeof saved.security === "string" ? saved.security : null,
         watchlist: strings(saved.watchlist, 60),
@@ -197,6 +218,16 @@ export function initial(hash = typeof location !== "undefined" ? location.hash :
   } catch {
     return base;
   }
+}
+
+function emptyPerPanel<T>(pages: Record<PageId, { panels: FnCode[] }>, make: () => T): Record<PageId, T[]> {
+  return Object.fromEntries(PAGES.map((p) => [p.id, pages[p.id].panels.map(make)])) as Record<PageId, T[]>;
+}
+
+function fit<T>(xs: T[] | undefined, n: number, fill: () => T): T[] {
+  const out = (xs ?? []).slice(0, n);
+  while (out.length < n) out.push(fill());
+  return out;
 }
 
 function resize(panels: FnCode[], layout: Layout, page: PageId): FnCode[] {
@@ -233,15 +264,47 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       return { ...s, page: a.page, maximized: null };
     case "security": {
       const recent = [a.ticker, ...s.recent.filter((t) => t !== a.ticker)].slice(0, 12);
+      // Befehl für ein fixiertes Panel: nur dieses Panel wechselt das Wertpapier
+      const act = s.active[s.page];
+      const pins = s.pins[s.page] ?? [];
+      if (a.viaCommand && pins[act]) {
+        const next = pins.slice();
+        next[act] = a.ticker;
+        return { ...s, recent, pins: { ...s.pins, [s.page]: next } };
+      }
       return { ...s, security: a.ticker, recent };
+    }
+    case "pin": {
+      const pins = fit(s.pins[s.page], s.pages[s.page].panels.length, () => null).slice();
+      if (a.panel < 0 || a.panel >= pins.length) return s;
+      pins[a.panel] = a.ticker;
+      return { ...s, pins: { ...s.pins, [s.page]: pins } };
     }
     case "fn": {
       const idx = a.panel ?? s.active[s.page];
       const page = s.pages[s.page];
       const panels = page.panels.slice();
       if (idx < 0 || idx >= panels.length) return s;
+      const back = fit(s.back[s.page], panels.length, () => [] as FnCode[]).map((x) => x.slice());
+      if (panels[idx] !== a.fn) back[idx] = [...back[idx], panels[idx]].slice(-10);
       panels[idx] = a.fn;
-      return { ...s, pages: { ...s.pages, [s.page]: { ...page, panels } }, active: { ...s.active, [s.page]: idx } };
+      return {
+        ...s,
+        pages: { ...s.pages, [s.page]: { ...page, panels } },
+        active: { ...s.active, [s.page]: idx },
+        back: { ...s.back, [s.page]: back },
+      };
+    }
+    case "back": {
+      // Esc: vorherige Funktion des aktiven Panels (z. B. nach HELP oder einem Klick in EVTS)
+      const idx = s.active[s.page];
+      const stack = s.back[s.page]?.[idx] ?? [];
+      if (!stack.length) return s;
+      const page = s.pages[s.page];
+      const panels = page.panels.slice();
+      panels[idx] = stack[stack.length - 1];
+      const back = s.back[s.page].map((x, i) => (i === idx ? x.slice(0, -1) : x));
+      return { ...s, pages: { ...s.pages, [s.page]: { ...page, panels } }, back: { ...s.back, [s.page]: back } };
     }
     case "active": {
       const n = s.pages[s.page].panels.length;
@@ -257,6 +320,8 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       return {
         ...s,
         pages: { ...s.pages, [s.page]: { layout: a.layout, panels } },
+        pins: { ...s.pins, [s.page]: fit(s.pins[s.page], panels.length, () => null) },
+        back: { ...s.back, [s.page]: fit(s.back[s.page], panels.length, () => []) },
         active: { ...s.active, [s.page]: Math.min(s.active[s.page], panels.length - 1) },
         maximized: null,
       };
@@ -265,11 +330,14 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       return {
         ...s,
         pages: { ...s.pages, [s.page]: structuredClone(PAGE_DEFAULTS[s.page]) },
+        pins: { ...s.pins, [s.page]: PAGE_DEFAULTS[s.page].panels.map(() => null) },
+        back: { ...s.back, [s.page]: PAGE_DEFAULTS[s.page].panels.map(() => []) },
         active: { ...s.active, [s.page]: 0 },
         maximized: null,
       };
     case "linked":
-      return { ...s, linked: a.linked };
+      // Wieder verknüpfen übernimmt das Wertpapier der anderen Fenster (statt es ihnen aufzudrücken)
+      return { ...s, linked: a.linked, security: a.linked && a.security ? a.security : s.security };
     case "watchAdd":
       if (s.watchlist.includes(a.ticker)) return s;
       return { ...s, watchlist: [...s.watchlist, a.ticker].slice(0, 60) };
@@ -301,7 +369,11 @@ export function openWindow(target: { page?: PageId; fn?: FnCode }): boolean {
 interface WorkspaceApi {
   state: WorkspaceState;
   setPage: (p: PageId) => void;
-  setSecurity: (t: string, opts?: { open?: FnCode }) => void;
+  /**
+   * ``open``: Funktion zeigen; ``stay``: auf der aktuellen Seite bleiben (Klick in WEI/FX/CMDT);
+   * ``viaCommand``: aus der Befehlszeile – ein fixiertes aktives Panel wechselt dann allein.
+   */
+  setSecurity: (t: string, opts?: { open?: FnCode; stay?: boolean; viaCommand?: boolean }) => void;
   runFn: (fn: FnCode, ticker?: string | null) => void;
   setPanelFn: (panel: number, fn: FnCode) => void;
   setActive: (i: number) => void;
@@ -309,6 +381,8 @@ interface WorkspaceApi {
   setLayout: (l: Layout) => void;
   resetPage: () => void;
   setLinked: (linked: boolean) => void;
+  pinPanel: (panel: number, ticker: string | null) => void;
+  back: () => void;
   watchAdd: (t: string) => void;
   watchRemove: (t: string) => void;
   watchMove: (t: string, delta: number) => void;
@@ -368,21 +442,34 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [state.page, state.window]);
 
   const setSecurity = useCallback(
-    (t: string, opts?: { open?: FnCode }) => {
-      dispatch({ type: "security", ticker: t });
+    (t: string, opts?: { open?: FnCode; stay?: boolean; viaCommand?: boolean }) => {
+      dispatch({ type: "security", ticker: t, viaCommand: opts?.viaCommand });
       // Einzelfunktions-Fenster behalten ihre Funktion; verknüpfte Fenster zeigen das Wertpapier
       if (isSolo(state.window)) return;
       const pageHasTickerPanel = state.pages[state.page].panels.some((f) => FN[f].needsTicker);
       if (opts?.open) {
-        if (!pageHasTickerPanel && FN[opts.open].needsTicker) dispatch({ type: "page", page: "equity" });
-        dispatch({ type: "fn", fn: opts.open });
-      } else if (!pageHasTickerPanel && state.window === "main") {
+        let page = state.page;
+        if (!opts.stay && !pageHasTickerPanel && FN[opts.open].needsTicker) {
+          page = "equity";
+          dispatch({ type: "page", page });
+        }
+        const panels = state.pages[page].panels;
+        const existing = panels.indexOf(opts.open);
+        if (existing >= 0) {
+          // Die Funktion ist schon offen: dorthin wechseln statt ein anderes Panel zu überschreiben
+          dispatch({ type: "active", index: existing });
+        } else {
+          // Auf derselben Seite das Nachbarpanel nutzen, nicht die angeklickte Liste selbst
+          const act = state.active[page];
+          dispatch({ type: "fn", fn: opts.open, panel: opts.stay && panels.length > 1 ? (act + 1) % panels.length : act });
+        }
+      } else if (!pageHasTickerPanel && state.window === "main" && !opts?.stay) {
         // Im Hauptfenster zur Aktienseite wechseln; Zusatzfenster bleiben, wo sie sind,
         // weil die verknüpften Fenster das Wertpapier ohnehin anzeigen
         dispatch({ type: "page", page: "equity" });
       }
     },
-    [state.page, state.pages, state.window],
+    [state.page, state.pages, state.window, state.active],
   );
 
   const api = useMemo<WorkspaceApi>(
@@ -391,7 +478,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setPage: (page) => dispatch({ type: "page", page }),
       setSecurity,
       runFn: (fn, ticker) => {
-        if (ticker) dispatch({ type: "security", ticker });
+        if (ticker) dispatch({ type: "security", ticker, viaCommand: true });
         dispatch({ type: "fn", fn });
       },
       setPanelFn: (panel, fn) => dispatch({ type: "fn", fn, panel }),
@@ -399,7 +486,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       maximize: (index) => dispatch({ type: "maximize", index }),
       setLayout: (layout) => dispatch({ type: "layout", layout }),
       resetPage: () => dispatch({ type: "resetPage" }),
-      setLinked: (linked) => dispatch({ type: "linked", linked }),
+      setLinked: (linked) => {
+        let security: string | null = null;
+        if (linked) {
+          try {
+            const shared = parseShared(readJson(SHARED_KEY));
+            if (shared?.mode === state.mode) security = shared.security;
+          } catch {
+            /* ohne Speicher: eigenes Wertpapier behalten */
+          }
+        }
+        dispatch({ type: "linked", linked, security });
+      },
+      pinPanel: (panel, ticker) => dispatch({ type: "pin", panel, ticker }),
+      back: () => dispatch({ type: "back" }),
       watchAdd: (ticker) => dispatch({ type: "watchAdd", ticker }),
       watchRemove: (ticker) => dispatch({ type: "watchRemove", ticker }),
       watchMove: (ticker, delta) => dispatch({ type: "watchMove", ticker, delta }),

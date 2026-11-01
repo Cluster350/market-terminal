@@ -33,11 +33,16 @@ export function fmt(x: number | null | undefined, digits = 2): string {
 }
 
 /** Kurs: zwei Nachkommastellen, unter 1 vier. Devisenpaare über `ticker` mit Devisenschreibweise. */
+/** Nachkommastellen eines Kurses: Devisen in Pips (EUR/USD 5, USD/JPY 3), sonst 2 bzw. 4 unter 1. */
+export function priceDigits(x: number, ticker?: string | null): number {
+  const a = Math.abs(x);
+  if (ticker && ticker.endsWith(".FOREX")) return a >= 20 ? 3 : 5;
+  return a >= 1 ? 2 : 4;
+}
+
 export function fmtPrice(x: number | null | undefined, ticker?: string | null): string {
   if (!isNum(x)) return DASH;
-  const a = Math.abs(x);
-  let d = a >= 1 ? 2 : 4;
-  if (ticker && ticker.endsWith(".FOREX")) d = a >= 20 ? 2 : 4;
+  const d = priceDigits(x, ticker);
   return nf(d, d).format(z(x, d));
 }
 

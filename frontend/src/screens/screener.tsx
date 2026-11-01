@@ -1,12 +1,14 @@
 // Screener-Funktionen: EQS, IMAP, MOST sowie W (Watchlist) und HELP.
 
 import { useEffect, useMemo, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { Change, Empty, ErrorState, Flash, Loading, Q, Table, TickerLink } from "../components/ui";
 import { api, ApiError, IS_STATIC } from "../lib/api";
 import { FUNCTIONS, normalizeTicker, unknownSecurityMessage } from "../lib/commands";
-import { DASH, displayTicker, fmt, fmtBig, fmtBp, fmtPrice, fmtStamp, industryDe, isNum, sectorDe, tone } from "../lib/format";
-import { useMovers, useQuotes, useScreen, useScreenFields, useStatus } from "../lib/queries";
-import type { ScreenField, ScreenFilter, ScreenOp, ScreenRow } from "../lib/types";
+import { GLOSSARY } from "../lib/glossary";
+import { DASH, displayTicker, fmt, fmtBig, fmtBp, fmtPrice, fmtStamp, industryDe, isNum, sectorDe, shiftMonths, tone } from "../lib/format";
+import { retry, useMovers, useQuotes, useScreen, useScreenFields, useStatus } from "../lib/queries";
+import type { History, ScreenField, ScreenFilter, ScreenOp, ScreenRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
 
@@ -82,9 +84,18 @@ function toFilter(dr: Draft, fields: Map<string, ScreenField>): ScreenFilter | n
   if (f.kind === "text" || f.kind === "choice") {
     return { field: dr.field, op: f.kind === "text" ? "contains" : dr.op === "neq" ? "neq" : "eq", value: dr.value.trim() };
   }
-  const n = Number(dr.value.replace(",", "."));
-  if (!Number.isFinite(n)) return null;
+  const n = parseNumber(dr.value);
+  if (n === null) return null;
   return { field: dr.field, op: dr.op, value: f.kind === "money" ? n * 1e9 : n };
+}
+
+/** Zahl aus einer Filtereingabe: "3", "3,5", "3%", " 1.000,5 " (deutsches Format); sonst null. */
+export function parseNumber(raw: string): number | null {
+  let t = raw.trim().replace(/\s|%|Mrd\.?|bn/gi, "");
+  if (!t) return null;
+  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
 }
 
 const RESULT_COLS: { key: string; label: string; num?: boolean; render: (r: ScreenRow) => React.ReactNode }[] = [
@@ -257,7 +268,18 @@ export function EQS(_: ScreenProps) {
                 value={dr.field}
                 onChange={(e) => setDrafts((x) => x.map((y) => (y.id === dr.id ? { ...y, field: e.target.value, value: "" } : y)))}
               >
-                {groups.map((g) => (
+                <div className="section-title">Begriffe</div>
+      <table className="t" style={{ maxWidth: 900 }}>
+        <tbody>
+          {Object.entries(GLOSSARY).map(([k, v]) => (
+            <tr key={k}>
+              <td className="lbl" style={{ width: "16ch" }}>{k}</td>
+              <td className="wrap">{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {groups.map((g) => (
                   <optgroup key={g.key} label={g.label}>
                     {(fieldsQ.data ?? [])
                       .filter((f) => f.group === g.key)
@@ -298,9 +320,11 @@ export function EQS(_: ScreenProps) {
                     ))}
                   </select>
                   <input
-                    className="field"
+                    className={`field ${dr.value.trim() && parseNumber(dr.value) === null ? "invalid" : ""}`}
                     inputMode="decimal"
                     aria-label="Wert"
+                    aria-invalid={!!dr.value.trim() && parseNumber(dr.value) === null}
+                    title={dr.value.trim() && parseNumber(dr.value) === null ? "Keine Zahl – dieser Filter wird nicht angewendet" : undefined}
                     style={{ width: 90 }}
                     value={dr.value}
                     onChange={(e) => setDrafts((x) => x.map((y) => (y.id === dr.id ? { ...y, value: e.target.value } : y)))}
@@ -321,6 +345,13 @@ export function EQS(_: ScreenProps) {
           <button type="submit" className="btn primary">
             Screen ausführen
           </button>
+          {(() => {
+            const bad = drafts.filter((dr) => {
+              const f = fields.get(dr.field);
+              return f && f.kind !== "text" && f.kind !== "choice" && dr.value.trim() !== "" && parseNumber(dr.value) === null;
+            }).length;
+            return bad ? <span className="small down">{bad === 1 ? "Ein Filterwert ist keine Zahl" : `${bad} Filterwerte sind keine Zahlen`} – nicht angewendet</span> : null;
+          })()}
           <span className="sep" />
           <input className="field" placeholder="Name zum Speichern" aria-label="Name für gespeicherten Screen" value={saveName} onChange={(e) => setSaveName(e.target.value)} style={{ width: 150 }} />
           <button
@@ -457,6 +488,17 @@ export function W(_: ScreenProps) {
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => setErr(null), [input]);
   const rows = q.data ?? [];
+  // 1M und YTD aus den Tageskursen (geteilter Cache mit GP; hier ohne eigenes Nachladen)
+  const hist = useQueries({ queries: list.map((t) => ({ queryKey: ["history", t], queryFn: () => api.history(t), staleTime: 600_000, retry })) });
+  const perf = useMemo(() => {
+    const out = new Map<string, { m1: number | null; ytd: number | null }>();
+    list.forEach((t, i) => {
+      const h = hist[i]?.data;
+      if (h) out.set(t, periodChanges(h));
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, ...hist.map((x) => x.dataUpdatedAt)]);
 
   return (
     <>
@@ -499,44 +541,85 @@ export function W(_: ScreenProps) {
         ) : q.isError ? (
           <ErrorState error={q.error} onRetry={() => q.refetch()} />
         ) : (
-          <table className="t">
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th className="num">Kurs</th>
-                <th className="num">%</th>
-                <th aria-label="Aktionen" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.ticker} className={`clickable ${ws.state.security === r.ticker ? "selected" : ""}`} onClick={() => ws.setSecurity(r.ticker)}>
-                  <td className="cell-name" title={`${r.name ?? r.ticker} · Stand ${fmtStamp(r.timestamp)}`}>
-                    <span className="lbl">{displayTicker(r.ticker)}</span>
-                    {r.name && <div className="xs muted" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>}
-                  </td>
-                  <td className="num">
-                    <Flash value={r.last}>
-                      <b>{r.last === null || r.last === undefined ? <span className="muted" title="Keine Kursdaten">n. v.</span> : fmtPrice(r.last, r.ticker)}</b>
-                    </Flash>
-                    <div className="xs muted">{fmtStamp(r.timestamp)}</div>
-                  </td>
-                  <td className="num">
-                    {r.ticker.endsWith(".GBOND") ? <span className={tone(r.change, 2)}>{fmtBp(r.change)}</span> : <Change value={r.changePct} />}
-                  </td>
-                  <td className="num nowrap" onClick={(e) => e.stopPropagation()}>
-                    <button className="tool" title="Nach oben" disabled={i === 0} onClick={() => ws.watchMove(r.ticker, -1)}>↑</button>
-                    <button className="tool" title="Nach unten" disabled={i === rows.length - 1} onClick={() => ws.watchMove(r.ticker, 1)}>↓</button>
-                    <button className="tool" title="Entfernen" onClick={() => ws.watchRemove(r.ticker)}>×</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Table
+            rows={rows}
+            rowKey={(r) => r.ticker}
+            selected={ws.state.security}
+            onRowClick={(r) => ws.setSecurity(r.ticker)}
+            columns={[
+              {
+                key: "t",
+                label: "Ticker",
+                sort: (r) => displayTicker(r.ticker),
+                render: (r) => (
+                  <span className="lbl nowrap" title={r.name ?? r.ticker}>
+                    {displayTicker(r.ticker)}
+                  </span>
+                ),
+              },
+              { key: "name", label: "Name", className: "col-opt1 cell-name", sort: (r) => r.name ?? "", render: (r) => <span className="muted">{r.name ?? ""}</span> },
+              {
+                key: "last",
+                label: "Kurs",
+                num: true,
+                sort: (r) => r.last,
+                render: (r) => (
+                  <Flash value={r.last}>
+                    <b>{r.last === null || r.last === undefined ? <span className="muted" title="Keine Kursdaten">n. v.</span> : fmtPrice(r.last, r.ticker)}</b>
+                  </Flash>
+                ),
+              },
+              {
+                key: "chg",
+                label: "1T",
+                num: true,
+                sort: (r) => (r.ticker.endsWith(".GBOND") ? r.change : r.changePct),
+                render: (r) => (r.ticker.endsWith(".GBOND") ? <span className={tone(r.change, 2)}>{fmtBp(r.change)}</span> : <Change value={r.changePct} />),
+              },
+              { key: "m1", label: "1M", num: true, className: "col-opt2", sort: (r) => perf.get(r.ticker)?.m1, render: (r) => perfCell(r.ticker, perf.get(r.ticker)?.m1) },
+              { key: "ytd", label: "YTD", num: true, className: "col-opt1", sort: (r) => perf.get(r.ticker)?.ytd, render: (r) => perfCell(r.ticker, perf.get(r.ticker)?.ytd) },
+              { key: "vol", label: "Volumen", num: true, className: "col-opt1", sort: (r) => r.volume, render: (r) => <span className="muted">{fmtBig(r.volume)}</span> },
+              { key: "time", label: "Stand", num: true, className: "col-opt1", render: (r) => <span className="muted">{fmtStamp(r.timestamp)}</span> },
+              {
+                key: "act",
+                label: "",
+                num: true,
+                render: (r) => {
+                  const i = list.indexOf(r.ticker);
+                  return (
+                    <span className="nowrap" onClick={(e) => e.stopPropagation()}>
+                      <button className="tool" title="Nach oben" disabled={i <= 0} onClick={() => ws.watchMove(r.ticker, -1)}>↑</button>
+                      <button className="tool" title="Nach unten" disabled={i === list.length - 1} onClick={() => ws.watchMove(r.ticker, 1)}>↓</button>
+                      <button className="tool" title="Entfernen" onClick={() => ws.watchRemove(r.ticker)}>×</button>
+                    </span>
+                  );
+                },
+              },
+            ]}
+          />
         )}
       </div>
     </>
   );
+}
+
+/** Veränderung seit einem Monat bzw. Jahresbeginn (Renditen in bp, sonst in %). */
+export function periodChanges(h: History): { m1: number | null; ytd: number | null } {
+  const n = h.t.length;
+  const last = h.c[n - 1];
+  if (!n || !isNum(last)) return { m1: null, ytd: null };
+  const yieldLike = h.ticker.endsWith(".GBOND");
+  const before = (iso: string) => {
+    for (let i = n - 1; i >= 0; i--) if (h.t[i] <= iso && isNum(h.c[i])) return h.c[i] as number;
+    return null;
+  };
+  const chg = (b: number | null) => (b === null ? null : yieldLike ? (last - b) * 100 : b !== 0 ? (last / b - 1) * 100 : null);
+  const lastDate = h.t[n - 1];
+  return { m1: chg(before(shiftMonths(lastDate, 1))), ytd: chg(before(`${Number(lastDate.slice(0, 4)) - 1}-12-31`)) };
+}
+
+function perfCell(ticker: string, v: number | null | undefined) {
+  return ticker.endsWith(".GBOND") ? <span className={tone(v, 0)}>{fmtBp(v, false)}</span> : <Change value={v} />;
 }
 
 // --- HELP -------------------------------------------------------------------------------
@@ -555,10 +638,13 @@ export function HELP(_: ScreenProps) {
           Beispiele: <code className="lbl">{displayTicker(example)} GP</code>, <code className="lbl">{example.split(".")[0]} DES</code>, <code className="lbl">ECO</code>, <code className="lbl">TOP</code>.
         </p>
         <p style={{ margin: "4px 0" }}>
-          Ticker gehen im EODHD-Format (<code>SAP.XETRA</code>) oder wie bei Bloomberg mit Börsenkürzel bzw. gelber Taste (<code>SAP GR</code>, <code>VOD LN</code>,{" "}
-          <code>DAX Index</code>, <code>SPX Index</code>, <code>EURUSD Curncy</code>, <code>US10Y Govt</code>). Ohne Börse wird US angenommen. Unbekannte Ticker werden
-          vor dem Umschalten abgewiesen.
-          Ein Ticker allein wechselt das aktive Wertpapier; alle Aktien-Panels folgen ihm.
+          Ein Wertpapier geben Sie als Kürzel mit Börse ein (<code>SAP GR</code> = Xetra, <code>VOD LN</code> = London; ohne Börse gilt US), Indizes, Devisen und
+          Anleihen mit Zusatz (<code>DAX Index</code>, <code>SPX Index</code>, <code>EURUSD Curncy</code>, <code>US10Y Govt</code>, <code>CL1 Comdty</code>). Auch der
+          Firmenname funktioniert: einfach tippen und einen Vorschlag wählen. Ein Ticker allein wechselt das aktive Wertpapier; alle Aktien-Panels folgen ihm.
+        </p>
+        <p style={{ margin: "4px 0" }}>
+          <b className="lbl">◇ FIX</b> im Panelkopf fixiert ein Panel auf sein Wertpapier – etwa den Index neben der Aktie oder die italienische neben der deutschen
+          Anleihe. Befehle für das aktive, fixierte Panel ändern nur dieses. <b className="lbl">⧉</b> öffnet ein Panel in einem eigenen Fenster für einen weiteren Monitor.
         </p>
       </div>
       <div className="section-title">Tastenkürzel</div>
@@ -566,7 +652,7 @@ export function HELP(_: ScreenProps) {
         <tbody>
           {[
             ["/ oder einfach lostippen", "Befehlszeile"],
-            ["Esc", "Befehlszeile leeren"],
+            ["Esc", "Befehlszeile leeren; sonst Maximieren beenden oder im Panel zurück (z. B. nach HELP)"],
             ["↑ ↓ / Tab", "Vorschläge wählen / übernehmen; ↑ bei leerer Zeile holt frühere Befehle"],
             ["Alt + 1 … 4", "Seite AKTIE, MAKRO, SCREENER, NEWS"],
             ["Alt + ← →", "Aktives Panel wechseln"],

@@ -27,8 +27,8 @@ describe("Zahlenformate (de-DE)", () => {
   it("formatiert mit deutschem Dezimal- und Tausendertrennzeichen", () => {
     expect(fmt(1234567.891, 2)).toBe("1.234.567,89");
     expect(fmtPrice(1.23456)).toBe("1,23");
-    expect(fmtPrice(1.23456, "EURUSD.FOREX")).toBe("1,2346");
-    expect(fmtPrice(156.789, "USDJPY.FOREX")).toBe("156,79");
+    expect(fmtPrice(1.234567, "EURUSD.FOREX")).toBe("1,23457");
+    expect(fmtPrice(156.7891, "USDJPY.FOREX")).toBe("156,789");
     expect(fmtPrice(0.8123)).toBe("0,8123");
     expect(fmtPrice(18250.5)).toBe("18.250,50");
     expect(fmtInt(1234.4)).toBe("1.234");

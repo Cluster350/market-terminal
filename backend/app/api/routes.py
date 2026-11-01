@@ -55,8 +55,22 @@ async def quotes(request: Request, tickers: str = Query(..., description="Kommag
 
 
 @router.get("/history/{ticker}", response_model=History)
-async def history(request: Request, ticker: str):
-    return await T(request).history(normalize(ticker))
+async def history(
+    request: Request,
+    ticker: str,
+    start: Optional[str] = Query(None, alias="from"),
+    end: Optional[str] = Query(None, alias="to"),
+):
+    h = await T(request).history(normalize(ticker))
+    if start is None and end is None:
+        return h
+    # Zeitraum einschränken (vorher wurden from/to stillschweigend ignoriert)
+    lo = _date(start, dt.date(1900, 1, 1)).isoformat()
+    hi = _date(end, dt.date(2200, 1, 1)).isoformat()
+    if lo > hi:
+        raise BadRequest("„from“ liegt nach „to“.")
+    keep = [i for i, d in enumerate(h.t) if lo <= d <= hi]
+    return h.model_copy(update={k: [getattr(h, k)[i] for i in keep] for k in ("t", "o", "h", "l", "c", "v")})
 
 
 @router.get("/intraday/{ticker}", response_model=Intraday)
@@ -94,7 +108,7 @@ async def news(
     offset: int = Query(0, ge=0, le=5000),
     since: Optional[str] = Query(None, max_length=40),
 ):
-    tlist = normalize_list(tickers, limit=10) if tickers else None
+    tlist = normalize_list(tickers, limit=30) if tickers else None
     return await T(request).news(tlist, topic, q, limit, offset, since)
 
 

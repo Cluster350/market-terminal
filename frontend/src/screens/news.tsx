@@ -62,7 +62,7 @@ function NewsRow({ n, selected, read, fresh, onOpen }: { n: NewsItem; selected: 
       className={fresh ? "flash-up" : ""}
       style={{
         display: "grid",
-        gridTemplateColumns: "3px 6.5ch minmax(0, 1fr)",
+        gridTemplateColumns: "3px 12ch minmax(0, 1fr)",
         gap: 8,
         padding: "4px 8px 4px 0",
         borderBottom: "1px solid #161616",
@@ -73,7 +73,8 @@ function NewsRow({ n, selected, read, fresh, onOpen }: { n: NewsItem; selected: 
     >
       <span style={{ alignSelf: "stretch", background: sentimentColor(n.sentiment.polarity) }} title={`Stimmung ${sentimentLabel(n.sentiment.polarity)}`} />
       <span className="muted" title={`${fmtDate(n.date)} ${fmtTime(n.date)}`}>
-        {isToday(n.date) ? fmtTime(n.date) : fmtDate(n.date).slice(0, 6)}
+        {/* Ältere Meldungen mit Datum und Uhrzeit (vorher nur das Datum) */}
+        {isToday(n.date) ? fmtTime(n.date) : `${fmtDate(n.date).slice(0, 6)} ${fmtTime(n.date)}`}
       </span>
       <span style={{ minWidth: 0 }}>
         {n.urgent && <span className="tag urgent" style={{ marginRight: 6 }}>EIL</span>}
@@ -90,7 +91,7 @@ function NewsRow({ n, selected, read, fresh, onOpen }: { n: NewsItem; selected: 
   );
 }
 
-function Reader({ n, onBack, related }: { n: NewsItem; onBack?: () => void; related: NewsItem[] }) {
+function Reader({ n, onBack, related, onOpen }: { n: NewsItem; onBack?: () => void; related: NewsItem[]; onOpen: (id: string) => void }) {
   const link = safeUrl(n.link);
   return (
     <article style={{ padding: "10px 14px", maxWidth: "78ch" }}>
@@ -142,10 +143,10 @@ function Reader({ n, onBack, related }: { n: NewsItem; onBack?: () => void; rela
         <>
           <div className="section-title" style={{ marginTop: 14 }}>Weitere Meldungen zu {displayTicker(n.symbols[0])}</div>
           {related.map((r) => (
-            <div key={r.id} className="small" style={{ padding: "3px 0" }}>
+            <button key={r.id} type="button" className="link-row small" onClick={() => onOpen(r.id)}>
               <span className="muted">{fmtAge(r.date)} </span>
               {r.title}
-            </div>
+            </button>
           ))}
         </>
       )}
@@ -168,7 +169,9 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
     return () => clearTimeout(id);
   }, [search]);
 
-  const effectiveTickers = tickers ?? (scope === "watch" ? ws.state.watchlist.slice(0, 10) : undefined);
+  // Die API nimmt bis zu 30 Ticker je Abfrage (vorher 10 – Werte ab Position 11 fehlten stumm)
+  const effectiveTickers = tickers ?? (scope === "watch" ? ws.state.watchlist.slice(0, WATCH_NEWS_MAX) : undefined);
+  const watchTruncated = !tickers && scope === "watch" && ws.state.watchlist.length > WATCH_NEWS_MAX;
   // Leere Watchlist: Eine leere Tickerliste würde sonst wie "alle Quellen" abgefragt
   const watchEmpty = !tickers && scope === "watch" && !ws.state.watchlist.length;
   const q = useNews({ tickers: effectiveTickers, topic, q: debounced || undefined, limit: 200 }, !watchEmpty);
@@ -253,6 +256,7 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
             onChange={setScope}
           />
         )}
+        {watchTruncated && <span className="small muted">erste {WATCH_NEWS_MAX} Werte</span>}
         <input className="field" placeholder="Suchen …" aria-label="News durchsuchen" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 150 }} />
         <label className="check">
           <input type="checkbox" checked={urgentOnly} onChange={(e) => setUrgentOnly(e.target.checked)} />
@@ -288,13 +292,18 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
         {twoCol && !selected && <Empty>Meldung auswählen (Klick oder ↑/↓), um sie hier zu lesen.</Empty>}
         {selected && (
           <div style={{ overflow: "auto", minHeight: 0 }}>
-            <Reader n={selected} related={related} onBack={twoCol ? undefined : () => setSelectedId(null)} />
+            <Reader n={selected} related={related} onOpen={(id) => {
+              const r = shown.find((x) => x.id === id);
+              if (r) open(r);
+            }} onBack={twoCol ? undefined : () => setSelectedId(null)} />
           </div>
         )}
       </div>
     </>
   );
 }
+
+const WATCH_NEWS_MAX = 30;
 
 export function TOP({ active }: ScreenProps) {
   return <NewsTerminal active={active} />;

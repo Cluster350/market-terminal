@@ -362,8 +362,9 @@ class DemoProvider:
             idio = math.sqrt(max(vol**2 / 252 - (beta * 0.0085) ** 2, 0.006**2))
             alpha = sp[4] / 252 * 0.5 + rng.gauss(0, 0.00025) - beta * 0.00035
             p = rng.uniform(15, 160)
-            for m in mkt:
-                p *= math.exp(beta * m + alpha + idio * rng.gauss(0, 1))
+            shocks = self._earnings_shocks(ticker, days[0], days[-1])
+            for d, m in zip(days, mkt):
+                p *= math.exp(beta * m + alpha + idio * rng.gauss(0, 1) + shocks.get(d, 0.0))
                 closes.append(p)
             day_sigma = vol / math.sqrt(252)
         elif ticker in D.INDEX_PARAMS:
@@ -433,12 +434,23 @@ class DemoProvider:
         l: list[float] = []
         vols: list[Optional[float]] = []
         shares = self._shares(ticker, days, closes) if ticker in _COMPANY else None
+        if ticker not in _COMPANY:
+            shocks = {}
         prev = closes[0]
         for i, c in enumerate(closes):
+            # Eigene Zufallsquelle je Tag: Eröffnung/Hoch/Tief/Volumen eines vergangenen Tages
+            # bleiben gleich, wenn neue Handelstage hinzukommen (vorher verschob sich der Strom)
+            rng = _rng("ohlv", ticker, days[i].toordinal())
+            shock = shocks.get(days[i], 0.0)
             if kind == "yield":
                 op = prev + rng.gauss(0, 0.01)
                 hi = max(op, c) + abs(rng.gauss(0, 0.015))
                 lo = min(op, c) - abs(rng.gauss(0, 0.015))
+            elif shock:
+                # Earnings: Kurslücke zur Eröffnung, der Rest der Reaktion im Tagesverlauf
+                op = prev * math.exp(0.8 * shock + rng.gauss(0, 0.15 * day_sigma))
+                hi = max(op, c) * math.exp(abs(rng.gauss(0, 0.5 * day_sigma)))
+                lo = min(op, c) * math.exp(-abs(rng.gauss(0, 0.5 * day_sigma)))
             else:
                 op = prev * math.exp(rng.gauss(0, 0.15 * day_sigma))
                 hi = max(op, c) * math.exp(abs(rng.gauss(0, 0.5 * day_sigma)))
@@ -448,12 +460,29 @@ class DemoProvider:
             l.append(lo)
             if shares:
                 r = abs(math.log(c / prev)) if prev > 0 and c > 0 else 0.0
-                vols.append(round(shares * 0.004 * math.exp(rng.gauss(0, 0.35)) * (1 + 25 * r)))
+                vols.append(round(shares * 0.004 * math.exp(rng.gauss(0, 0.35)) * (1 + 25 * r) * (2.5 if shock else 1.0)))
             elif ticker in D.INDEX_PARAMS:
                 vols.append(round(2.5e9 * math.exp(rng.gauss(0, 0.25))))
             else:
                 vols.append(None)
             prev = c
+        if ticker in CROSSES:
+            # Eröffnung aus den USD-Paaren, Hoch/Tief innerhalb der Arbitragegrenzen der Paare
+            (a, b) = CROSSES[ticker]
+            sa, sb = self._daily(a), self._daily(b)
+            ia = {d: k for k, d in enumerate(sa["days"])}
+            ib = {d: k for k, d in enumerate(sb["days"])}
+            div = ticker == "EURGBP.FOREX"
+            for i, d in enumerate(days):
+                ka, kb = ia[d], ib[d]
+                oa, ha, la = sa["o"][ka], sa["h"][ka], sa["l"][ka]
+                ob, hb, lb = sb["o"][kb], sb["h"][kb], sb["l"][kb]
+                op = oa / ob if div else oa * ob
+                hi_bound, lo_bound = (ha / lb, la / hb) if div else (ha * hb, la * lb)
+                c = closes[i]
+                o[i] = op
+                h[i] = max(min(h[i], hi_bound), op, c)
+                l[i] = min(max(l[i], lo_bound), op, c)
         result = {"days": days, "o": o, "h": h, "l": l, "c": closes, "v": vols, "sigma": day_sigma, "kind": kind}
         # Cache klein halten: nur Einträge des aktuellen Tages behalten
         if len(self._daily_cache) > 400:
@@ -472,10 +501,14 @@ class DemoProvider:
 
     def _session_bounds(self, ticker: str, day: dt.date) -> tuple[dt.datetime, dt.datetime]:
         """Handelszeit in lokaler Börsenzeit -> UTC (berücksichtigt Sommerzeit)."""
-        tzname, (sh, sm), (eh, em) = D.SESSIONS[self.session_group(ticker)]
+        group = self.session_group(ticker)
+        tzname, (sh, sm), (eh, em) = D.SESSIONS[group]
         tz = ZoneInfo(tzname)
         start = dt.datetime(day.year, day.month, day.day, sh, sm, tzinfo=tz).astimezone(UTC)
         end = dt.datetime(day.year, day.month, day.day, eh, em, tzinfo=tz).astimezone(UTC)
+        if group == "fx" and day.weekday() == 4:
+            # Devisen: Wochenschluss freitags 17:00 New York (nicht 23:55 UTC)
+            end = dt.datetime(day.year, day.month, day.day, 17, 0, tzinfo=ZoneInfo("America/New_York")).astimezone(UTC)
         return start, end
 
     def _bars(self, ticker: str, day_index: int) -> list[tuple[int, float, float, float, float, float]]:
@@ -554,6 +587,7 @@ class DemoProvider:
         # Hoch/Tief der letzten Tage an die Intraday-Pfade anpassen
         for i in range(max(0, last - 4), last + 1):
             bars = self._bars(ticker, i)
+            o[i] = bars[0][1]  # sonst lag die Eröffnung aus der Tagesreihe teils über dem Intraday-Hoch
             h[i] = max(b[2] for b in bars)
             l[i] = min(b[3] for b in bars)
         if days[last] == self.now().date():
@@ -661,13 +695,13 @@ class DemoProvider:
                 Quote(
                     ticker=t,
                     name=self.name(t),
-                    last=round(last, 4),
-                    change=round(change, 4),
+                    last=round(last, 5),
+                    change=round(change, 5),
                     change_pct=round(pct(last, prev) or 0.0, 4) if e["kind"] == "price" else None,
-                    open=round(e["o"][-1], 4),
-                    high=round(e["h"][-1], 4),
-                    low=round(e["l"][-1], 4),
-                    prev_close=round(prev, 4),
+                    open=round(e["o"][-1], 5),
+                    high=round(e["h"][-1], 5),
+                    low=round(e["l"][-1], 5),
+                    prev_close=round(prev, 5),
                     volume=round(e["v"][-1]) if e["v"][-1] is not None else None,
                     timestamp=ts.isoformat().replace("+00:00", "Z"),
                     delayed=False,
@@ -679,7 +713,7 @@ class DemoProvider:
     async def history(self, ticker: str) -> History:
         self._require(ticker)
         e = self._effective(ticker)
-        r = lambda xs: [None if x is None else round(x, 4) for x in xs]
+        r = lambda xs: [None if x is None else round(x, 5) for x in xs]
         return History(
             ticker=ticker,
             currency=self.currency(ticker),
@@ -706,10 +740,10 @@ class DemoProvider:
         for i in reversed(sessions):
             for ts, bo, bh, bl, bc, bv in self._visible_bars(ticker, i):
                 out.t.append(ts)
-                out.o.append(round(bo, 4))
-                out.h.append(round(bh, 4))
-                out.l.append(round(bl, 4))
-                out.c.append(round(bc, 4))
+                out.o.append(round(bo, 5))
+                out.h.append(round(bh, 5))
+                out.l.append(round(bl, 5))
+                out.c.append(round(bc, 5))
                 out.v.append(round(bv) if series["v"][i] is not None else None)
         return out
 
@@ -724,6 +758,48 @@ class DemoProvider:
         while d.weekday() >= 5:
             d += dt.timedelta(days=1)
         return d, r.choice(["BeforeMarket", "AfterMarket"])
+
+    @staticmethod
+    def _eps_surprise(ticker: str, quarter_end: dt.date) -> float:
+        """EPS-Überraschung in % (unabhängig vom Kursverlauf, damit Kurs und ERN sie teilen)."""
+        return _rng("eps", ticker, quarter_end.isoformat()).gauss(4.0, 6.0)
+
+    @staticmethod
+    def _guidance(ticker: str, report_day: dt.date, beat: bool) -> Optional[str]:
+        """Prognoseänderung mit dem Bericht: "up", "confirm", "down" oder None."""
+        r = _rng("guide", ticker, report_day.isoformat())
+        if r.random() >= 0.5:
+            return None
+        return "up" if beat and r.random() < 0.7 else "confirm" if beat else "down"
+
+    @classmethod
+    def _consensus(cls, ticker: str, quarter_end: dt.date, actual_eps: float) -> float:
+        """Konsensschätzung, aus der das Ist-EPS mit der Überraschung des Quartals hervorgeht."""
+        s = cls._eps_surprise(ticker, quarter_end) / 100
+        return actual_eps / (1 + s) if actual_eps > 0 else actual_eps * (1 + s)
+
+    def _earnings_shocks(self, ticker: str, first: dt.date, last: dt.date) -> dict[dt.date, float]:
+        """Log-Kurssprung am Reaktionstag je Bericht: Überraschung und Prognose bewegen den Kurs.
+        Vorbörsliche Berichte wirken am Berichtstag, nachbörsliche am nächsten Handelstag."""
+        out: dict[dt.date, float] = {}
+        y, q = first.year - 1, 1
+        while True:
+            end = [dt.date(y, 3, 31), dt.date(y, 6, 30), dt.date(y, 9, 30), dt.date(y, 12, 31)][q - 1]
+            rep, timing = self._report_date(ticker, end)
+            if rep > last:
+                break
+            day = rep if timing == "BeforeMarket" else rep + dt.timedelta(days=1)
+            while day.weekday() >= 5:
+                day += dt.timedelta(days=1)
+            surprise = self._eps_surprise(ticker, end)
+            guide = self._guidance(ticker, rep, surprise >= 0)
+            r = _rng("reaction", ticker, end.isoformat())
+            jump = 0.0045 * (surprise - 3.0) + {"up": 0.02, "down": -0.035}.get(guide or "", 0.0) + r.gauss(0, 0.015)
+            out[day] = max(-0.25, min(0.25, jump))
+            q += 1
+            if q == 5:
+                q, y = 1, y + 1
+        return out
 
     def _release_time(self, ticker: str, day: dt.date, timing: Optional[str]) -> dt.datetime:
         """Veröffentlichung: vorbörslich 75 Min. vor Handelsbeginn, sonst 10 Min. nach Schluss."""
@@ -756,6 +832,26 @@ class DemoProvider:
         last_fy = next(e.year for e in quarters if e.month == 12)
         years = [dt.date(last_fy - k, 12, 31) for k in range(6)]
         return years, quarters
+
+    _BENCHMARKS = {"US": "GSPC.INDX", "XETRA": "GDAXI.INDX", "PA": "FCHI.INDX", "LSE": "FTSE.INDX",
+                   "SW": "SSMI.INDX", "AS": "STOXX50E.INDX"}
+
+    def _realized_beta(self, ticker: str) -> Optional[float]:
+        """Beta aus der Kurshistorie (1 Jahr, Tagesrenditen gegen den Heimatindex) – so passt die
+        Kennzahl in DES zum Chart, statt aus einem Sektorwert geschätzt zu sein."""
+        bench = self._BENCHMARKS.get(ticker.rpartition(".")[2], "GSPC.INDX")
+        s, b = self._daily(ticker), self._daily(bench)
+        cutoff = s["days"][-1] - dt.timedelta(days=365)
+        mb = dict(zip(b["days"], b["c"]))
+        pairs = [(c, mb[d]) for d, c in zip(s["days"], s["c"]) if d >= cutoff and d in mb]
+        rs = [math.log(pairs[k][0] / pairs[k - 1][0]) for k in range(1, len(pairs))]
+        rb = [math.log(pairs[k][1] / pairs[k - 1][1]) for k in range(1, len(pairs))]
+        if len(rs) < 60:
+            return None
+        mr, mbr = sum(rs) / len(rs), sum(rb) / len(rb)
+        cov = sum((x - mr) * (y - mbr) for x, y in zip(rs, rb))
+        var = sum((y - mbr) ** 2 for y in rb)
+        return round(cov / var, 2) if var else None
 
     def _fundamentals_raw(self, ticker: str) -> dict:
         self._require(ticker)
@@ -863,13 +959,31 @@ class DemoProvider:
             if qn == 5:
                 qn, y = 1, y + 1
 
+        def quarter_net(end: dt.date) -> float:
+            """Nettoergebnis eines Quartals – auch eines noch nicht berichteten (Konsens, Dividende)."""
+            r = _rng("fq", ticker, end.isoformat())
+            rev = level(end.year) / 4 * season[(end.month - 1) // 3] * r.uniform(0.97, 1.03)
+            return income(rev, r)["netIncome"]
+
+        @lru_cache(maxsize=None)
+        def dps_of(year: int) -> float:
+            """Dividende je Aktie für ``year`` aus dem Gewinn des Vorjahres. Fest je Jahr: früher
+            hing sie am aktuellen TTM-EPS, und mit jedem Bericht änderte sich die ganze Historie."""
+            prior = sum(quarter_net(dt.date(year - 1, m, d)) for m, d in ((3, 31), (6, 30), (9, 30), (12, 31)))
+            return max(prior, 0.0) * payout / shares
+
+        def dividends_paid(end: dt.date) -> float:
+            # US: vierteljährlich; Europa: einmal im Jahr nach der Hauptversammlung (Q2)
+            if exch == "US":
+                return dps_of(end.year) / 4 * shares
+            return dps_of(end.year) * shares if end.month == 6 else 0.0
+
         q_data: dict[dt.date, tuple[dict[str, float], dict[str, float], dict[str, float]]] = {}
         for end in all_quarters:
             r = _rng("fq", ticker, end.isoformat())
             rev = level(end.year) / 4 * season[(end.month - 1) // 3] * r.uniform(0.97, 1.03)
             inc = income(rev, r)
-            divs = max(inc["netIncome"], 0) * payout
-            q_data[end] = (inc, balance(rev * 4, r), cashflow(inc, r, divs))
+            q_data[end] = (inc, balance(rev * 4, r), cashflow(inc, r, dividends_paid(end)))
 
         q_inc: dict[str, Any] = {}
         q_bal: dict[str, Any] = {}
@@ -910,13 +1024,16 @@ class DemoProvider:
         assets = float(bal_latest["totalAssets"])
         net_debt = float(bal_latest["netDebt"])
         ev = mcap + net_debt
-        dps = max(eps_ttm, 0) * payout
+        dps = dps_of(self.today().year)  # indizierte Jahresdividende
         eps_cy = eps_ttm * (1 + growth * 0.5)
         eps_ny = eps_cy * (1 + growth)
 
         hist_closes = self._daily(ticker)["c"]
         tech_hi, tech_lo = metrics.window_high_low([d.isoformat() for d in series["days"]], series["h"], series["l"])
-        target = price * rng.uniform(0.95, 1.30)
+        # Kursziel nach dem letzten Bericht festgelegt, nicht täglich mit dem Kurs mitlaufend
+        last_report = self._report_date(ticker, quarters[0])[0]
+        ref = next((c for d, c in zip(reversed(series["days"]), reversed(series["c"])) if d <= last_report), price)
+        target = ref * rng.uniform(0.95, 1.30)
         n_analysts = rng.randint(6, 38)
         mood = rng.uniform(-0.3, 1.0)
         sb = int(n_analysts * max(0.0, 0.25 + 0.25 * mood))
@@ -929,10 +1046,10 @@ class DemoProvider:
 
         earnings_hist: dict[str, Any] = {}
         for q in quarters[:8]:
-            r = _rng("eps", ticker, q.isoformat())
             actual = q_net[q] / shares
-            surprise = r.gauss(4.0, 6.0)
-            est = actual / (1 + surprise / 100) if actual > 0 else actual * (1 + surprise / 100)
+            surprise = self._eps_surprise(ticker, q)
+            # Konsens vor und nach dem Bericht identisch (früher wurde er beim Bericht ersetzt)
+            est = self._consensus(ticker, q, actual)
             rep, timing = self._report_date(ticker, q)
             earnings_hist[q.isoformat()] = {
                 "reportDate": rep.isoformat(), "date": q.isoformat(),
@@ -947,7 +1064,7 @@ class DemoProvider:
         next_rep, next_timing = self._report_date(ticker, nq)
         earnings_hist[nq.isoformat()] = {
             "reportDate": next_rep.isoformat(), "date": nq.isoformat(), "beforeAfterMarket": next_timing,
-            "currency": cur, "epsActual": None, "epsEstimate": round(q_net[quarters[0]] / shares * (1 + growth / 4), 4),
+            "currency": cur, "epsActual": None, "epsEstimate": round(self._consensus(ticker, nq, quarter_net(nq) / shares), 4),
             "epsDifference": None, "surprisePercent": None,
         }
 
@@ -997,7 +1114,7 @@ class DemoProvider:
                 "EnterpriseValueEbitda": round(ev / ebitda_ttm, 2) if ebitda_ttm > 0 else None,
             },
             "Technicals": {
-                "Beta": round(D.SECTORS[sector][8] * _rng("series", ticker).uniform(0.8, 1.2), 2),
+                "Beta": self._realized_beta(ticker),
                 "52WeekHigh": round(tech_hi, 2) if tech_hi else None, "52WeekLow": round(tech_lo, 2) if tech_lo else None,
                 "50DayMA": round(metrics.sma(hist_closes, 50) or 0, 2), "200DayMA": round(metrics.sma(hist_closes, 200) or 0, 2),
             },
@@ -1015,7 +1132,10 @@ class DemoProvider:
                 "Balance_Sheet": {"currency_symbol": cur, "yearly": yearly_bal, "quarterly": q_bal},
                 "Cash_Flow": {"currency_symbol": cur, "yearly": yearly_cf, "quarterly": q_cf},
             },
-            "_meta": {"payer": payer, "dps": dps, "growth": growth, "shares": shares},
+            "_meta": {
+                "payer": payer, "dps": dps, "growth": growth, "shares": shares,
+                "dps_by_year": {y: dps_of(y) for y in range(self.today().year - 10, self.today().year + 1)},
+            },
         }
         if len(self._fund_cache) > 200:
             self._fund_cache.clear()
@@ -1040,7 +1160,7 @@ class DemoProvider:
         if meta["payer"] and meta["dps"] > 0:
             today = self.today()
             for year in range(today.year - 10, today.year + 1):
-                annual = meta["dps"] / (1 + max(meta["growth"], 0.02)) ** (today.year - year)
+                annual = meta["dps_by_year"][year]
                 if exch == "US":
                     dates = [dt.date(year, m, 10) for m in (2, 5, 8, 11)]
                     per = annual / 4
@@ -1145,9 +1265,9 @@ class DemoProvider:
                 urgent=abs(surprise) >= 5,
             )
         ]
-        r = _rng("guide", ticker, day.isoformat())
-        if r.random() < 0.5:
-            up = beat and r.random() < 0.7
+        guide = self._guidance(ticker, day, beat)
+        if guide is not None:
+            up = guide == "up"
             items.append(
                 NewsItem(
                     id=ident + "g",
@@ -1336,7 +1456,7 @@ class DemoProvider:
     # --- Makro -------------------------------------------------------------------------
 
     _EVENTS: list[tuple[str, str, str, tuple, str, Optional[str], float, float, float]] = [
-        # Land, Ereignis, Uhrzeit UTC, Regel, Einheit-Kürzel, Einheit, Basis, Streuung, Trend/Jahr
+        # Land, Ereignis, Uhrzeit UTC (Sommerzeit; im Winter folgt die Ortszeit), Regel, Einheit-Kürzel, Einheit, Basis, Streuung, Trend/Jahr
         ("US", "Initial Jobless Claims", "12:30", ("weekday", 3), "K", "K", 225, 12, 0),
         ("US", "Nonfarm Payrolls", "12:30", ("nth", 1, 4), "K", "K", 170, 60, 0),
         ("US", "Unemployment Rate", "12:30", ("nth", 1, 4), "%", "%", 4.0, 0.15, 0.05),
@@ -1478,6 +1598,18 @@ class DemoProvider:
         digits = 0 if abs(base) >= 50 and spread >= 1 else 1 if abs(base) >= 5 else 2
         return round(actual, digits), round(estimate, digits), round(previous, digits)
 
+    _EVENT_TZ = {"US": "America/New_York", "DE": "Europe/Berlin", "EU": "Europe/Berlin", "GB": "Europe/London",
+                 "JP": "Asia/Tokyo", "CN": "Asia/Shanghai"}
+
+    @classmethod
+    def _event_time(cls, country: str, d: dt.date, hh: int, mm: int) -> dt.datetime:
+        """Termin in UTC. Die Tabelle nennt UTC-Zeiten im Sommer; veröffentlicht wird zur festen
+        Ortszeit (NFP 08:30 New York), im Winter also eine Stunde später in UTC."""
+        tz = ZoneInfo(cls._EVENT_TZ.get(country, "UTC"))
+        summer = dt.datetime(d.year, 7, 1, tzinfo=tz).utcoffset() or dt.timedelta(0)
+        local = dt.datetime(d.year, d.month, d.day, hh, mm) + summer
+        return local.replace(tzinfo=tz).astimezone(UTC)
+
     def _calendar_day(self, d: dt.date) -> list[EconEvent]:
         out: list[EconEvent] = []
         now = self.now()
@@ -1485,11 +1617,11 @@ class DemoProvider:
             if not self._matches(rule, d):
                 continue
             hh, mm = (int(x) for x in time.split(":"))
-            when = dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=UTC)
+            when = self._event_time(country, d, hh, mm)
             freq, idx, period = self._event_period(name, rule, d, country)
             actual, estimate, previous = self._event_value(country, name, base, spread, freq, idx, d)
             released = when <= now
-            if not released and self._previous_release(rule, d, when) > now:
+            if not released and self._previous_release(rule, d, country, hh, mm) > now:
                 # Vorperiode noch nicht veröffentlicht: Vorwert ist noch unbekannt
                 previous = None
             ident = hashlib.sha1(f"{country}|{name}|{d}".encode()).hexdigest()[:16]
@@ -1510,14 +1642,15 @@ class DemoProvider:
             )
         return out
 
-    def _previous_release(self, rule: tuple, d: dt.date, when: dt.datetime) -> dt.datetime:
-        """Zeitpunkt der vorherigen Veröffentlichung derselben Statistik."""
+    def _previous_release(self, rule: tuple, d: dt.date, country: str, hh: int, mm: int) -> dt.datetime:
+        """Zeitpunkt der vorherigen Veröffentlichung derselben Statistik (mit deren Ortszeit,
+        über eine Zeitumstellung hinweg also nicht einfach eine Woche früher in UTC)."""
         x = d - dt.timedelta(days=1)
         for _ in range(130):
             if self._matches(rule, x):
-                return when - dt.timedelta(days=(d - x).days)
+                return self._event_time(country, x, hh, mm)
             x -= dt.timedelta(days=1)
-        return when - dt.timedelta(days=365)
+        return self._event_time(country, d - dt.timedelta(days=365), hh, mm)
 
     async def calendar(self, start: dt.date, end: dt.date, country: Optional[str]) -> list[EconEvent]:
         out: list[EconEvent] = []
