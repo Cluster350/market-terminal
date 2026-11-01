@@ -330,6 +330,8 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       };
     }
     case "resetPage":
+      // Einzelfunktions-Fenster haben keine Seite mit mehreren Panels
+      if (isSolo(s.window)) return s;
       return {
         ...s,
         pages: { ...s.pages, [s.page]: structuredClone(PAGE_DEFAULTS[s.page]) },

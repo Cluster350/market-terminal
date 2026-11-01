@@ -1,6 +1,6 @@
 // Kopfzeile, Laufband, Panel-Raster und Statusleiste.
 
-import { Component, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { dataHealth, IS_STATIC } from "../lib/api";
 import { FN, FUNCTIONS, type FnCode } from "../lib/commands";
 import { displayTicker, fmt, fmtBp, fmtPct, fmtPrice, fmtTime, tone } from "../lib/format";
@@ -9,6 +9,84 @@ import { SCREENS } from "../screens";
 import { isSolo, LAYOUTS, openWindow, PAGES, useWorkspace } from "../state/workspace";
 import { useNow } from "../components/ui";
 import { CommandLine } from "./CommandLine";
+import { resetAndReload } from "../lib/reset";
+
+/** Knopf "⟲ STANDARD": Seite, Ansicht oder alles auf den Auslieferungszustand zurücksetzen. */
+function ResetMenu() {
+  const ws = useWorkspace();
+  const [open, setOpen] = useState(false);
+  const [confirmAll, setConfirmAll] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const solo = isSolo(ws.state.window);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  return (
+    <div
+      className="reset-wrap"
+      ref={boxRef}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation(); // nur das Menü schließen, nicht im Panel zurückgehen
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="key small-key"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        title="Auf Standard zurücksetzen"
+        onClick={() => {
+          setOpen((o) => !o);
+          setConfirmAll(false);
+        }}
+      >
+        ⟲ <span className="wt-label">STANDARD</span>
+      </button>
+      {open && (
+        <div className="reset-menu" role="menu">
+          {!solo && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                ws.resetPage();
+                setOpen(false);
+              }}
+            >
+              <b>Diese Seite</b>
+              <span>Layout und Panels dieser Seite wie bei der Auslieferung</span>
+            </button>
+          )}
+          <button type="button" role="menuitem" onClick={() => resetAndReload("view")}>
+            <b>Ganze Ansicht</b>
+            <span>Alle Seiten, Fenster, Chart- und Filtereinstellungen. Watchlist und gespeicherte Screens bleiben.</span>
+          </button>
+          {!confirmAll ? (
+            <button type="button" role="menuitem" onClick={() => setConfirmAll(true)}>
+              <b>Alles (Werkszustand)</b>
+              <span>Zusätzlich Watchlist, gespeicherte Screens, Befehlsverlauf und gelesene Meldungen</span>
+            </button>
+          ) : (
+            <button type="button" role="menuitem" className="danger" onClick={() => resetAndReload("all")} autoFocus>
+              <b>Wirklich alles zurücksetzen?</b>
+              <span>Klicken zum Bestätigen. Weitere Terminal-Fenster vorher schließen.</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const MARKETS: { label: string; tz: string; open: [number, number]; close: [number, number] }[] = [
   { label: "NY", tz: "America/New_York", open: [9, 30], close: [16, 0] },
@@ -94,6 +172,7 @@ function WindowTools() {
       >
         {ws.state.linked ? "◆ LINK" : "◇ LINK"}
       </button>
+      <ResetMenu />
       {blocked && <span className="small down">Pop-up blockiert – bitte im Browser erlauben.</span>}
     </div>
   );

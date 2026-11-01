@@ -82,6 +82,10 @@ Kursfunktionen; Panels ohne Planabdeckung zeigen eine klare Meldung.
   Firmennamen („northwind“) und deutsche Wörter („watchlist“, „kurschart“, „dividende“) gehen
   ebenfalls. Unbekannte Ticker werden mit Vorschlägen abgewiesen, Tippfehler bei Funktionen
   erkannt (`HLEP` → HELP), ↑ holt frühere Befehle zurück.
+- **Gespeichert wird automatisch** (im Browser): Watchlist, Layouts, Panels, Chart- und
+  Filtereinstellungen bleiben nach dem Schließen erhalten. **⟲ STANDARD** oben setzt wahlweise
+  die aktuelle Seite, die ganze Ansicht (Watchlist bleibt) oder alles auf den Auslieferungszustand
+  zurück.
 - **Alt+1–4** Seiten · **Alt+←/→** aktives Panel · **Alt+M** Panel maximieren · **Alt+L** Layout ·
   **Esc** Maximieren beenden bzw. im Panel zurück (z. B. nach HELP).
 - **Chart (GP):** Zeiträume 1T–MAX (Rendite gegen den Schluss vor Periodenbeginn), SMA 20/50/200,

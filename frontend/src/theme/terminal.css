@@ -534,3 +534,35 @@ table.t { width: 100%; border-collapse: collapse; }
 .tool.pinned { color: var(--key); }
 .has-tip { text-decoration: underline dotted rgba(143, 143, 143, 0.6); text-underline-offset: 3px; cursor: help; }
 .field.invalid { border-color: var(--down); color: var(--down); }
+
+/* Menü "⟲ STANDARD" */
+.reset-wrap { position: relative; }
+.reset-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  background: #0d0d0d;
+  border: 1px solid var(--label);
+  display: flex;
+  flex-direction: column;
+}
+.reset-menu button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  padding: 7px 10px;
+  color: var(--value);
+  cursor: pointer;
+}
+.reset-menu button:last-child { border-bottom: 0; }
+.reset-menu button:hover, .reset-menu button:focus-visible { background: var(--select); outline: none; }
+.reset-menu button b { color: var(--label); font-weight: 600; }
+.reset-menu button span { color: var(--muted); font-size: var(--fs-xs); line-height: 1.35; white-space: normal; }
+.reset-menu button.danger b { color: var(--down); }

@@ -652,6 +652,7 @@ export function HELP(_: ScreenProps) {
             ["Alt + ← →", "Aktives Panel wechseln"],
             ["Alt + M", "Aktives Panel maximieren"],
             ["Alt + L", "Layout der Seite wechseln (1, 2, 3 oder 4 Panels)"],
+            ["⟲ STANDARD (oben)", "Seite, ganze Ansicht oder alles auf den Auslieferungszustand zurücksetzen"],
             ["↑ ↓ (im aktiven News-Panel)", "Meldungen durchblättern"],
           ].map(([k, v]) => (
             <tr key={k}>
