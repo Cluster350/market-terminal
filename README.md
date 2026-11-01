@@ -27,6 +27,30 @@ neben der Aktie oder BTP neben Bund. Befehle für das aktive, fixierte Panel än
 (Datenquelle, Indizes, Watchlist, Kalender, News); eine Taste überspringt es, bei „Bewegung
 reduzieren“ entfällt es.
 
+## Schnellstart unter Windows (ohne Vorkenntnisse)
+
+Einmalig vorbereiten:
+1. **Python** installieren: https://www.python.org/downloads/ – im Installer unten
+   **„Add python.exe to PATH“** anhaken.
+2. **Node.js** (LTS-Version) installieren: https://nodejs.org/ – einfach durchklicken.
+3. Dieses Projekt herunterladen: auf GitHub grüner Knopf **„Code“ → „Download ZIP“**,
+   ZIP-Datei entpacken (Rechtsklick → „Alle extrahieren“).
+
+Starten:
+4. Im entpackten Ordner **`Start-Windows.bat`** doppelklicken. Der erste Start richtet alles
+   ein und dauert einige Minuten; danach öffnet sich das Terminal im Browser
+   (http://127.0.0.1:8000). Warnt Windows („Der Computer wurde durch Windows geschützt“),
+   auf „Weitere Informationen“ → „Trotzdem ausführen“ klicken.
+5. Zum Beenden das schwarze Fenster schließen.
+
+Echte Daten statt Demo:
+6. Die Datei **`.env`** im Ordner mit dem Editor öffnen (Rechtsklick → „Öffnen mit“ → Editor),
+   hinter `EODHD_API_KEY=` den Schlüssel von eodhd.com eintragen, speichern.
+7. **`EODHD-pruefen-Windows.bat`** doppelklicken: prüft, ob alle Datenarten ankommen.
+8. Terminal neu starten (Schritt 4).
+
+Mac/Linux: im Terminal in den Projektordner wechseln und `./start.sh` ausführen.
+
 ## Starten
 
 ```bash
