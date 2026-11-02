@@ -9,7 +9,7 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 | **2 MAKRO** | WEI · GC · ECO · FX | Weltindizes, Zinskurven, Wirtschaftskalender, Devisen |
 | **3 SCREENER** | EQS · IMAP · MOST | Aktien-Screener, Markt-Heatmap, Top-Bewegungen |
 | **4 NEWS** | TOP · BRIEF · ASK | News-Terminal mit KI-Einordnung, Morgenbriefing, KI-Assistent |
-| **5 DEPOT** | PORT · RISK | Eigenes Depot: Wert, Ergebnis, Aufteilung; Risiko mit Schwankung, Beta, VaR, Korrelationen |
+| **5 DEPOT** | PORT · RISK | Eigenes Depot: Wert, Ergebnis, Aufteilung; Risiko mit Schwankung, Beta, VaR, Korrelationen; dazu ALRT (Kursalarme) |
 
 Jedes Panel kann über sein Auswahlfeld oder die Befehlszeile jede Funktion zeigen; das Layout
 jeder Seite ist umschaltbar (1, 2, 3 oder 4 Panels). Weitere Funktionen: HP (Kurshistorie),
@@ -82,6 +82,25 @@ Gespeichert wird das Depot auf dem eigenen Rechner im Benutzerordner unter `.mar
 Es bleibt deshalb auch bei einer neuen Programmversion und nach „⟲ STANDARD“ erhalten. Im
 Demo-Modus startet ein Muster-Depot zum Ausprobieren. Der KI-Assistent kann das Depot lesen
 („Wie riskant ist mein Depot?“), aber nicht verändern.
+
+## Kursmarken und Alarme (ALRT)
+
+- **Im Chart (GP):** „＋ Marke“ drücken und in den Chart auf die gewünschte Höhe klicken. Die
+  Linie erscheint sofort, mit Alarm (🔔). Liegt die Marke über dem Kurs, meldet sie sich beim
+  Steigen darüber, sonst beim Fallen darunter. Unter dem Chart stehen alle Marken des Werts:
+  🔔/🔕 schaltet den Alarm an oder aus (die Linie bleibt), ↻ schaltet einen ausgelösten Alarm
+  wieder scharf, × löscht. Esc bricht das Setzen ab.
+- **In ALRT:** Alarme anlegen („Kurs steigt über“, „Kurs fällt unter“, „Tagesplus/Tagesminus ab
+  %“, „Kursmarke ohne Alarm“), mit Notiz. Die Liste zeigt Kurs, Abstand zur Marke und wann ein
+  Alarm ausgelöst hat; darunter das Protokoll aller Auslösungen.
+- **Meldung:** Der Server prüft im Hintergrund (Demo alle 15 s, EODHD jede Minute, einstellbar
+  mit `ALERT_INTERVAL_SECONDS`), solange das schwarze Fenster offen ist. Ein ausgelöster Alarm
+  erscheint unten rechts mit Ton, auf Wunsch auch als Windows-Benachrichtigung („Desktop-Hinweise
+  erlauben“ in ALRT). Er meldet sich einmal und steht dann auf „ausgelöst“, bis man ihn wieder
+  scharf schaltet. In der Statusleiste steht, wie viele Alarme scharf sind.
+- Gespeichert wird wie das Depot im Benutzerordner (`.market-terminal\alarme-eodhd.json`).
+  Jede Prüfung kostet bei EODHD je Wert mit scharfem Alarm einen API-Call; die Kurse sind meist
+  15–20 Minuten verzögert.
 
 ## KI-Helfer mit LM Studio
 
@@ -193,6 +212,8 @@ EODHD API                                  LM Studio (http://localhost:1234/v1)
   aus einem zweiten Fenster), `analytics.py` (Wert, Ergebnis, Währungsumrechnung über die
   Devisenkurse, Risiko per historischer Simulation, Muster-Depot). Endpunkte `/api/portfolio`
   und `/api/portfolio/analytics`.
+- `backend/app/alerts/service.py` – Kursalarme: Datei, Prüfschleife im Hintergrund, einmaliges
+  Auslösen mit Protokoll; Endpunkte `/api/alerts`.
 
 ## Datenqualität im Demo-Modus
 

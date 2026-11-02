@@ -67,6 +67,9 @@ class Settings:
         default_factory=lambda: os.environ.get("PORTFOLIO_DIR", "").strip() or str(Path.home() / ".market-terminal")
     )
 
+    # Kursalarme: Prüfabstand in Sekunden (0 = automatisch: Demo 15 s, EODHD 60 s)
+    alert_interval: int = field(default_factory=lambda: max(0, _int("ALERT_INTERVAL_SECONDS", 0)))
+
     @property
     def mode(self) -> str:
         """Ohne Key läuft das Terminal immer im Demo-Modus."""

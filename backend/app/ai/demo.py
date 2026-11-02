@@ -309,6 +309,7 @@ _STOP = {
 _ABOUT_SECURITY = re.compile(r"aktie|\bwert\b|papier|titel|kurs|bewert|kgv|news|nachricht|meldung|quartal|zahlen|dividende|peers|vergleich|entwicklung|analyst")
 _CAL = re.compile(r"termin|kalender|konjunktur|notenbank|\bfed\b|\bezb\b|zinsentscheid|inflation|arbeitsmarkt")
 _MARKETS = re.compile(r"märkte|marktüberblick|indizes|wie läuft der markt|wie laufen die märkte|börse heute")
+_ALERTS = re.compile(r"alarm|kursmarke|marken\b|benachrichtig")
 _DEPOT = re.compile(r"depot|portfolio|meine positionen|meine werte|mein risiko|klumpenrisiko")
 _EARN_CAL = re.compile(r"(wer|welche).*(quartalszahlen|berichtet|earnings)|earnings.?kalender|berichtssaison")
 
@@ -355,7 +356,17 @@ async def ask(t: Terminal, req: AskRequest) -> AskResult:
         return res
 
     lines: list[str] = []
-    if _DEPOT.search(q):
+    if _ALERTS.search(q):
+        res = await call("alarme", {})
+        rows = res.get("alarme") or []
+        armed = [r for r in rows if r["status"] == "scharf"]
+        lines.append(f"Sie haben {len(rows)} Alarme und Marken, davon {len(armed)} scharf." if rows else "Es sind keine Alarme eingerichtet. Anlegen in ALRT oder im Chart (GP) mit „＋ Marke“.")
+        for r in armed[:6]:
+            dist = f" (Abstand {pct(r['abstand_prozent'])})" if r.get("abstand_prozent") is not None else ""
+            lines.append(f"- {display(r['ticker'])} {r['bedingung']}{dist}")
+        for e in (res.get("zuletzt_ausgeloest") or [])[:3]:
+            lines.append(f"- Ausgelöst: {e['meldung']}")
+    elif _DEPOT.search(q):
         res = await call("depot", {})
         if "fehler" in res or "hinweis" in res:
             lines.append(res.get("fehler") or res.get("hinweis"))

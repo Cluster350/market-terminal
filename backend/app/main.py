@@ -18,7 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .ai.service import AIService
+from .alerts.service import AlertService
 from .api.ai_routes import router as ai_router
+from .api.alert_routes import router as alert_router
 from .api.portfolio_routes import current_portfolio, router as portfolio_router
 from .api.routes import router
 from .cache import TTLCache
@@ -74,9 +76,13 @@ def create_app(
         app.state.ai = AIService(cfg, app.state.terminal, prov.mode, transport=llm_transport)
         app.state.portfolio = PortfolioStore(cfg.portfolio_dir, prov.mode)
         app.state.terminal.portfolio_source = lambda: current_portfolio(app)
+        app.state.alerts = AlertService(app.state.terminal, cfg.portfolio_dir, prov.mode, cfg.alert_interval)
+        app.state.terminal.alerts_source = app.state.alerts.view
+        app.state.alerts.start()
         app.state.ai.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
         yield
+        await app.state.alerts.close()
         await app.state.ai.close()
         await prov.close()
 
@@ -121,6 +127,7 @@ def create_app(
     app.include_router(router)
     app.include_router(ai_router)
     app.include_router(portfolio_router)
+    app.include_router(alert_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

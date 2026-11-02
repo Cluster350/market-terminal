@@ -5,6 +5,7 @@ import { FOCUS_EVENT } from "./shell/CommandLine";
 import { LAYOUTS, PAGES, useWorkspace } from "./state/workspace";
 import { Boot, shouldBoot } from "./shell/Boot";
 import { isTextEntry } from "./lib/keys";
+import { AlertCenter } from "./shell/AlertCenter";
 
 export default function App() {
   const ws = useWorkspace();
@@ -81,6 +82,7 @@ export default function App() {
       <TickerTape />
       <PanelGrid />
       <StatusBar />
+      <AlertCenter />
     </div>
   );
 }

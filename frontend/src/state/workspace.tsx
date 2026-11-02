@@ -32,11 +32,11 @@ export interface PageDef {
 }
 
 export const PAGES: PageDef[] = [
-  { id: "equity", label: "AKTIE", key: "1", hash: "aktie", layout: "quad", panels: ["GP", "DES", "FA", "CN"], pool: ["GP", "DES", "FA", "CN", "RV", "ERN", "HP", "ANR", "DVD"] },
+  { id: "equity", label: "AKTIE", key: "1", hash: "aktie", layout: "quad", panels: ["GP", "DES", "FA", "CN"], pool: ["GP", "DES", "FA", "CN", "RV", "ERN", "HP", "ANR", "DVD", "ALRT"] },
   { id: "macro", label: "MAKRO", key: "2", hash: "makro", layout: "quad", panels: ["WEI", "GC", "ECO", "FX"], pool: ["WEI", "GC", "ECO", "FX", "SPRD", "CMDT", "ECST"] },
   { id: "screener", label: "SCREENER", key: "3", hash: "screener", layout: "wide", panels: ["EQS", "IMAP", "MOST"], pool: ["EQS", "IMAP", "MOST", "W"] },
   { id: "news", label: "NEWS", key: "4", hash: "news", layout: "wide", panels: ["TOP", "BRIEF", "ASK"], pool: ["TOP", "BRIEF", "ASK", "W", "EVTS", "ECO"] },
-  { id: "depot", label: "DEPOT", key: "5", hash: "depot", layout: "rows", panels: ["PORT", "RISK"], pool: ["PORT", "RISK", "GP", "CN", "W"] },
+  { id: "depot", label: "DEPOT", key: "5", hash: "depot", layout: "rows", panels: ["PORT", "RISK"], pool: ["PORT", "RISK", "ALRT", "GP", "CN", "W"] },
 ];
 
 const PAGE_BY_ID = Object.fromEntries(PAGES.map((p) => [p.id, p])) as Record<PageId, PageDef>;

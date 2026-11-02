@@ -113,6 +113,7 @@ class Terminal:
         self._sem = asyncio.Semaphore(8)
         # Liefert das aktuelle Depot (wird beim Start gesetzt; für das KI-Werkzeug „depot“)
         self.portfolio_source: Optional[Callable[[], Awaitable[Any]]] = None
+        self.alerts_source: Optional[Callable[[], Awaitable[Any]]] = None  # für das KI-Werkzeug „alarme“
 
     # --- Infrastruktur ----------------------------------------------------------
 

@@ -258,6 +258,22 @@ async def _depot(t: Terminal, a: dict) -> dict:
     }
 
 
+async def _alarme(t: Terminal, a: dict) -> dict:
+    from ..alerts.service import condition_text
+
+    if t.alerts_source is None:
+        return {"fehler": "Keine Alarme verfügbar."}
+    res = await t.alerts_source()
+    status = lambda x: "Marke ohne Alarm" if not x.alarm else "scharf" if x.active else f"ausgelöst {x.triggered_at}"  # noqa: E731
+    return {
+        "alarme": [
+            {"ticker": x.ticker, "bedingung": condition_text(x), "status": status(x), "kurs": _r(x.price, 4), "abstand_prozent": _r(x.distance_pct), "notiz": x.note or None}
+            for x in res.alerts[:40]
+        ],
+        "zuletzt_ausgeloest": [{"zeit": e.at, "meldung": e.message} for e in res.events[:10]],
+    }
+
+
 async def _suche(t: Terminal, a: dict) -> dict:
     hits = await t.search(str(a.get("text") or ""), 6)
     return {"treffer": [{"ticker": h.ticker, "name": h.name, "art": h.type, "land": h.country} for h in hits]}
@@ -291,6 +307,7 @@ TOOLS: list[Tool] = [
     Tool("screener", "Aktien filtern nach Sektor (englischer Name, z. B. 'Utilities'), maximalem KGV, Mindest-Dividendenrendite in % und Mindest-Marktkapitalisierung in Mrd.",
          _obj({"sektor": {"type": "string"}, "kgv_max": {"type": "number"}, "dividende_min": {"type": "number"}, "marktkap_min_mrd": {"type": "number"}, "sortierung": {"type": "string", "enum": ["marktkap", "dividende", "kgv", "momentum"]}}), _screener),
     Tool("suche", "Wertpapiere über Namen oder Kürzel finden.", _obj({"text": {"type": "string"}}, ("text",)), _suche),
+    Tool("alarme", "Kursalarme und Kursmarken des Nutzers mit Status, Abstand zum Kurs und zuletzt ausgelöste Alarme.", _obj({}), _alarme),
     Tool("depot", "Das eigene Depot des Nutzers: Wert, Ergebnis heute und seit Kauf, Positionen mit Gewicht und Risikoanteil, "
          "Volatilität, Beta, Drawdown, Value at Risk, Sektoren.", _obj({}), _depot),
 ]
@@ -323,13 +340,13 @@ def summarize(name: str, args: dict, result: dict) -> str:
     what = {
         "kurs": "Kurs", "wertentwicklung": "Wertentwicklung", "kennzahlen": "Kennzahlen", "finanzen": "Finanzdaten",
         "earnings": "Quartalszahlen", "news": "Nachrichten", "kalender": "Wirtschaftskalender", "earnings_kalender": "Earnings-Kalender",
-        "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot",
+        "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot", "alarme": "Alarme",
     }.get(name, name)
     subject = result.get("ticker") or args.get("ticker") or args.get("text") or ""
     if isinstance(subject, str) and "." in subject:
         subject = display(subject)
     count = ""
-    for key in ("meldungen", "termine", "werte", "treffer", "positionen"):
+    for key in ("meldungen", "termine", "werte", "treffer", "positionen", "alarme"):
         if isinstance(result.get(key), list):
             count = f" ({len(result[key])})"
             break

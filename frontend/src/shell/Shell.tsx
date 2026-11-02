@@ -11,6 +11,7 @@ import { useNow } from "../components/ui";
 import { CommandLine } from "./CommandLine";
 import { resetAndReload } from "../lib/reset";
 import { useAiStatus } from "../lib/ai";
+import { useAlerts } from "../lib/alerts";
 
 /** Knopf "⟲ STANDARD": Seite, Ansicht oder alles auf den Auslieferungszustand zurücksetzen. */
 function ResetMenu() {
@@ -75,7 +76,7 @@ function ResetMenu() {
           {!confirmAll ? (
             <button type="button" role="menuitem" onClick={() => setConfirmAll(true)}>
               <b>Alles (Werkszustand)</b>
-              <span>Zusätzlich Watchlist, gespeicherte Screens, Befehlsverlauf und gelesene Meldungen. Das Depot bleibt erhalten.</span>
+              <span>Zusätzlich Watchlist, gespeicherte Screens, Befehlsverlauf und gelesene Meldungen. Depot und Alarme bleiben erhalten.</span>
             </button>
           ) : (
             <button type="button" role="menuitem" className="danger" onClick={() => resetAndReload("all")} autoFocus>
@@ -413,6 +414,27 @@ function AiBadge() {
   );
 }
 
+/** Anzahl scharfer Kursalarme; Klick öffnet ALRT. */
+function AlertBadge() {
+  const ws = useWorkspace();
+  const q = useAlerts();
+  if (IS_STATIC || !q.data) return null;
+  const armed = q.data.alerts.filter((a) => a.alarm && a.active).length;
+  const fired = q.data.alerts.filter((a) => a.alarm && !a.active && a.triggeredAt).length;
+  if (!armed && !fired) return null;
+  return (
+    <button
+      type="button"
+      className="ai-badge warn"
+      title={`${armed} Alarm(e) scharf, ${fired} ausgelöst · Prüfung alle ${q.data.interval} s\nKlicken öffnet die Alarmliste (ALRT).`}
+      onClick={() => ws.openFn("ALRT")}
+    >
+      🔔 {armed}
+      {fired ? ` · ${fired} ausgelöst` : ""}
+    </button>
+  );
+}
+
 export function StatusBar() {
   const status = useStatus();
   const health = useSyncExternalStore(dataHealth.subscribe, dataHealth.get);
@@ -441,6 +463,7 @@ export function StatusBar() {
         </span>
       )}
       <AiBadge />
+      <AlertBadge />
       <span className="right">
         <kbd>/</kbd> Befehl · <kbd>Alt</kbd>+<kbd>1–5</kbd> Seiten · <kbd>Alt</kbd>+<kbd>←→</kbd> Panel · <kbd>Alt</kbd>+<kbd>M</kbd> Max · <kbd>HELP</kbd>
       </span>

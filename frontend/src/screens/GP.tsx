@@ -9,13 +9,15 @@ import {
   TickMarkType,
   createChart,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type MouseEventParams,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { ErrorState, Loading, Seg } from "../components/ui";
-import { api, ApiError } from "../lib/api";
+import { alertStatus, alertsApi, useAlerts, useAlertsRefresh, type Alert } from "../lib/alerts";
+import { api, ApiError, IS_STATIC } from "../lib/api";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
 import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
 import { isBool, isNumberList, isOneOf, usePersistentState } from "../lib/persist";
@@ -282,6 +284,13 @@ const BENCHMARK: Record<string, string> = {
 // Unterscheidbar vom eigenen Kurs (orange), den SMAs (blau/orange/lila) und dem RSI (lila)
 const COMPARE_COLORS = ["#4dd0e1", "#f06292", "#aed581", "#fff176"];
 
+/** Aussehen einer Kursmarke im Chart je Zustand. */
+export function markStyle(a: Pick<Alert, "alarm" | "active" | "triggeredAt" | "note">): { color: string; style: LineStyle; title: string } {
+  if (!a.alarm) return { color: "#66b8ff", style: LineStyle.Dashed, title: a.note ? a.note.slice(0, 18) : "" };
+  if (a.active) return { color: "#ffa028", style: LineStyle.Solid, title: "🔔" };
+  return a.triggeredAt ? { color: "#29d17d", style: LineStyle.Dotted, title: "✓" } : { color: "#5c5c5c", style: LineStyle.Dotted, title: "" };
+}
+
 export default function GP({ ticker }: ScreenProps) {
   // Darstellung bleibt über Seiten- und Tickerwechsel sowie das Neuladen erhalten
   const [range, setRange] = usePersistentState<Range>("gp.range", "1J", isOneOf(RANGE_VALUES));
@@ -291,6 +300,12 @@ export default function GP({ ticker }: ScreenProps) {
   const [showRsi, setShowRsi] = usePersistentState("gp.rsi", false, isBool);
   const [showVwap, setShowVwap] = usePersistentState("gp.vwap", true, isBool);
   const [compare, setCompare] = useState<string[]>([]);
+  const [placing, setPlacing] = useState(false);
+  const [markMsg, setMarkMsg] = useState<string | null>(null);
+  const [chartGen, setChartGen] = useState(0);
+  const alertsQ = useAlerts();
+  const refreshAlerts = useAlertsRefresh();
+  const marks = useMemo(() => (alertsQ.data?.alerts ?? []).filter((a) => a.ticker === ticker && a.kind === "price"), [alertsQ.data, ticker]);
   const [compareInput, setCompareInput] = useState("");
   const [compareErr, setCompareErr] = useState<string | null>(null);
   const intradayRange = range === "1T" || range === "5T";
@@ -478,6 +493,7 @@ export default function GP({ ticker }: ScreenProps) {
     }
     seriesRef.current = refs;
     prevLineRef.current = null;
+    setChartGen((g) => g + 1); // Kursmarken auf dem neuen Chart neu zeichnen
     fitKey.current = "";
     // Panelgröße geändert (Maximieren, Layout, Fenster): Inhalt neu einpassen, sonst blieb nach
     // dem Maximieren der linke Teil des Charts leer
@@ -550,6 +566,75 @@ export default function GP({ ticker }: ScreenProps) {
       fitKey.current = key;
     }
   }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, intradayRange, earn.data, isYield]);
+
+  // Kursmarken und Alarme als waagerechte Linien (nicht im Prozent-Vergleich)
+  const markLines = useRef<IPriceLine[]>([]);
+  const marksKey = marks.map((m) => `${m.id}:${m.level}:${m.alarm}:${m.active}:${m.triggeredAt ?? ""}:${m.note}`).join("|");
+  useEffect(() => {
+    const main = seriesRef.current?.main;
+    for (const l of markLines.current) {
+      try {
+        main?.removePriceLine(l);
+      } catch {
+        /* Linie gehörte zum vorigen Chart */
+      }
+    }
+    markLines.current = [];
+    if (!main || comparing) return;
+    markLines.current = marks.map((m) => {
+      const st = markStyle(m);
+      return main.createPriceLine({ price: m.level, color: st.color, lineWidth: 1, lineStyle: st.style, axisLabelVisible: true, title: st.title });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marksKey, chartGen, comparing]);
+
+  // „＋ Marke“: nächster Klick in den Chart setzt eine Kursmarke mit Alarm
+  useEffect(() => {
+    const chart = chartRef.current;
+    const main = seriesRef.current?.main;
+    if (!placing || !chart || !main || !ticker) return;
+    const onClick = (p: MouseEventParams) => {
+      if (!p.point) return;
+      const raw = main.coordinateToPrice(p.point.y);
+      if (raw === null || !isNum(raw) || raw <= 0) return;
+      const digits = isYield ? 3 : priceDigits(raw, ticker);
+      const level = Number(raw.toFixed(digits));
+      setPlacing(false);
+      alertsApi
+        .create({ ticker, kind: "price", level, direction: null, alarm: true })
+        .then(() => setMarkMsg(null))
+        .catch((e: unknown) => setMarkMsg(e instanceof Error ? e.message : String(e)))
+        .finally(() => refreshAlerts());
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation(); // nur das Setzen abbrechen, nicht im Panel zurückgehen
+      setPlacing(false);
+    };
+    chart.subscribeClick(onClick);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      chart.unsubscribeClick(onClick);
+      window.removeEventListener("keydown", onKey, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placing, chartGen, ticker, isYield]);
+
+  useEffect(() => {
+    setPlacing(false);
+    setMarkMsg(null);
+  }, [ticker]);
+
+  async function markAction(fn: () => Promise<unknown>) {
+    try {
+      await fn();
+      setMarkMsg(null);
+    } catch (e) {
+      setMarkMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      refreshAlerts();
+    }
+  }
 
   // Vergleichswerte erst nach Prüfung übernehmen: ein Tippfehler soll keinen leeren Chip erzeugen
   const [checkingCompare, setCheckingCompare] = useState(false);
@@ -673,6 +758,20 @@ export default function GP({ ticker }: ScreenProps) {
             {compareFailed.length > 0 && <span className="small down">Keine Kurse für {compareFailed.map(displayTicker).join(", ")}</span>}
           </>
         )}
+        {!comparing && !IS_STATIC && hasData && (
+          <>
+            <span className="sep" />
+            <button
+              type="button"
+              className={`btn ${placing ? "primary" : ""}`}
+              aria-pressed={placing}
+              title="Kursmarke mit Alarm setzen: danach in den Chart auf die gewünschte Höhe klicken (Esc bricht ab)"
+              onClick={() => setPlacing((p) => !p)}
+            >
+              ＋ Marke
+            </button>
+          </>
+        )}
         {bars.length > 0 && (
           <span className="small" style={{ marginLeft: "auto" }} title="Veränderung gegenüber dem Schlusskurs vor Beginn des Zeitraums">
             <span className="muted">{range}: </span>
@@ -727,12 +826,45 @@ export default function GP({ ticker }: ScreenProps) {
               </div>
             )}
             <div style={{ position: "relative", flex: showRsi ? "1 1 74%" : "1 1 100%", minHeight: 0 }}>
-              <div className="chart-host" ref={hostRef} />
+              {placing && <div className="placing-hint">In den Chart klicken, um die Marke zu setzen · Esc bricht ab</div>}
+              <div className={`chart-host ${placing ? "placing" : ""}`} ref={hostRef} />
             </div>
             {showRsi && (
               <div style={{ position: "relative", flex: "0 0 26%", minHeight: 70, borderTop: "1px solid var(--rule)" }}>
                 <span className="xs" style={{ position: "absolute", left: 8, top: 2, zIndex: 3, color: "#c77dff" }}>RSI 14</span>
                 <div className="chart-host" ref={rsiRef} />
+              </div>
+            )}
+            {!comparing && (marks.length > 0 || markMsg) && (
+              <div className="chart-marks" aria-label="Kursmarken">
+                <span className="muted">Marken</span>
+                {marks
+                  .slice()
+                  .sort((a, b) => b.level - a.level)
+                  .map((m) => {
+                    const st = alertStatus(m);
+                    return (
+                      <span key={m.id} className={`mark-chip ${st === "armed" ? "armed" : ""}`} title={m.note || undefined}>
+                        <button
+                          type="button"
+                          title={m.alarm ? "Alarm aus (Marke bleibt)" : "Alarm einschalten"}
+                          onClick={() => markAction(() => alertsApi.update(m.id, { alarm: !m.alarm }))}
+                        >
+                          {st === "armed" ? "🔔" : st === "fired" ? "✓" : st === "mark" ? "🔕" : "○"}
+                        </button>
+                        {fmtPrice(m.level, ticker)}
+                        {(st === "fired" || st === "off") && (
+                          <button type="button" title="Wieder scharf schalten" onClick={() => markAction(() => alertsApi.update(m.id, { active: true }))}>
+                            ↻
+                          </button>
+                        )}
+                        <button type="button" title="Marke löschen" aria-label={`Marke ${fmtPrice(m.level, ticker)} löschen`} onClick={() => markAction(() => alertsApi.remove(m.id))}>
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                {markMsg && <span className="down">{markMsg}</span>}
               </div>
             )}
           </>
