@@ -12,6 +12,7 @@ import dataclasses
 import datetime as dt
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -57,7 +58,9 @@ def main(target: str) -> None:
         sizes[name.split("/")[0]] = sizes.get(name.split("/")[0], 0) + len(text)
 
     # KI-Teile mit der regelbasierten Demo-KI vorab berechnen (kein LM Studio nötig)
-    with TestClient(create_app(provider, dataclasses.replace(settings, llm_mode="demo"))) as c:
+    # Eigener leerer Depot-Ordner: exportiert wird nur das Muster-Depot, nie ein echtes
+    cfg = dataclasses.replace(settings, llm_mode="demo", portfolio_dir=tempfile.mkdtemp(prefix="mt-export-"))
+    with TestClient(create_app(provider, cfg)) as c:
         def get(url: str):
             r = c.get(url)
             r.raise_for_status()
@@ -166,9 +169,13 @@ def main(target: str) -> None:
         example = "NWND US"
         questions = [
             f"Wie steht {example}?", f"Ist {example} teuer im Vergleich zur Branche?", f"Wie waren die letzten Quartalszahlen von {example}?",
-            "Wie laufen die Märkte?", "Welche Termine stehen heute an?", "Wer berichtet diese Woche Quartalszahlen?",
+            "Wie riskant ist mein Depot?", "Wie laufen die Märkte?", "Welche Termine stehen heute an?", "Wer berichtet diese Woche Quartalszahlen?",
         ]
         write("ai/ask.json", {q: post("/api/ai/ask", {"question": q, "ticker": "NWND.US", "watchlist": watchlist}) for q in questions})
+
+        # Depot: Muster-Depot und seine Kennzahlen (im statischen Build nur lesbar)
+        write("portfolio/portfolio.json", get("/api/portfolio"))
+        write("portfolio/analytics.json", get("/api/portfolio/analytics"))
 
     total = sum(sizes.values())
     print(f"Export nach {out}: {total / 1e6:.1f} MB")

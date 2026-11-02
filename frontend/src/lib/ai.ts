@@ -195,7 +195,7 @@ export function aiErrorText(e: unknown): string {
 
 /** Beispielfragen; mit aktivem Wertpapier passend zu ihm. */
 export function exampleQuestions(display: string | null): string[] {
-  const generic = ["Wie laufen die Märkte?", "Welche Termine stehen heute an?", "Wer berichtet diese Woche Quartalszahlen?"];
+  const generic = ["Wie riskant ist mein Depot?", "Wie laufen die Märkte?", "Welche Termine stehen heute an?", "Wer berichtet diese Woche Quartalszahlen?"];
   if (!display) return generic;
-  return [`Wie steht ${display}?`, `Ist ${display} teuer im Vergleich zur Branche?`, `Wie waren die letzten Quartalszahlen von ${display}?`, ...generic];
+  return [`Wie steht ${display}?`, `Ist ${display} teuer im Vergleich zur Branche?`, ...generic, `Wie waren die letzten Quartalszahlen von ${display}?`];
 }

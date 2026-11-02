@@ -648,7 +648,7 @@ export function HELP(_: ScreenProps) {
             ["/ oder einfach lostippen", "Befehlszeile"],
             ["Esc", "Befehlszeile leeren; sonst Maximieren beenden oder im Panel zurück (z. B. nach HELP)"],
             ["↑ ↓ / Tab", "Vorschläge wählen / übernehmen; ↑ bei leerer Zeile holt frühere Befehle"],
-            ["Alt + 1 … 4", "Seite AKTIE, MAKRO, SCREENER, NEWS"],
+            ["Alt + 1 … 5", "Seite AKTIE, MAKRO, SCREENER, NEWS, DEPOT"],
             ["Alt + ← →", "Aktives Panel wechseln"],
             ["Alt + M", "Aktives Panel maximieren"],
             ["Alt + L", "Layout der Seite wechseln (1, 2, 3 oder 4 Panels)"],

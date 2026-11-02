@@ -19,10 +19,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .ai.service import AIService
 from .api.ai_routes import router as ai_router
+from .api.portfolio_routes import current_portfolio, router as portfolio_router
 from .api.routes import router
 from .cache import TTLCache
 from .config import Settings, settings
 from .errors import TerminalError
+from .portfolio.store import PortfolioStore
 from .providers.base import Provider
 from .services.terminal import Terminal, request_flags
 
@@ -70,6 +72,8 @@ def create_app(
         prov = provider or make_provider(cfg)
         app.state.terminal = Terminal(prov, TTLCache())
         app.state.ai = AIService(cfg, app.state.terminal, prov.mode, transport=llm_transport)
+        app.state.portfolio = PortfolioStore(cfg.portfolio_dir, prov.mode)
+        app.state.terminal.portfolio_source = lambda: current_portfolio(app)
         app.state.ai.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
         yield
@@ -116,6 +120,7 @@ def create_app(
 
     app.include_router(router)
     app.include_router(ai_router)
+    app.include_router(portfolio_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

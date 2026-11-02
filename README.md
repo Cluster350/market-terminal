@@ -9,6 +9,7 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 | **2 MAKRO** | WEI · GC · ECO · FX | Weltindizes, Zinskurven, Wirtschaftskalender, Devisen |
 | **3 SCREENER** | EQS · IMAP · MOST | Aktien-Screener, Markt-Heatmap, Top-Bewegungen |
 | **4 NEWS** | TOP · BRIEF · ASK | News-Terminal mit KI-Einordnung, Morgenbriefing, KI-Assistent |
+| **5 DEPOT** | PORT · RISK | Eigenes Depot: Wert, Ergebnis, Aufteilung; Risiko mit Schwankung, Beta, VaR, Korrelationen |
 
 Jedes Panel kann über sein Auswahlfeld oder die Befehlszeile jede Funktion zeigen; das Layout
 jeder Seite ist umschaltbar (1, 2, 3 oder 4 Panels). Weitere Funktionen: HP (Kurshistorie),
@@ -56,6 +57,31 @@ Neue Version installieren:
   neuen kopieren (sie enthält den Schlüssel) und dort `Start-Windows.bat` doppelklicken.
 - Wer die neue Version über den alten Ordner entpackt: `Start-Windows.bat` erkennt die neue
   Version und baut Oberfläche und Pakete beim nächsten Start selbst neu.
+
+## Depot und Risiko (Seite 5 DEPOT)
+
+**PORT** zeigt das eigene Depot: Depotwert, Ergebnis heute und seit Kauf, jede Position mit Kurs,
+Wert, Gewicht und Gewinn/Verlust sowie die Aufteilung nach Branchen, Ländern und Währungen.
+- **＋ Position**: Ticker, Stückzahl, Einstandskurs und Kaufdatum (beides freiwillig) eintragen.
+  Gibt es den Wert schon, werden Stück und Durchschnittskurs zusammengeführt. Negative Stückzahl
+  = Leerverkauf. ✎ bearbeitet, ✕ löscht eine Position.
+- **Import**: Liste einfügen, eine Zeile je Position (`SAP GR; 20; 182,50; 15.03.2024`), auch
+  direkt aus Excel kopiert. **Export CSV** speichert das Depot als Datei für Excel.
+- **Basis** wählt die Währung für alle Beträge (EUR, USD, CHF, GBP); Kurse in anderen Währungen
+  werden umgerechnet. Mit Kaufdatum zählt das Ergebnis den Währungseffekt seit dem Kauf mit.
+- **Kasse**: Bargeld bzw. Verrechnungskonto in Basiswährung.
+
+**RISK** zeigt, wie riskant das Depot ist: Schwankung pro Jahr, Beta zum Vergleichsindex,
+größter Rückgang im letzten Jahr, Value at Risk und Expected Shortfall (95 %, ein Tag), Rendite
+gegen den Index, den **Risikoanteil** jeder Position (welche Werte das Risiko treiben) und die
+Korrelationen der größten Positionen. Gerechnet wird mit den heutigen Stückzahlen über das letzte
+Jahr (historische Simulation). Die Begriffe erklären sich per Tooltip und im Glossar (HELP).
+
+Gespeichert wird das Depot auf dem eigenen Rechner im Benutzerordner unter `.market-terminal`
+(Windows: `C:\Users\<Name>\.market-terminal\depot-eodhd.json`, im Demo-Modus `depot-demo.json`).
+Es bleibt deshalb auch bei einer neuen Programmversion und nach „⟲ STANDARD“ erhalten. Im
+Demo-Modus startet ein Muster-Depot zum Ausprobieren. Der KI-Assistent kann das Depot lesen
+(„Wie riskant ist mein Depot?“), aber nicht verändern.
 
 ## KI-Helfer mit LM Studio
 
@@ -128,7 +154,7 @@ Kursfunktionen; Panels ohne Planabdeckung zeigen eine klare Meldung.
   Filtereinstellungen bleiben nach dem Schließen erhalten. **⟲ STANDARD** oben setzt wahlweise
   die aktuelle Seite, die ganze Ansicht (Watchlist bleibt) oder alles auf den Auslieferungszustand
   zurück.
-- **Alt+1–4** Seiten · **Alt+←/→** aktives Panel · **Alt+M** Panel maximieren · **Alt+L** Layout ·
+- **Alt+1–5** Seiten · **Alt+←/→** aktives Panel · **Alt+M** Panel maximieren · **Alt+L** Layout ·
   **Esc** Maximieren beenden bzw. im Panel zurück (z. B. nach HELP).
 - **Chart (GP):** Zeiträume 1T–MAX (Rendite gegen den Schluss vor Periodenbeginn), SMA 20/50/200,
   Bollinger 20, RSI 14 als eigener Bereich, Earnings-Marker (E, grün/rot), intraday VWAP und
@@ -163,6 +189,10 @@ EODHD API                                  LM Studio (http://localhost:1234/v1)
   Warteschlange), `brief.py`, `agent.py` (Werkzeugschleife mit Schrittgrenze und Zahlenprüfung),
   `tools.py` (nur lesende Werkzeuge über die Terminal-Dienste), `demo.py` (regelbasierte Demo-KI),
   `service.py` (Wahl LM Studio / Demo / aus). Plan und Hintergründe: `docs/PLAN-KI-AGENT.md`.
+- `backend/app/portfolio/` – Depot: `store.py` (JSON-Datei mit Versionsprüfung gegen Überschreiben
+  aus einem zweiten Fenster), `analytics.py` (Wert, Ergebnis, Währungsumrechnung über die
+  Devisenkurse, Risiko per historischer Simulation, Muster-Depot). Endpunkte `/api/portfolio`
+  und `/api/portfolio/analytics`.
 
 ## Datenqualität im Demo-Modus
 

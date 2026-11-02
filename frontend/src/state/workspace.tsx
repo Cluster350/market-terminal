@@ -8,7 +8,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
 import { FN, type FnCode } from "../lib/commands";
 
-export type PageId = "equity" | "macro" | "screener" | "news";
+export type PageId = "equity" | "macro" | "screener" | "news" | "depot";
 export type Layout = "single" | "split" | "rows" | "wide" | "quad";
 
 export const LAYOUT_SLOTS: Record<Layout, number> = { single: 1, split: 2, rows: 2, wide: 3, quad: 4 };
@@ -36,6 +36,7 @@ export const PAGES: PageDef[] = [
   { id: "macro", label: "MAKRO", key: "2", hash: "makro", layout: "quad", panels: ["WEI", "GC", "ECO", "FX"], pool: ["WEI", "GC", "ECO", "FX", "SPRD", "CMDT", "ECST"] },
   { id: "screener", label: "SCREENER", key: "3", hash: "screener", layout: "wide", panels: ["EQS", "IMAP", "MOST"], pool: ["EQS", "IMAP", "MOST", "W"] },
   { id: "news", label: "NEWS", key: "4", hash: "news", layout: "wide", panels: ["TOP", "BRIEF", "ASK"], pool: ["TOP", "BRIEF", "ASK", "W", "EVTS", "ECO"] },
+  { id: "depot", label: "DEPOT", key: "5", hash: "depot", layout: "rows", panels: ["PORT", "RISK"], pool: ["PORT", "RISK", "GP", "CN", "W"] },
 ];
 
 const PAGE_BY_ID = Object.fromEntries(PAGES.map((p) => [p.id, p])) as Record<PageId, PageDef>;
@@ -54,6 +55,8 @@ export function pageForFn(fn: FnCode): PageId {
       return "macro";
     case "Screener":
       return "screener";
+    case "Depot":
+      return "depot";
     default:
       return "news";
   }
@@ -151,7 +154,7 @@ export function initial(hash = typeof location !== "undefined" ? location.hash :
     mode: null,
     page: win.page ?? (win.solo ? pageForFn(win.solo) : "equity"),
     pages: structuredClone(PAGE_DEFAULTS),
-    active: { equity: 0, macro: 0, screener: 0, news: 0 },
+    active: { equity: 0, macro: 0, screener: 0, news: 0, depot: 0 },
     maximized: null,
     linked: true,
     security: null,

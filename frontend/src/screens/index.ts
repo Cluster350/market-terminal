@@ -15,6 +15,9 @@ const IMAP = lazy(() => import("./IMAP"));
 const ai = () => import("./ai");
 const BRIEF = lazy(async () => ({ default: (await ai()).BRIEF }));
 const ASK = lazy(async () => ({ default: (await ai()).ASK }));
+const depot = () => import("./portfolio");
+const PORT = lazy(async () => ({ default: (await depot()).PORT }));
+const RISK = lazy(async () => ({ default: (await depot()).RISK }));
 
 export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   GP,
@@ -42,4 +45,6 @@ export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   RV,
   BRIEF,
   ASK,
+  PORT,
+  RISK,
 };

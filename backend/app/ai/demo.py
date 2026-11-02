@@ -309,6 +309,7 @@ _STOP = {
 _ABOUT_SECURITY = re.compile(r"aktie|\bwert\b|papier|titel|kurs|bewert|kgv|news|nachricht|meldung|quartal|zahlen|dividende|peers|vergleich|entwicklung|analyst")
 _CAL = re.compile(r"termin|kalender|konjunktur|notenbank|\bfed\b|\bezb\b|zinsentscheid|inflation|arbeitsmarkt")
 _MARKETS = re.compile(r"märkte|marktüberblick|indizes|wie läuft der markt|wie laufen die märkte|börse heute")
+_DEPOT = re.compile(r"depot|portfolio|meine positionen|meine werte|mein risiko|klumpenrisiko")
 _EARN_CAL = re.compile(r"(wer|welche).*(quartalszahlen|berichtet|earnings)|earnings.?kalender|berichtssaison")
 
 DEMO_HINT = (
@@ -354,7 +355,29 @@ async def ask(t: Terminal, req: AskRequest) -> AskResult:
         return res
 
     lines: list[str] = []
-    if _EARN_CAL.search(q):
+    if _DEPOT.search(q):
+        res = await call("depot", {})
+        if "fehler" in res or "hinweis" in res:
+            lines.append(res.get("fehler") or res.get("hinweis"))
+        else:
+            cur = res["waehrung"]
+            r = res["risiko"]
+            lines.append(f"Ihr Depot ist {de(res['depotwert'], 0)} {cur} wert ({res['anzahl_positionen']} Positionen), heute {de(res['ergebnis_heute'], 0, sign=True)} {cur} ({pct(res['ergebnis_heute_prozent'])}).")
+            if res.get("ergebnis_seit_kauf") is not None:
+                lines.append(f"- Seit Kauf: {de(res['ergebnis_seit_kauf'], 0, sign=True)} {cur} ({pct(res['ergebnis_seit_kauf_prozent'])}).")
+            if r.get("volatilitaet_prozent_pa") is not None:
+                lines.append(f"- Risiko: Schwankung {de(r['volatilitaet_prozent_pa'], 1)} % pro Jahr, Beta {de(r['beta'], 2)} zum {res['vergleichsindex']}, "
+                             f"größter Rückgang im letzten Jahr {de(r['max_drawdown_prozent'], 1)} %, Value at Risk (95 %, 1 Tag) {de(r['value_at_risk_95_1tag'], 0)} {cur}.")
+            top = res["positionen"][:3]
+            if top:
+                lines.append("- Größte Positionen: " + ", ".join(f"{display(x['ticker'])} {de(x['gewicht_prozent'], 1)} %" for x in top) + ".")
+            drivers = sorted((x for x in res["positionen"] if x.get("risikoanteil_prozent") is not None), key=lambda x: -x["risikoanteil_prozent"])[:3]
+            if drivers:
+                lines.append("- Größte Risikotreiber: " + ", ".join(f"{display(x['ticker'])} {de(x['risikoanteil_prozent'], 1)} % des Risikos" for x in drivers) + ".")
+            if res["sektoren"]:
+                s0 = res["sektoren"][0]
+                lines.append(f"- Schwerpunkt: {SECTOR_DE.get(s0['sektor'], s0['sektor'])} mit {de(s0['gewicht_prozent'], 1)} %.")
+    elif _EARN_CAL.search(q):
         res = await call("earnings_kalender", {})
         rows = res.get("termine") or []
         lines.append(f"Quartalsberichte in den nächsten 7 Tagen: {len(rows)}." if rows else "In den nächsten 7 Tagen stehen keine Quartalsberichte an.")

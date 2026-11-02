@@ -226,6 +226,38 @@ async def _screener(t: Terminal, a: dict) -> dict:
     }
 
 
+async def _depot(t: Terminal, a: dict) -> dict:
+    from ..portfolio.analytics import analyze
+
+    if t.portfolio_source is None:
+        return {"fehler": "Kein Depot verfügbar."}
+    p = await t.portfolio_source()
+    if not p.positions:
+        return {"hinweis": "Das Depot ist leer. Positionen lassen sich in der Funktion PORT eintragen."}
+    an = await analyze(t, p)
+    s, r = an.summary, an.risk
+    rows = sorted((x for x in an.rows if x.value is not None), key=lambda x: -abs(x.value or 0))
+    return {
+        "waehrung": an.base, "depotwert": _r(s.value), "kasse": _r(s.cash), "anzahl_positionen": s.count,
+        "ergebnis_heute": _r(s.day_pnl), "ergebnis_heute_prozent": _r(s.day_pnl_pct),
+        "ergebnis_seit_kauf": _r(s.pnl), "ergebnis_seit_kauf_prozent": _r(s.pnl_pct),
+        "vergleichsindex": an.benchmark_name,
+        "risiko": {
+            "volatilitaet_prozent_pa": _r(r.vol), "beta": _r(r.beta), "rendite_1j_prozent": _r(r.return_1y),
+            "index_rendite_1j_prozent": _r(r.bench_return_1y), "max_drawdown_prozent": _r(r.max_drawdown),
+            "value_at_risk_95_1tag": _r(r.var95), "expected_shortfall_95_1tag": _r(r.es95), "konfidenzniveau_prozent": 95, "haltedauer_tage": 1,
+            "effektive_anzahl_positionen": _r(r.effective_n, 1), "anteil_top5_prozent": _r(r.top5_weight),
+        },
+        "positionen": [
+            {"ticker": x.ticker, "name": x.name, "gewicht_prozent": _r(x.weight), "tag_prozent": _r(x.change_pct),
+             "ergebnis_seit_kauf_prozent": _r(x.pnl_pct_base), "risikoanteil_prozent": _r(x.risk_share), "sektor": x.sector}
+            for x in rows[:15]
+        ],
+        "sektoren": [{"sektor": sl.key, "gewicht_prozent": _r(sl.weight)} for sl in an.allocation.get("sector", [])[:6]],
+        "hinweise": an.notes[:5],
+    }
+
+
 async def _suche(t: Terminal, a: dict) -> dict:
     hits = await t.search(str(a.get("text") or ""), 6)
     return {"treffer": [{"ticker": h.ticker, "name": h.name, "art": h.type, "land": h.country} for h in hits]}
@@ -259,6 +291,8 @@ TOOLS: list[Tool] = [
     Tool("screener", "Aktien filtern nach Sektor (englischer Name, z. B. 'Utilities'), maximalem KGV, Mindest-Dividendenrendite in % und Mindest-Marktkapitalisierung in Mrd.",
          _obj({"sektor": {"type": "string"}, "kgv_max": {"type": "number"}, "dividende_min": {"type": "number"}, "marktkap_min_mrd": {"type": "number"}, "sortierung": {"type": "string", "enum": ["marktkap", "dividende", "kgv", "momentum"]}}), _screener),
     Tool("suche", "Wertpapiere über Namen oder Kürzel finden.", _obj({"text": {"type": "string"}}, ("text",)), _suche),
+    Tool("depot", "Das eigene Depot des Nutzers: Wert, Ergebnis heute und seit Kauf, Positionen mit Gewicht und Risikoanteil, "
+         "Volatilität, Beta, Drawdown, Value at Risk, Sektoren.", _obj({}), _depot),
 ]
 TOOL_BY_NAME = {tool.name: tool for tool in TOOLS}
 
@@ -289,13 +323,13 @@ def summarize(name: str, args: dict, result: dict) -> str:
     what = {
         "kurs": "Kurs", "wertentwicklung": "Wertentwicklung", "kennzahlen": "Kennzahlen", "finanzen": "Finanzdaten",
         "earnings": "Quartalszahlen", "news": "Nachrichten", "kalender": "Wirtschaftskalender", "earnings_kalender": "Earnings-Kalender",
-        "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche",
+        "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot",
     }.get(name, name)
     subject = result.get("ticker") or args.get("ticker") or args.get("text") or ""
     if isinstance(subject, str) and "." in subject:
         subject = display(subject)
     count = ""
-    for key in ("meldungen", "termine", "werte", "treffer"):
+    for key in ("meldungen", "termine", "werte", "treffer", "positionen"):
         if isinstance(result.get(key), list):
             count = f" ({len(result[key])})"
             break

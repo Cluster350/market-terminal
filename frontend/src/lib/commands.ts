@@ -5,9 +5,9 @@ import { displayTicker } from "./format";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK";
 
-export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "System";
+export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "Depot" | "System";
 
 export interface FnInfo {
   code: FnCode;
@@ -41,6 +41,8 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "EQS", title: "Aktien-Screener", group: "Screener", needsTicker: false, desc: "Filtern nach Bewertung, Dividende, Momentum" },
   { code: "IMAP", title: "Markt-Heatmap", group: "Screener", needsTicker: false, desc: "Tagesveränderung nach Sektor und Größe" },
   { code: "MOST", title: "Top-Bewegungen", group: "Screener", needsTicker: false, desc: "Gewinner, Verlierer, meistgehandelt" },
+  { code: "PORT", title: "Depot", group: "Depot", needsTicker: false, desc: "Eigene Positionen: Wert, Ergebnis heute und seit Kauf, Aufteilung; Positionen eintragen, CSV-Import" },
+  { code: "RISK", title: "Depot-Risiko", group: "Depot", needsTicker: false, desc: "Schwankung, Beta, größter Rückgang, Value at Risk, Risikobeitrag je Position, Korrelationen" },
   { code: "W", title: "Watchlist", group: "System", needsTicker: false, desc: "Eigene Werte mit laufenden Kursen" },
   { code: "HELP", title: "Hilfe", group: "System", needsTicker: false, desc: "Befehle und Tastenkürzel" },
 ];
@@ -60,6 +62,8 @@ const ALIASES: Record<string, FnCode> = {
   WAEHRUNGEN: "FX", "WÄHRUNGEN": "FX", ROHSTOFFE: "CMDT", INDIZES: "WEI", "LÄNDER": "ECST", LAENDER: "ECST",
   VERGLEICH: "RV", BEWEGUNGEN: "MOST", GEWINNER: "MOST",
   KI: "ASK", AI: "ASK", FRAGE: "ASK", FRAGEN: "ASK", AGENT: "ASK", CHAT: "ASK", ASSISTENT: "ASK",
+  DEPOT: "PORT", PORTFOLIO: "PORT", POSITIONEN: "PORT", PRTU: "PORT", BESTAND: "PORT",
+  RISIKO: "RISK", VAR: "RISK", PORTRISK: "RISK",
   BRIEFING: "BRIEF", MORGEN: "BRIEF", MORGENBRIEFING: "BRIEF", MORNING: "BRIEF", BRIEFUNG: "BRIEF",
 };
 

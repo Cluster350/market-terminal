@@ -61,6 +61,12 @@ class Settings:
     llm_max_concurrency: int = field(default_factory=lambda: max(1, _int("LLM_MAX_CONCURRENCY", 1)))
     llm_max_steps: int = field(default_factory=lambda: max(1, _int("LLM_MAX_STEPS", 6)))
 
+    # Depot: eine JSON-Datei je Datenquelle im Benutzerordner, damit sie neue Programmversionen
+    # (neuer Ordner aus der ZIP-Datei) übersteht
+    portfolio_dir: str = field(
+        default_factory=lambda: os.environ.get("PORTFOLIO_DIR", "").strip() or str(Path.home() / ".market-terminal")
+    )
+
     @property
     def mode(self) -> str:
         """Ohne Key läuft das Terminal immer im Demo-Modus."""

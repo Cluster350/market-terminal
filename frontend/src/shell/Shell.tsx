@@ -75,7 +75,7 @@ function ResetMenu() {
           {!confirmAll ? (
             <button type="button" role="menuitem" onClick={() => setConfirmAll(true)}>
               <b>Alles (Werkszustand)</b>
-              <span>Zusätzlich Watchlist, gespeicherte Screens, Befehlsverlauf und gelesene Meldungen</span>
+              <span>Zusätzlich Watchlist, gespeicherte Screens, Befehlsverlauf und gelesene Meldungen. Das Depot bleibt erhalten.</span>
             </button>
           ) : (
             <button type="button" role="menuitem" className="danger" onClick={() => resetAndReload("all")} autoFocus>
@@ -442,7 +442,7 @@ export function StatusBar() {
       )}
       <AiBadge />
       <span className="right">
-        <kbd>/</kbd> Befehl · <kbd>Alt</kbd>+<kbd>1–4</kbd> Seiten · <kbd>Alt</kbd>+<kbd>←→</kbd> Panel · <kbd>Alt</kbd>+<kbd>M</kbd> Max · <kbd>HELP</kbd>
+        <kbd>/</kbd> Befehl · <kbd>Alt</kbd>+<kbd>1–5</kbd> Seiten · <kbd>Alt</kbd>+<kbd>←→</kbd> Panel · <kbd>Alt</kbd>+<kbd>M</kbd> Max · <kbd>HELP</kbd>
       </span>
     </footer>
   );

@@ -111,6 +111,8 @@ class Terminal:
         }
         self.enrich_limit = 150 if live else 1000
         self._sem = asyncio.Semaphore(8)
+        # Liefert das aktuelle Depot (wird beim Start gesetzt; für das KI-Werkzeug „depot“)
+        self.portfolio_source: Optional[Callable[[], Awaitable[Any]]] = None
 
     # --- Infrastruktur ----------------------------------------------------------
 
