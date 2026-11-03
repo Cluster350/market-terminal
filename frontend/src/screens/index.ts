@@ -19,6 +19,7 @@ const depot = () => import("./portfolio");
 const PORT = lazy(async () => ({ default: (await depot()).PORT }));
 const RISK = lazy(async () => ({ default: (await depot()).RISK }));
 const ALRT = lazy(async () => ({ default: (await import("./alerts")).ALRT }));
+const TPO = lazy(async () => ({ default: (await import("./tpo")).TPO }));
 
 export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   GP,
@@ -49,4 +50,5 @@ export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   PORT,
   RISK,
   ALRT,
+  TPO,
 };

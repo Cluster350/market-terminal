@@ -16,6 +16,8 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { ErrorState, Loading, Seg } from "../components/ui";
+import { VolumeProfilePrimitive } from "../components/volumeProfile";
+import { volumeProfile } from "../lib/profile";
 import { alertStatus, alertsApi, useAlerts, useAlertsRefresh, type Alert } from "../lib/alerts";
 import { api, ApiError, IS_STATIC } from "../lib/api";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
@@ -299,6 +301,7 @@ export default function GP({ ticker }: ScreenProps) {
   const [boll, setBoll] = usePersistentState("gp.boll", false, isBool);
   const [showRsi, setShowRsi] = usePersistentState("gp.rsi", false, isBool);
   const [showVwap, setShowVwap] = usePersistentState("gp.vwap", true, isBool);
+  const [showVp, setShowVp] = usePersistentState("gp.vp", false, isBool);
   const [compare, setCompare] = useState<string[]>([]);
   const [placing, setPlacing] = useState(false);
   const [markMsg, setMarkMsg] = useState<string | null>(null);
@@ -406,6 +409,9 @@ export default function GP({ ticker }: ScreenProps) {
   } | null>(null);
   const barsRef = useRef<Map<string, Bar>>(new Map());
   const prevLineRef = useRef<ReturnType<ISeriesApi<"Line">["createPriceLine"]> | null>(null);
+  const vpRef = useRef<VolumeProfilePrimitive | null>(null);
+  const vpLines = useRef<IPriceLine[]>([]);
+  const markLines = useRef<IPriceLine[]>([]);
   const fitKey = useRef("");
   const [hover, setHover] = useState<Bar | null>(null);
   const hasData = bars.length > 0;
@@ -493,6 +499,13 @@ export default function GP({ ticker }: ScreenProps) {
     }
     seriesRef.current = refs;
     prevLineRef.current = null;
+    vpLines.current = [];
+    vpRef.current = null;
+    if (refs.main) {
+      const vp = new VolumeProfilePrimitive();
+      refs.main.attachPrimitive(vp);
+      vpRef.current = vp;
+    }
     setChartGen((g) => g + 1); // Kursmarken auf dem neuen Chart neu zeichnen
     fitKey.current = "";
     // Panelgröße geändert (Maximieren, Layout, Fenster): Inhalt neu einpassen, sonst blieb nach
@@ -513,6 +526,10 @@ export default function GP({ ticker }: ScreenProps) {
     return () => {
       syncers.forEach((f) => f());
       chart.unsubscribeCrosshairMove(onMove);
+      // Volumenprofil und Linien gehören zu diesem Chart: nach remove() nicht mehr ansprechen
+      vpRef.current = null;
+      vpLines.current = [];
+      markLines.current = [];
       chart.remove();
       rsiChart?.remove();
       chartRef.current = null;
@@ -567,8 +584,31 @@ export default function GP({ ticker }: ScreenProps) {
     }
   }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, intradayRange, earn.data, isYield]);
 
+  // Volumenprofil des gezeigten Zeitraums (1T/5T aus 5-Minuten-Kerzen, sonst aus Tageskerzen geschätzt)
+  const vp = useMemo(
+    () => (showVp && !comparing && !isYield ? volumeProfile(bars.map((b, i) => ({ t: i, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume })), { rows: 48 }) : null),
+    [showVp, comparing, isYield, bars],
+  );
+  useEffect(() => {
+    const main = seriesRef.current?.main;
+    vpRef.current?.setProfile(vp);
+    for (const l of vpLines.current) {
+      try {
+        main?.removePriceLine(l);
+      } catch {
+        /* Linie gehörte zum vorigen Chart */
+      }
+    }
+    vpLines.current = [];
+    if (!main || !vp) return;
+    vpLines.current = [
+      main.createPriceLine({ price: vp.poc, color: "#ff8000", lineWidth: 1, lineStyle: LineStyle.LargeDashed, axisLabelVisible: true, title: "POC" }),
+      main.createPriceLine({ price: vp.vah, color: "#8f8f8f", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "VAH" }),
+      main.createPriceLine({ price: vp.val, color: "#8f8f8f", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "VAL" }),
+    ];
+  }, [vp, chartGen]);
+
   // Kursmarken und Alarme als waagerechte Linien (nicht im Prozent-Vergleich)
-  const markLines = useRef<IPriceLine[]>([]);
   const marksKey = marks.map((m) => `${m.id}:${m.level}:${m.alarm}:${m.active}:${m.triggeredAt ?? ""}:${m.note}`).join("|");
   useEffect(() => {
     const main = seriesRef.current?.main;
@@ -718,6 +758,21 @@ export default function GP({ ticker }: ScreenProps) {
           <input type="checkbox" checked={showRsi} onChange={(e) => setShowRsi(e.target.checked)} />
           RSI 14
         </label>
+        {!comparing && !isYield && (
+          <label
+            className="check"
+            style={{ color: showVp ? "#ff8000" : undefined }}
+            title={
+              intradayRange
+                ? "Volumenprofil: Umsatz je Preisstufe aus 5-Minuten-Kerzen, mit POC und Value Area (70 %)"
+                : "Volumenprofil: Umsatz je Preisstufe im Zeitraum, aus Tageskerzen geschätzt (Volumen gleichmäßig über Tageshoch bis -tief verteilt), mit POC und Value Area (70 %)"
+            }
+          >
+            <input type="checkbox" checked={showVp} onChange={(e) => setShowVp(e.target.checked)} />
+            VP
+          </label>
+        )}
+        {showVp && !comparing && !isYield && hasData && !vp && <span className="small muted">VP: keine Umsätze</span>}
         {intradayRange && compare.length > 0 && <span className="small muted">Vergleich ab 1M</span>}
         {!intradayRange && (
           <>

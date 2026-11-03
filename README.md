@@ -13,7 +13,7 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 
 Jedes Panel kann über sein Auswahlfeld oder die Befehlszeile jede Funktion zeigen; das Layout
 jeder Seite ist umschaltbar (1, 2, 3 oder 4 Panels). Weitere Funktionen: HP (Kurshistorie),
-ERN (Earnings), DVD (Dividenden), ANR (Analysten), RV (Peer-Vergleich), EVTS (Earnings-Kalender),
+ERN (Earnings), DVD (Dividenden), ANR (Analysten), RV (Peer-Vergleich), TPO (Market Profile), EVTS (Earnings-Kalender),
 CMDT (Rohstoffe), SPRD (Zinsspreads), ECST (Länderdaten), W (Watchlist), HELP.
 
 **Mehrere Monitore:** „⧉ FENSTER“ öffnet die aktuelle Seite, „⧉“ im Panelkopf eine einzelne
@@ -82,6 +82,24 @@ Gespeichert wird das Depot auf dem eigenen Rechner im Benutzerordner unter `.mar
 Es bleibt deshalb auch bei einer neuen Programmversion und nach „⟲ STANDARD“ erhalten. Im
 Demo-Modus startet ein Muster-Depot zum Ausprobieren. Der KI-Assistent kann das Depot lesen
 („Wie riskant ist mein Depot?“), aber nicht verändern.
+
+## Volumenprofil und Market Profile
+
+- **VP im Kurschart (GP):** Häkchen „VP“ zeigt am rechten Rand, wie viel Umsatz auf jeder
+  Preisstufe im gewählten Zeitraum lief (grün aus steigenden, rot aus fallenden Kerzen). Orange
+  ist der **POC** (Preis mit dem meisten Umsatz), kräftig die **Value Area** mit 70 % des
+  Volumens; POC, VAH und VAL stehen zusätzlich als Linien an der Preisachse. In 1T und 5T aus
+  5-Minuten-Kerzen, in längeren Zeiträumen aus Tageskerzen geschätzt.
+- **TPO (Market Profile)**, z. B. `SAP GR TPO` oder `MP`: je Handelstag ein Profil aus
+  30-Minuten-Buchstaben (A = erste halbe Stunde). Blau die erste Stunde (Initial Balance),
+  hinterlegt die Value Area, orange der POC, ◆ der Schlusskurs, grüne Kante die Eröffnung.
+  1, 3, 5 oder 10 Tage nebeneinander, Auflösung fein/mittel/grob, umschaltbar auf Volumen je
+  Preisstufe. Darunter je Tag Eröffnung, Hoch, Tief, Schluss, erste Stunde, POC, Value Area,
+  Volumen und die Lage der Eröffnung zur Value Area des Vortags (über/in/unter).
+- Grundlage sind 5-Minuten-Kerzen (mit EODHD bis 10 Handelstage; „nur Haupthandel“ blendet vor-
+  und nachbörslichen Handel aus). Echte Tick- oder Orderbuchdaten liefert EODHD nicht; die
+  Verteilung innerhalb einer 5-Minuten-Kerze ist deshalb eine Annäherung. Devisen haben bei EODHD
+  kein Volumen – dort gibt es nur die Buchstaben-Ansicht.
 
 ## Kursmarken und Alarme (ALRT)
 

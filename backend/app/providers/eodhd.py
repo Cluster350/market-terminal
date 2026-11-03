@@ -172,9 +172,10 @@ class EODHDProvider:
         return hist
 
     async def intraday(self, ticker: str, days: int) -> Intraday:
-        interval = "5m" if days <= 5 else "1h"
+        # 5 Minuten auch für 10 Sitzungen: Market Profile (TPO) braucht 30-Minuten-Abschnitte
+        interval = "5m"
         now = dt.datetime.now(dt.timezone.utc)
-        start = now - dt.timedelta(days=days + 3)  # Wochenenden überbrücken
+        start = now - dt.timedelta(days=days * 7 // 5 + 4)  # Wochenenden und Feiertage überbrücken
         data = await self.client.get(
             f"intraday/{_path_ticker(ticker)}",
             {"interval": interval, "from": int(start.timestamp()), "to": int(now.timestamp())},

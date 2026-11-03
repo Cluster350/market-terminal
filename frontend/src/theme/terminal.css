@@ -660,3 +660,26 @@ table.corr td { width: 42px; height: 20px; text-align: center; color: var(--valu
 .alrt-log { list-style: none; margin: 0 0 8px; padding: 0; font-size: var(--fs-s); }
 .alrt-log li { padding: 2px 0; border-bottom: 1px solid #141414; font-family: var(--sans); font-size: 13px; }
 .nowrap { white-space: nowrap; }
+
+/* ---- Market Profile (TPO) ----------------------------------------------------------- */
+.tpo-body { overflow: auto; padding: 0 0 8px; }
+.tpo-grid { display: grid; font-family: var(--mono); font-size: 11px; line-height: 14px; width: max-content; min-width: 100%; }
+.tpo-row { display: contents; }
+.tpo-corner, .tpo-head { position: sticky; top: 0; z-index: 2; background: var(--panel-head); border-bottom: 1px solid var(--rule); padding: 3px 6px; color: var(--muted); font-size: var(--fs-xs); }
+.tpo-corner { left: 0; z-index: 3; }
+.tpo-head { display: flex; flex-direction: column; white-space: nowrap; border-left: 1px solid var(--rule); }
+.tpo-head b { color: var(--label); font-weight: 600; }
+.tpo-price { position: sticky; left: 0; z-index: 1; background: var(--panel); color: var(--muted); text-align: right; padding: 0 6px; border-right: 1px solid var(--rule); white-space: nowrap; }
+.tpo-price.last { color: #000; background: var(--label); font-weight: 600; }
+.tpo-cell { position: relative; padding: 0 4px; color: #5c5c5c; white-space: nowrap; border-left: 1px solid #141414; letter-spacing: 0.02em; }
+.tpo-cell.va { color: var(--value); background: rgba(102, 184, 255, 0.07); }
+.tpo-cell.poc { background: rgba(255, 128, 0, 0.32); color: #fff; }
+.tpo-cell.open { box-shadow: inset 2px 0 0 var(--up); }
+.tpo-ib, .tpo-cell .tpo-ib { color: #66b8ff; }
+.tpo-cell.poc .tpo-ib { color: #cfe8ff; }
+.tpo-close { color: var(--label); margin-left: 2px; }
+.tpo-vbar { display: inline-block; height: 9px; vertical-align: -1px; background: rgba(102, 184, 255, 0.35); }
+.tpo-cell.va .tpo-vbar { background: rgba(102, 184, 255, 0.7); }
+.tpo-cell.poc .tpo-vbar { background: #ff8000; }
+.tpo-legend-va { color: var(--value); background: rgba(102, 184, 255, 0.12); padding: 0 3px; }
+.tpo-legend-poc { color: #fff; background: rgba(255, 128, 0, 0.32); padding: 0 3px; }
