@@ -22,6 +22,7 @@ const ALRT = lazy(async () => ({ default: (await import("./alerts")).ALRT }));
 const TPO = lazy(async () => ({ default: (await import("./tpo")).TPO }));
 const WMAP = lazy(async () => ({ default: (await import("./worldmap")).WMAP }));
 const FWD = lazy(async () => ({ default: (await import("./forwards")).FWD }));
+const OMON = lazy(async () => ({ default: (await import("./options")).OMON }));
 
 export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   GP,
@@ -55,4 +56,5 @@ export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   TPO,
   WMAP,
   FWD,
+  OMON,
 };

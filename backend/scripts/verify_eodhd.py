@@ -122,6 +122,16 @@ async def main(ticker: str) -> None:
             p.screener([ScreenFilter("exchange", "eq", "US"), ScreenFilter("market_cap", "gt", 1e10)], "market_cap", True, 100),
             screen,
         )
+        # Optionen (OMON): Zusatzprodukt im EODHD-Marketplace; ein Abruf kostet 10 Calls je Seite
+        await check(
+            "Optionen AAPL (Marketplace)",
+            p.options("AAPL.US"),
+            lambda cs: (
+                f"{len(cs)} Kontrakte, {len({c.exp for c in cs})} Verfälle, IV z. B. {next((c.iv for c in cs if c.iv), None)}",
+                not cs or all(c.iv is None for c in cs),
+            ),
+        )
+
         # Weltkarte (WMAP): Länderindizes und zehnjährige Anleihen – fehlende bleiben auf der Karte grau
         missing: list[str] = []
         for _, name, cc, idx, _ in WORLD:

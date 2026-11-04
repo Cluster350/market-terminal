@@ -185,6 +185,15 @@ def main(target: str) -> None:
         for cc in curve_catalog():
             write(f"forwards/rates-{cc}.json", get(f"/api/forwards/rates?country={cc}"))
 
+        # Optionen: zwei Beispielwerte, Übersicht und Kette des Standardverfalls
+        for t in ("NWND.US", "QBIT.US"):
+            ov = get(f"/api/options/{t}/overview")
+            write(f"options/{safe(t)}-overview.json", ov)
+            chain = get(f"/api/options/{t}/chain")
+            write(f"options/{safe(t)}-chain.json", chain)
+            write(f"options/{safe(t)}-chain-{chain['exp']}.json", chain)  # OMON fragt die Kette mit Verfall ab
+            write(f"options/{safe(t)}-overview-{ov['focus']['exp']}.json", ov)
+
         # Depot: Muster-Depot und seine Kennzahlen (im statischen Build nur lesbar)
         write("portfolio/portfolio.json", get("/api/portfolio"))
         write("portfolio/analytics.json", get("/api/portfolio/analytics"))

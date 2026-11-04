@@ -5,7 +5,7 @@ import { displayTicker } from "./format";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON";
 
 export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "Depot" | "System";
 
@@ -27,6 +27,7 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "ANR", title: "Analysten", group: "Aktie", needsTicker: true, desc: "Empfehlungen und Kursziel" },
   { code: "CN", title: "Firmen-News", group: "Aktie", needsTicker: true, desc: "Nachrichten zum Wertpapier" },
   { code: "RV", title: "Peer-Vergleich", group: "Aktie", needsTicker: true, desc: "Bewertung und Performance gegenüber Branchen-Peers" },
+  { code: "OMON", title: "Optionen", group: "Aktie", needsTicker: true, desc: "Optionsmarkt einer US-Aktie: implizite Volatilität, erwartete Bewegung, Put/Call, Open Interest je Strike, Kette, Smile" },
   { code: "TPO", title: "Market Profile", group: "Aktie", needsTicker: true, desc: "Market Profile je Handelstag (30-Minuten-Buchstaben) oder Volumen je Preisstufe, mit POC, Value Area und erster Stunde" },
   { code: "TOP", title: "News-Terminal", group: "News", needsTicker: false, desc: "Nachrichtenstrom mit Filtern, Suche und Leseansicht" },
   { code: "EVTS", title: "Earnings-Kalender", group: "News", needsTicker: false, desc: "Quartalszahlen aller Unternehmen nach Termin, mit Schätzung und Ergebnis" },
@@ -70,6 +71,7 @@ const ALIASES: Record<string, FnCode> = {
   RISIKO: "RISK", VAR: "RISK", PORTRISK: "RISK",
   TERMIN: "FWD", TERMINKURSE: "FWD", FORWARD: "FWD", FORWARDS: "FWD", FRD: "FWD", FXFA: "FWD", ABSICHERUNG: "FWD", HEDGE: "FWD",
   KARTE: "WMAP", WELTKARTE: "WMAP", MAP: "WMAP", WORLD: "WMAP", WELT: "WMAP", LAENDERKARTE: "WMAP",
+  OPTIONEN: "OMON", OPTIONS: "OMON", OPTION: "OMON", OPT: "OMON", OV: "OMON", OVDV: "OMON", KETTE: "OMON", OPTIONSKETTE: "OMON",
   MP: "TPO", MKTP: "TPO", MARKETPROFILE: "TPO", MARKTPROFIL: "TPO", VOLUMENPROFIL: "TPO", VOLUMEPROFILE: "TPO", VPRO: "TPO",
   ALARM: "ALRT", ALARME: "ALRT", ALERT: "ALRT", ALERTS: "ALRT", KURSALARM: "ALRT", MARKEN: "ALRT", KURSMARKEN: "ALRT",
   BRIEFING: "BRIEF", MORGEN: "BRIEF", MORGENBRIEFING: "BRIEF", MORNING: "BRIEF", BRIEFUNG: "BRIEF",

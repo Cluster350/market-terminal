@@ -22,6 +22,7 @@ from .alerts.service import AlertService
 from .api.ai_routes import router as ai_router
 from .api.alert_routes import router as alert_router
 from .api.forward_routes import router as forward_router
+from .api.option_routes import router as option_router
 from .api.portfolio_routes import current_portfolio, router as portfolio_router
 from .api.routes import router
 from .cache import TTLCache
@@ -130,6 +131,7 @@ def create_app(
     app.include_router(portfolio_router)
     app.include_router(alert_router)
     app.include_router(forward_router)
+    app.include_router(option_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

@@ -258,6 +258,28 @@ async def _depot(t: Terminal, a: dict) -> dict:
     }
 
 
+async def _optionen(t: Terminal, a: dict) -> dict:
+    from ..services import options as opt
+
+    ticker = await resolve_ticker(t, a.get("ticker"))
+    contracts = await t.options(ticker)
+    spot = (await t.quotes([ticker]))[0].last
+    h = await t.history(ticker)
+    o = opt.overview(ticker, contracts, spot, [c for c in h.c if c], t.now().date())
+    f = o.focus
+    pct = lambda x: None if x is None else round(x * 100, 1)  # noqa: E731
+    return {
+        "ticker": ticker, "kurs": _r(spot, 2), "implizite_vola_30t_prozent": pct(o.iv30), "historische_vola_30t_prozent": pct(o.hv30),
+        "put_call_volumen": _r(o.pc_volume), "put_call_open_interest": _r(o.pc_oi),
+        "naechster_monatsverfall": None if f is None else {
+            "datum": f.exp, "tage": f.dte, "atm_iv_prozent": pct(f.atm_iv), "erwartete_bewegung_prozent": _r(f.move_pct),
+            "straddle_preis": _r(f.straddle), "max_pain": f.max_pain, "skew_25_delta_punkte": _r(f.skew25, 1),
+        },
+        "call_strikes_hoechstes_oi": [w.strike for w in o.call_walls], "put_strikes_hoechstes_oi": [w.strike for w in o.put_walls],
+        "auffaellige_umsaetze": [{"kontrakt": u.contract, "volumen": u.volume, "volumen_zu_oi": _r(u.vol_oi)} for u in o.unusual[:5]],
+    }
+
+
 async def _alarme(t: Terminal, a: dict) -> dict:
     from ..alerts.service import condition_text
 
@@ -307,6 +329,8 @@ TOOLS: list[Tool] = [
     Tool("screener", "Aktien filtern nach Sektor (englischer Name, z. B. 'Utilities'), maximalem KGV, Mindest-Dividendenrendite in % und Mindest-Marktkapitalisierung in Mrd.",
          _obj({"sektor": {"type": "string"}, "kgv_max": {"type": "number"}, "dividende_min": {"type": "number"}, "marktkap_min_mrd": {"type": "number"}, "sortierung": {"type": "string", "enum": ["marktkap", "dividende", "kgv", "momentum"]}}), _screener),
     Tool("suche", "Wertpapiere über Namen oder Kürzel finden.", _obj({"text": {"type": "string"}}, ("text",)), _suche),
+    Tool("optionen", "Optionsmarkt einer US-Aktie: implizite und historische Volatilität, erwartete Kursbewegung bis zum Monatsverfall, "
+         "Put/Call-Verhältnis, Max Pain, Skew, Strikes mit dem höchsten Open Interest, auffällige Umsätze.", _obj({"ticker": TICKER}, ("ticker",)), _optionen),
     Tool("alarme", "Kursalarme und Kursmarken des Nutzers mit Status, Abstand zum Kurs und zuletzt ausgelöste Alarme.", _obj({}), _alarme),
     Tool("depot", "Das eigene Depot des Nutzers: Wert, Ergebnis heute und seit Kauf, Positionen mit Gewicht und Risikoanteil, "
          "Volatilität, Beta, Drawdown, Value at Risk, Sektoren.", _obj({}), _depot),
@@ -340,7 +364,7 @@ def summarize(name: str, args: dict, result: dict) -> str:
     what = {
         "kurs": "Kurs", "wertentwicklung": "Wertentwicklung", "kennzahlen": "Kennzahlen", "finanzen": "Finanzdaten",
         "earnings": "Quartalszahlen", "news": "Nachrichten", "kalender": "Wirtschaftskalender", "earnings_kalender": "Earnings-Kalender",
-        "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot", "alarme": "Alarme",
+        "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot", "alarme": "Alarme", "optionen": "Optionen",
     }.get(name, name)
     subject = result.get("ticker") or args.get("ticker") or args.get("text") or ""
     if isinstance(subject, str) and "." in subject:

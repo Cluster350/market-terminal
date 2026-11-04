@@ -26,6 +26,7 @@ from ..models import (
     History,
     Intraday,
     NewsItem,
+    OptionContract,
     Officer,
     PerShare,
     Profitability,
@@ -725,3 +726,32 @@ def earnings_calendar(data: Any) -> list[EarningsEvent]:
         )
     order = {"BeforeMarket": 0, "AfterMarket": 2}
     return sorted(out.values(), key=lambda e: (e.report_date, order.get(e.timing or "", 1), e.ticker))
+
+
+# --- Optionen (Marketplace „US Stock Options Data API“, Unicorn Bay) --------------
+
+
+def option_contracts(data: Any) -> list[OptionContract]:
+    """JSON:API-Antwort {"data": [{"attributes": {...}}]} in Kontrakte übersetzen (tolerant)."""
+    rows = data.get("data") if isinstance(data, dict) else data
+    out: list[OptionContract] = []
+    for item in rows if isinstance(rows, list) else []:
+        a = item.get("attributes", item) if isinstance(item, dict) else None
+        if not isinstance(a, dict):
+            continue
+        kind = str(a.get("type") or "").lower()
+        strike, exp = num(a.get("strike")), text(a.get("exp_date") or a.get("expiration_date"))
+        if kind not in ("call", "put") or strike is None or not exp:
+            continue
+        iv = num(a.get("volatility") if a.get("volatility") is not None else a.get("implied_volatility"))
+        if iv is not None and iv > 3:  # in Prozent geliefert
+            iv = iv / 100
+        out.append(OptionContract(
+            contract=text(a.get("contract")) or f"{a.get('underlying_symbol', '')}{exp}{kind[0].upper()}{strike}",
+            type=kind,  # type: ignore[arg-type]
+            exp=exp[:10], strike=strike,
+            bid=num(a.get("bid")), ask=num(a.get("ask")), last=num(a.get("last")),
+            volume=num(a.get("volume")), open_interest=num(a.get("open_interest")), iv=iv,
+            delta=num(a.get("delta")), gamma=num(a.get("gamma")), theta=num(a.get("theta")), vega=num(a.get("vega")),
+        ))
+    return out

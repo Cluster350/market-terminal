@@ -12,7 +12,7 @@ from ..cache import TTLCache
 from ..config import Settings
 from ..eodhd import mapping
 from ..eodhd.client import EODHDClient
-from ..errors import NotFound, TerminalError
+from ..errors import NotFound, PlanNotIncluded, TerminalError
 from ..models import (
     Company,
     EarningsEvent,
@@ -24,6 +24,7 @@ from ..models import (
     History,
     Intraday,
     NewsItem,
+    OptionContract,
     Quote,
     ScreenRow,
     SearchHit,
@@ -181,6 +182,42 @@ class EODHDProvider:
             {"interval": interval, "from": int(start.timestamp()), "to": int(now.timestamp())},
         )
         return mapping.last_sessions(mapping.intraday(data, ticker, interval), days)
+
+    async def options(self, ticker: str) -> list[OptionContract]:
+        code, _, exch = ticker.rpartition(".")
+        if exch != "US":
+            raise NotFound("Optionsdaten gibt es bei EODHD nur für US-Aktien und -ETFs.")
+        today = dt.date.today()
+        fields = "contract,type,exp_date,strike,bid,ask,last,volume,open_interest,volatility,delta,gamma,theta,vega"
+        out: list[OptionContract] = []
+        limit = 1000
+        for page in range(8):  # höchstens 8000 Kontrakte (jede Seite zählt als 10 Calls)
+            try:
+                data = await self.client.get(
+                    "mp/unicornbay/options/contracts",
+                    {
+                        "filter[underlying_symbol]": code,
+                        "filter[exp_date_from]": today.isoformat(),
+                        "filter[exp_date_to]": (today + dt.timedelta(days=430)).isoformat(),
+                        "fields[options-contracts]": fields,
+                        "sort": "exp_date",
+                        "page[limit]": limit,
+                        "page[offset]": page * limit,
+                    },
+                    cost=10,
+                )
+            except PlanNotIncluded as exc:
+                raise PlanNotIncluded(
+                    "Optionsdaten sind bei EODHD ein Zusatzprodukt (Marketplace „US Stock Options Data API“). "
+                    "Ohne dieses Abo bleibt OMON leer."
+                ) from exc
+            batch = mapping.option_contracts(data)
+            out.extend(batch)
+            if len(batch) < limit:
+                break
+        if not out:
+            raise NotFound(f"Keine Optionsdaten für {ticker}.")
+        return out
 
     async def _fundamentals(self, ticker: str) -> dict:
         async def load() -> dict:

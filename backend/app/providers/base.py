@@ -17,6 +17,7 @@ from ..models import (
     History,
     Intraday,
     NewsItem,
+    OptionContract,
     Quote,
     ScreenRow,
     SearchHit,
@@ -66,6 +67,9 @@ class Provider(Protocol):
     async def news(self, tickers: Optional[list[str]], limit: int) -> list[NewsItem]: ...
     async def calendar(self, start: dt.date, end: dt.date, country: Optional[str]) -> list[EconEvent]: ...
     async def macro_indicator(self, country: str, indicator: str) -> list[CountryValue]: ...
+    async def options(self, ticker: str) -> list[OptionContract]:
+        """Optionskette (alle Verfälle des nächsten gut eines Jahres); nur US-Aktien und -ETFs."""
+        ...
     async def screener(
         self, filters: list[ScreenFilter], sort: str, desc: bool, max_rows: int
     ) -> tuple[list[ScreenRow], list[ScreenFilter], list[str]]:

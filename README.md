@@ -13,7 +13,7 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 
 Jedes Panel kann über sein Auswahlfeld oder die Befehlszeile jede Funktion zeigen; das Layout
 jeder Seite ist umschaltbar (1, 2, 3 oder 4 Panels). Weitere Funktionen: HP (Kurshistorie),
-ERN (Earnings), DVD (Dividenden), ANR (Analysten), RV (Peer-Vergleich), TPO (Market Profile), FWD (Terminkurse), EVTS (Earnings-Kalender),
+ERN (Earnings), DVD (Dividenden), ANR (Analysten), RV (Peer-Vergleich), OMON (Optionen), TPO (Market Profile), FWD (Terminkurse), EVTS (Earnings-Kalender),
 CMDT (Rohstoffe), SPRD (Zinsspreads), ECST (Länderdaten), W (Watchlist), HELP.
 
 **Mehrere Monitore:** „⧉ FENSTER“ öffnet die aktuelle Seite, „⧉“ im Panelkopf eine einzelne
@@ -96,6 +96,26 @@ Die Weltkarte färbt rund 35 Länder nach einer Kennzahl ein; daneben steht die 
   Index bzw. Anleihe, ein Klick öffnet den Index- bzw. Renditechart (Konjunktur: ECST).
 - Mit EODHD zeigt `EODHD-pruefen-Windows.bat`, ob alle Länderindizes und Anleihen im Plan
   enthalten sind; fehlende Länder bleiben auf der Karte grau.
+
+## Optionen (OMON)
+
+Für US-Aktien und -ETFs, z. B. `AAPL US OMON` (Demo: `NWND OMON`). Tagesenddaten.
+- **Übersicht:** implizite Volatilität 30 Tage gegen die tatsächliche Schwankung (IV/HV: sind
+  Optionen teuer?), **erwartete Bewegung** bis zum gewählten Verfall (Straddle-Preis), Put/Call-
+  Verhältnis, Skew (25 Delta), Max Pain; Open Interest je Strike (Calls grün nach oben, Puts rot
+  nach unten), Volatilität nach Laufzeit, Strikes mit dem größten Open Interest als Widerstand
+  bzw. Unterstützung, auffällige Umsätze (Volumen über Open Interest) und aktivste Kontrakte.
+- **Kette:** Calls links, Strike in der Mitte, Puts rechts – Bid, Ask, letzter Preis, Volumen,
+  Open Interest, IV und Delta, auf Wunsch alle Greeks; im Geld liegende Optionen hinterlegt,
+  die Zeile am Geld markiert, Bereich ±10 %, ±20 % oder alle Strikes.
+- **Volatilität:** Smile/Skew des Verfalls und alle Verfälle mit ATM-IV, erwarteter Bewegung,
+  Skew, Put/Call und Max Pain (Klick wählt den Verfall).
+- **Daten:** Bei EODHD sind Optionen ein **Zusatzprodukt** im Marketplace („US Stock Options
+  Data API“, Anbieter Unicorn Bay), nur US-Werte, Tagesendstand; ein Abruf kostet 10 API-Calls
+  je 1000 Kontrakte. `EODHD-pruefen-Windows.bat` zeigt, ob das Abo aktiv ist. Im Demo-Modus
+  sind die Ketten mit Black-Scholes berechnet (mit Skew und höherer IV vor Quartalszahlen).
+- Der KI-Assistent kann den Optionsmarkt einer Aktie lesen („Was preisen die Optionen für NWND
+  ein?“).
 
 ## Terminkurse (FWD) und Futures
 

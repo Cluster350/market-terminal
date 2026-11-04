@@ -314,6 +314,28 @@ class CountryTable(Model):
     note: Optional[str] = None
 
 
+# --- Optionen -------------------------------------------------------------------
+
+
+class OptionContract(Model):
+    """Ein Optionskontrakt (Tagesendstand). IV als Dezimalzahl (0.25 = 25 %)."""
+
+    contract: str
+    type: Literal["call", "put"]
+    exp: str  # Verfall JJJJ-MM-TT
+    strike: float
+    bid: Optional[float] = None
+    ask: Optional[float] = None
+    last: Optional[float] = None
+    volume: Optional[float] = None
+    open_interest: Optional[float] = None
+    iv: Optional[float] = None
+    delta: Optional[float] = None
+    gamma: Optional[float] = None
+    theta: Optional[float] = None  # je Kalendertag
+    vega: Optional[float] = None  # je Volatilitätspunkt
+
+
 # --- Weltkarte -----------------------------------------------------------------
 
 

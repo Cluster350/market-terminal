@@ -32,6 +32,7 @@ from ..models import (
     Movers,
     NewsItem,
     NewsPage,
+    OptionContract,
     Quote,
     ScreenField,
     ScreenResult,
@@ -112,6 +113,7 @@ class Terminal:
             "macro": 7 * 24 * 3600,
             "screen": 900 if live else 60,
             "search": 24 * 3600,
+            "options": 3 * 3600 if live else 60,  # Tagesenddaten
         }
         self.enrich_limit = 150 if live else 1000
         self._sem = asyncio.Semaphore(8)
@@ -165,6 +167,9 @@ class Terminal:
 
     async def history(self, ticker: str) -> History:
         return await self._cached(f"hist:{ticker}", "history", lambda: self.p.history(ticker))
+
+    async def options(self, ticker: str) -> list[OptionContract]:
+        return await self._cached(f"options:{ticker}", "options", lambda: self.p.options(ticker))
 
     async def intraday(self, ticker: str, days: int) -> Intraday:
         days = max(1, min(days, 10))
