@@ -17,7 +17,7 @@ import sys
 
 from app.config import Settings
 from app.errors import TerminalError
-from app.providers.base import ScreenFilter
+from app.providers.base import WORLD, ScreenFilter
 from app.providers.eodhd import EODHDProvider
 
 OK = "\033[32mOK\033[0m"
@@ -121,6 +121,21 @@ async def main(ticker: str) -> None:
             p.screener([ScreenFilter("exchange", "eq", "US"), ScreenFilter("market_cap", "gt", 1e10)], "market_cap", True, 100),
             screen,
         )
+        # Weltkarte (WMAP): Länderindizes und zehnjährige Anleihen – fehlende bleiben auf der Karte grau
+        missing: list[str] = []
+        for _, name, cc, idx, _ in WORLD:
+            for ticker in [t for t in (idx, f"{cc}10Y.GBOND" if cc else None) if t]:
+                try:
+                    h = await p.history(ticker)
+                    if not h.c:
+                        missing.append(f"{ticker} ({name})")
+                except TerminalError:
+                    missing.append(f"{ticker} ({name})")
+        total = sum(1 for _, _, cc, idx, _ in WORLD for t in (idx, cc) if t)
+        if missing:
+            print(f"[{WARN}] Weltkarte: {total - len(missing)} von {total} Reihen da, fehlen: {', '.join(missing)}")
+        else:
+            print(f"[{OK}] Weltkarte: alle {total} Länderindizes und Anleihen vorhanden")
         print("\nVerbrauch laut lokalem Zähler:", p.client.budget.snapshot())
     finally:
         await p.close()

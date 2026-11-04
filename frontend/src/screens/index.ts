@@ -20,6 +20,7 @@ const PORT = lazy(async () => ({ default: (await depot()).PORT }));
 const RISK = lazy(async () => ({ default: (await depot()).RISK }));
 const ALRT = lazy(async () => ({ default: (await import("./alerts")).ALRT }));
 const TPO = lazy(async () => ({ default: (await import("./tpo")).TPO }));
+const WMAP = lazy(async () => ({ default: (await import("./worldmap")).WMAP }));
 
 export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   GP,
@@ -51,4 +52,5 @@ export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   RISK,
   ALRT,
   TPO,
+  WMAP,
 };

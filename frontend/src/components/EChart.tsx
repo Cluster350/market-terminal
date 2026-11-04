@@ -2,11 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, LineChart, TreemapChart } from "echarts/charts";
-import { DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
+import { BarChart, LineChart, MapChart, TreemapChart } from "echarts/charts";
+import { DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent, VisualMapContinuousComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 
-echarts.use([LineChart, BarChart, TreemapChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, CanvasRenderer]);
+echarts.use([LineChart, BarChart, TreemapChart, MapChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, VisualMapContinuousComponent, CanvasRenderer]);
+
+/** Kartenumrisse registrieren (Weltkarte WMAP). */
+export const registerMap = echarts.registerMap;
 
 export type EOption = echarts.EChartsCoreOption;
 

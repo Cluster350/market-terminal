@@ -6,7 +6,7 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 | Seite | Panels | Inhalt |
 |---|---|---|
 | **1 AKTIE** | GP · DES · FA · CN | Kurschart, Firmenprofil mit Kennzahlen, Finanzberichte, Firmen-News |
-| **2 MAKRO** | WEI · GC · ECO · FX | Weltindizes, Zinskurven, Wirtschaftskalender, Devisen |
+| **2 MAKRO** | WMAP · WEI · GC · ECO | Weltkarte, Weltindizes, Zinskurven, Wirtschaftskalender (FX über das Auswahlfeld) |
 | **3 SCREENER** | EQS · IMAP · MOST | Aktien-Screener, Markt-Heatmap, Top-Bewegungen |
 | **4 NEWS** | TOP · BRIEF · ASK | News-Terminal mit KI-Einordnung, Morgenbriefing, KI-Assistent |
 | **5 DEPOT** | PORT · RISK | Eigenes Depot: Wert, Ergebnis, Aufteilung; Risiko mit Schwankung, Beta, VaR, Korrelationen; dazu ALRT (Kursalarme) |
@@ -82,6 +82,20 @@ Gespeichert wird das Depot auf dem eigenen Rechner im Benutzerordner unter `.mar
 Es bleibt deshalb auch bei einer neuen Programmversion und nach „⟲ STANDARD“ erhalten. Im
 Demo-Modus startet ein Muster-Depot zum Ausprobieren. Der KI-Assistent kann das Depot lesen
 („Wie riskant ist mein Depot?“), aber nicht verändern.
+
+## Weltkarte (WMAP)
+
+Die Weltkarte färbt rund 35 Länder nach einer Kennzahl ein; daneben steht die Rangliste.
+- **Aktien:** Wertentwicklung des wichtigsten Index je Land heute, über 1 Woche, 1 Monat oder seit
+  Jahresbeginn (grün steigend, rot fallend, in Landeswährung).
+- **Zinsen:** Rendite der zehnjährigen Staatsanleihe oder ihre Veränderung über einen Monat in
+  Basispunkten (steigende Renditen rot).
+- **Konjunktur:** BIP-Wachstum, Inflation, Arbeitslosigkeit, Staatsschulden und Realzins
+  (Jahreswerte, Weltbank-Basis; grün = günstig, rot = ungünstig).
+- Ausschnitte Welt, Europa, Amerika, Asien/Pazifik. Mit der Maus über ein Land zeigt Wert und
+  Index bzw. Anleihe, ein Klick öffnet den Index- bzw. Renditechart (Konjunktur: ECST).
+- Mit EODHD zeigt `EODHD-pruefen-Windows.bat`, ob alle Länderindizes und Anleihen im Plan
+  enthalten sind; fehlende Länder bleiben auf der Karte grau.
 
 ## Volumenprofil und Market Profile
 

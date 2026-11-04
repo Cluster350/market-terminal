@@ -28,6 +28,7 @@ from ..models import (
     ScreenResult,
     SearchHit,
     Series,
+    WorldMap,
 )
 from ..services.terminal import Terminal
 from ..services.tickers import normalize, normalize_list
@@ -163,6 +164,12 @@ async def macro_calendar(
     s = _date(start, today - dt.timedelta(days=3))
     e = _date(end, today + dt.timedelta(days=7))
     return await T(request).calendar(s, e, country.upper() if country else None, importance)
+
+
+@router.get("/macro/worldmap", response_model=WorldMap)
+async def world_map(request: Request, group: str = Query("equity", pattern="^(equity|rates|macro)$")):
+    """Länderdaten für die Weltkarte (WMAP): Aktienindizes, zehnjährige Anleihen oder Konjunktur."""
+    return await T(request).world_map(group)
 
 
 @router.get("/macro/countries", response_model=CountryTable)

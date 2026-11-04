@@ -46,6 +46,7 @@ from .base import (
     MACRO_INDICATORS,
     Catalog,
     Instrument,
+    WORLD,
     ScreenFilter,
     curve_catalog,
 )
@@ -195,10 +196,15 @@ def _de(x: float, digits: int, sign: bool = False) -> str:
 COMPANY_TICKERS = [f"{c[0]}.{c[2]}" for c in D.COMPANIES]
 _COMPANY = {f"{c[0]}.{c[2]}": c for c in D.COMPANIES}
 _INDEX_NAMES = {i.ticker: i for i in INDICES}
+# Länderindizes der Weltkarte, die nicht in WEI stehen
+_INDEX_NAMES.update({t: Instrument(t, n, "Welt") for _, _, _, t, n in WORLD if t and t not in _INDEX_NAMES})
 _FX_NAMES = {i.ticker: i for i in FX}
 _COMMODITY = {c[0]: c for c in D.COMMODITIES}
 _CURVES = curve_catalog()
 _BOND = {t: (cc, tenor, years) for cc, (_, pts) in _CURVES.items() for tenor, years, t in pts}
+# Zehnjährige Anleihen weiterer Länder (nur für die Weltkarte, keine ganze Zinskurve)
+_WORLD_BOND_NAMES = {cc: name for _, name, cc, _, _ in WORLD if cc and cc not in _CURVES}
+_BOND.update({f"{cc}10Y.GBOND": (cc, "10Y", 10.0) for cc in _WORLD_BOND_NAMES})
 
 TIMING_ORDER = {"BeforeMarket": 0, "AfterMarket": 2}  # vorbörslich zuerst
 
@@ -292,7 +298,7 @@ class DemoProvider:
             return _COMMODITY[ticker][1]
         if ticker in _BOND:
             cc, tenor, _ = _BOND[ticker]
-            return f"{_CURVES[cc][0]} Staatsanleihe {tenor}"
+            return f"{_CURVES[cc][0] if cc in _CURVES else _WORLD_BOND_NAMES.get(cc, cc)} Staatsanleihe {tenor}"
         return ticker
 
     def currency(self, ticker: str) -> Optional[str]:
@@ -369,7 +375,11 @@ class DemoProvider:
             day_sigma = vol / math.sqrt(252)
         elif ticker in D.INDEX_PARAMS:
             base, drift, _ = D.INDEX_PARAMS[ticker]
-            beta = {"NDX.INDX": 1.2, "RUT.INDX": 1.15, "N225.INDX": 0.8, "HSI.INDX": 0.7, "AXJO.INDX": 0.7}.get(ticker, 1.0)
+            beta = {
+                "NDX.INDX": 1.2, "RUT.INDX": 1.15, "N225.INDX": 0.8, "HSI.INDX": 0.7, "AXJO.INDX": 0.7,
+                "SSEC.INDX": 0.35, "BVSP.INDX": 0.8, "MERV.INDX": 0.6, "XU100.INDX": 0.5, "NSEI.INDX": 0.6,
+                "KS11.INDX": 0.8, "TWII.INDX": 0.95, "JKSE.INDX": 0.5, "NZ50.INDX": 0.6, "MXX.INDX": 0.7,
+            }.get(ticker, 1.0)
             p = base
             for m in mkt:
                 p *= math.exp(beta * m + drift / 252 - beta * 0.0004 + 0.0035 * rng.gauss(0, 1))

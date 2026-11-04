@@ -173,6 +173,10 @@ def main(target: str) -> None:
         ]
         write("ai/ask.json", {q: post("/api/ai/ask", {"question": q, "ticker": "NWND.US", "watchlist": watchlist}) for q in questions})
 
+        # Weltkarte: alle drei Bereiche
+        for group in ("equity", "rates", "macro"):
+            write(f"macro/worldmap-{group}.json", get(f"/api/macro/worldmap?group={group}"))
+
         # Depot: Muster-Depot und seine Kennzahlen (im statischen Build nur lesbar)
         write("portfolio/portfolio.json", get("/api/portfolio"))
         write("portfolio/analytics.json", get("/api/portfolio/analytics"))

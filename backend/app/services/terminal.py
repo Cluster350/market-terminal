@@ -38,8 +38,12 @@ from ..models import (
     ScreenRow,
     SearchHit,
     Series,
+    WorldBond,
+    WorldCountry,
+    WorldIndex,
+    WorldMap,
 )
-from ..providers.base import MACRO_INDICATORS, Instrument, Provider, ScreenFilter
+from ..providers.base import MACRO_INDICATORS, WORLD, Instrument, Provider, ScreenFilter
 from . import metrics
 from .util import pct
 
@@ -378,10 +382,10 @@ class Terminal:
         events: list[EconEvent] = await self._cached(key, "calendar", lambda: self.p.calendar(start, end, country))
         return [e for e in events if e.importance >= min_importance]
 
-    async def countries(self, indicators: Optional[list[str]] = None) -> CountryTable:
+    async def countries(self, indicators: Optional[list[str]] = None, countries: Optional[dict[str, str]] = None) -> CountryTable:
         known = {k: (label, unit) for k, label, unit in MACRO_INDICATORS}
         keys = [k for k in (indicators or []) if k in known] or [k for k, _, _ in MACRO_INDICATORS[:5]]
-        countries = self.p.catalog.countries
+        countries = countries or self.p.catalog.countries
 
         async def series(cc: str, ind: str) -> tuple[str, str, list[CountryValue]]:
             async with self._sem:
@@ -410,6 +414,51 @@ class Terminal:
         )
 
     # --- Screener ---------------------------------------------------------------------
+
+    async def world_map(self, group: str) -> WorldMap:
+        """Länderdaten für die Weltkarte: Aktienindizes, zehnjährige Anleihen oder Konjunktur."""
+        out = {iso: WorldCountry(iso3=iso, name=name) for iso, name, _, _, _ in WORLD}
+        as_of: Optional[str] = None
+        indicators: list[Indicator] = []
+        note: Optional[str] = None
+        if group == "equity":
+            names = {t: n for _, _, _, t, n in WORLD if t}
+            rows = await self._market_rows([Instrument(t, n) for t, n in names.items()])
+            by = {r.ticker: r for r in rows}
+            for iso, _, _, t, n in WORLD:
+                r = by.get(t or "")
+                if r is None or r.last is None:
+                    continue
+                out[iso].index = WorldIndex(ticker=r.ticker, name=n or r.name, last=r.last, change_pct=r.change_pct,
+                                            chg_1w=r.chg_1w, chg_1m=r.chg_1m, chg_ytd=r.chg_ytd)
+                as_of = max(as_of or "", r.as_of or "") or None
+            note = "Wertentwicklung des wichtigsten Aktienindex je Land in Landeswährung."
+        elif group == "rates":
+            async def bond(iso: str, cc: str) -> None:
+                nonlocal as_of
+                ticker = f"{cc}10Y.GBOND"
+                async with self._sem:
+                    try:
+                        h = await self.history(ticker)
+                    except TerminalError:
+                        return
+                pairs = [(d[:10], x) for d, x in zip(h.t, h.c) if x is not None]
+                if not pairs:
+                    return
+                cutoff = metrics.shift_date(dt.date.fromisoformat(pairs[-1][0]), 1).isoformat()
+                before = [x for d, x in pairs if d <= cutoff]
+                out[iso].bond = WorldBond(ticker=ticker, value=pairs[-1][1], chg_1m_bp=None if not before else round((pairs[-1][1] - before[-1]) * 100, 1))
+                as_of = max(as_of or "", pairs[-1][0])
+
+            await asyncio.gather(*(bond(iso, cc) for iso, _, cc, _, _ in WORLD if cc))
+            note = "Rendite zehnjähriger Staatsanleihen; Veränderung in Basispunkten gegenüber vor einem Monat."
+        else:
+            table = await self.countries(countries={iso: name for iso, name, _, _, _ in WORLD})
+            for row in table.rows:
+                if row.country in out:
+                    out[row.country].macro = row.values
+            indicators, note = table.indicators, table.note
+        return WorldMap(group=group, countries=list(out.values()), indicators=indicators, as_of=as_of, note=note)  # type: ignore[arg-type]
 
     def screen_fields(self) -> list[ScreenField]:
         fields = []

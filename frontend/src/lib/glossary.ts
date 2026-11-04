@@ -27,6 +27,7 @@ export const GLOSSARY: Record<string, string> = {
   Risikoanteil: "Anteil einer Position am Gesamtrisiko (Schwankung) des Depots, berücksichtigt Gewicht, Schwankung und Korrelation. Alle Anteile ergeben 100 %.",
   "Effektive Positionen": "Wie viele gleich große Positionen dieselbe Streuung hätten (1 ÷ Summe der quadrierten Gewichte). Deutlich weniger als die tatsächliche Anzahl heißt: Klumpenrisiko.",
   Korrelation: "Gleichlauf zweier Werte von −1 (gegenläufig) über 0 (unabhängig) bis +1 (gleichläufig). Viele hohe Werte bedeuten wenig Streuung.",
+  Weltkarte: "WMAP färbt Länder nach einer Kennzahl ein: grün gut, rot schlecht (bei Renditen: steigend rot). Die Farbskala reicht bis zum 90-%-Wert, damit einzelne Ausreißer nicht alle anderen Länder grau wirken lassen.",
   "Market Profile": "Darstellung eines Handelstags nach Preis und Zeit: Jeder 30-Minuten-Abschnitt bekommt einen Buchstaben (A, B, C …), der auf jeder in dieser Zeit gehandelten Preisstufe steht. Breite Stellen = Preise, an denen viel Zeit verbracht wurde (fairer Wert), schmale = schnell verlassene Preise.",
   Volumenprofil: "Umsatz je Preisstufe statt je Zeit. Zeigt, wo viel gehandelt wurde (Unterstützung/Widerstand) und wo kaum (Preislücken). Im Kurschart aus 5-Minuten-Kerzen (1T/5T) bzw. aus Tageskerzen geschätzt.",
   POC: "Point of Control: Preisstufe mit dem meisten Volumen (Volumenprofil) bzw. den meisten Buchstaben (Market Profile) – der am stärksten akzeptierte Preis.",

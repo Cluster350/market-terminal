@@ -314,6 +314,41 @@ class CountryTable(Model):
     note: Optional[str] = None
 
 
+# --- Weltkarte -----------------------------------------------------------------
+
+
+class WorldIndex(Model):
+    ticker: str
+    name: str
+    last: Optional[float] = None
+    change_pct: Optional[float] = None
+    chg_1w: Optional[float] = None
+    chg_1m: Optional[float] = None
+    chg_ytd: Optional[float] = None
+
+
+class WorldBond(Model):
+    ticker: str
+    value: Optional[float] = None  # Rendite in %
+    chg_1m_bp: Optional[float] = None
+
+
+class WorldCountry(Model):
+    iso3: str
+    name: str
+    index: Optional[WorldIndex] = None
+    bond: Optional[WorldBond] = None
+    macro: dict[str, CountryValue] = {}
+
+
+class WorldMap(Model):
+    group: Literal["equity", "rates", "macro"]
+    countries: list[WorldCountry]
+    indicators: list[Indicator] = []
+    as_of: Optional[str] = None
+    note: Optional[str] = None
+
+
 # --- Screener ---------------------------------------------------------------
 
 

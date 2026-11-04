@@ -683,3 +683,15 @@ table.corr td { width: 42px; height: 20px; text-align: center; color: var(--valu
 .tpo-cell.poc .tpo-vbar { background: #ff8000; }
 .tpo-legend-va { color: var(--value); background: rgba(102, 184, 255, 0.12); padding: 0 3px; }
 .tpo-legend-poc { color: #fff; background: rgba(255, 128, 0, 0.32); padding: 0 3px; }
+
+/* ---- Weltkarte (WMAP) ----------------------------------------------------------------- */
+.wmap-body { display: flex; flex-direction: column; overflow: hidden; }
+.wmap-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 220px; }
+@container (max-width: 640px) { .wmap-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) 120px; } }
+.wmap-map { position: relative; min-height: 0; min-width: 0; }
+.wmap-map > div:first-child { position: absolute; inset: 0; }
+.wmap-extremes { position: absolute; left: 8px; top: 4px; display: flex; gap: 12px; font-size: var(--fs-s); pointer-events: none; }
+.wmap-list { overflow: auto; border-left: 1px solid var(--rule); }
+.wmap-row { display: grid; grid-template-columns: 2.5ch minmax(0, 1fr) auto; gap: 6px; width: 100%; padding: 2px 8px; background: transparent; border: 0; border-bottom: 1px solid #141414; text-align: left; font-size: var(--fs-s); color: var(--value); }
+.wmap-row:hover { background: var(--hover); }
+.wmap-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

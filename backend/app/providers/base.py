@@ -137,6 +137,46 @@ FX = [
     Instrument("BTC-USD.CC", "Bitcoin/USD"),
 ]
 
+# Weltkarte (WMAP): Länder mit Aktienindex und zehnjähriger Staatsanleihe (Kürzel {Land}10Y.GBOND).
+# ISO3, Name, Anleihe-Land (oder None), Index (oder None), Indexname
+WORLD: list[tuple[str, str, Optional[str], Optional[str], Optional[str]]] = [
+    ("USA", "USA", "US", "GSPC.INDX", "S&P 500"),
+    ("CAN", "Kanada", "CA", "GSPTSE.INDX", "S&P/TSX Composite"),
+    ("MEX", "Mexiko", "MX", "MXX.INDX", "IPC Mexiko"),
+    ("BRA", "Brasilien", "BR", "BVSP.INDX", "Bovespa"),
+    ("ARG", "Argentinien", None, "MERV.INDX", "Merval"),
+    ("CHL", "Chile", "CL", None, None),
+    ("DEU", "Deutschland", "DE", "GDAXI.INDX", "DAX"),
+    ("FRA", "Frankreich", "FR", "FCHI.INDX", "CAC 40"),
+    ("GBR", "Großbritannien", "UK", "FTSE.INDX", "FTSE 100"),
+    ("ITA", "Italien", "IT", "FTSEMIB.INDX", "FTSE MIB"),
+    ("ESP", "Spanien", "ES", "IBEX.INDX", "IBEX 35"),
+    ("NLD", "Niederlande", "NL", "AEX.INDX", "AEX"),
+    ("BEL", "Belgien", "BE", "BFX.INDX", "BEL 20"),
+    ("AUT", "Österreich", "AT", "ATX.INDX", "ATX"),
+    ("CHE", "Schweiz", "CH", "SSMI.INDX", "SMI"),
+    ("SWE", "Schweden", "SE", "OMXS30.INDX", "OMX Stockholm 30"),
+    ("NOR", "Norwegen", "NO", None, None),
+    ("DNK", "Dänemark", "DK", None, None),
+    ("FIN", "Finnland", "FI", None, None),
+    ("POL", "Polen", "PL", "WIG20.INDX", "WIG 20"),
+    ("PRT", "Portugal", "PT", "PSI20.INDX", "PSI 20"),
+    ("GRC", "Griechenland", "GR", None, None),
+    ("IRL", "Irland", "IE", None, None),
+    ("TUR", "Türkei", "TR", "XU100.INDX", "BIST 100"),
+    ("ISR", "Israel", "IL", "TA125.INDX", "TA-125"),
+    ("SAU", "Saudi-Arabien", None, None, None),
+    ("ZAF", "Südafrika", "ZA", None, None),
+    ("JPN", "Japan", "JP", "N225.INDX", "Nikkei 225"),
+    ("CHN", "China", "CN", "SSEC.INDX", "Shanghai Composite"),
+    ("IND", "Indien", "IN", "NSEI.INDX", "Nifty 50"),
+    ("KOR", "Südkorea", "KR", "KS11.INDX", "KOSPI"),
+    ("TWN", "Taiwan", None, "TWII.INDX", "Taiex"),
+    ("IDN", "Indonesien", "ID", "JKSE.INDX", "Jakarta Composite"),
+    ("AUS", "Australien", "AU", "AXJO.INDX", "S&P/ASX 200"),
+    ("NZL", "Neuseeland", "NZ", "NZ50.INDX", "NZX 50"),
+]
+
 CURVE_TENORS = [
     ("3M", 0.25), ("6M", 0.5), ("1Y", 1.0), ("2Y", 2.0), ("3Y", 3.0), ("5Y", 5.0),
     ("7Y", 7.0), ("10Y", 10.0), ("20Y", 20.0), ("30Y", 30.0),

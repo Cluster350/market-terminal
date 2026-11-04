@@ -5,7 +5,7 @@ import { displayTicker } from "./format";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP";
 
 export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "Depot" | "System";
 
@@ -32,6 +32,7 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "EVTS", title: "Earnings-Kalender", group: "News", needsTicker: false, desc: "Quartalszahlen aller Unternehmen nach Termin, mit Schätzung und Ergebnis" },
   { code: "BRIEF", title: "Morgenbriefing", group: "KI", needsTicker: false, desc: "KI-Zusammenfassung: Märkte, Ihre Werte, Termine heute, Zinsen und Devisen – mit Quellen" },
   { code: "ASK", title: "KI-Assistent", group: "KI", needsTicker: false, desc: "Fragen an die KI; sie liest nur Terminal-Daten und zeigt, welche Daten sie genutzt hat" },
+  { code: "WMAP", title: "Weltkarte", group: "Makro", needsTicker: false, desc: "Länder eingefärbt nach Aktienmarkt, Zinsen oder Konjunktur, mit Rangliste" },
   { code: "WEI", title: "Weltindizes", group: "Makro", needsTicker: false, desc: "Aktienindizes weltweit" },
   { code: "FX", title: "Devisen", group: "Makro", needsTicker: false, desc: "Währungspaare und Stärke-Ranking" },
   { code: "CMDT", title: "Rohstoffe", group: "Makro", needsTicker: false, desc: "Energie, Metalle, Agrar" },
@@ -66,6 +67,7 @@ const ALIASES: Record<string, FnCode> = {
   KI: "ASK", AI: "ASK", FRAGE: "ASK", FRAGEN: "ASK", AGENT: "ASK", CHAT: "ASK", ASSISTENT: "ASK",
   DEPOT: "PORT", PORTFOLIO: "PORT", POSITIONEN: "PORT", PRTU: "PORT", BESTAND: "PORT",
   RISIKO: "RISK", VAR: "RISK", PORTRISK: "RISK",
+  KARTE: "WMAP", WELTKARTE: "WMAP", MAP: "WMAP", WORLD: "WMAP", WELT: "WMAP", LAENDERKARTE: "WMAP",
   MP: "TPO", MKTP: "TPO", MARKETPROFILE: "TPO", MARKTPROFIL: "TPO", VOLUMENPROFIL: "TPO", VOLUMEPROFILE: "TPO", VPRO: "TPO",
   ALARM: "ALRT", ALARME: "ALRT", ALERT: "ALRT", ALERTS: "ALRT", KURSALARM: "ALRT", MARKEN: "ALRT", KURSMARKEN: "ALRT",
   BRIEFING: "BRIEF", MORGEN: "BRIEF", MORGENBRIEFING: "BRIEF", MORNING: "BRIEF", BRIEFUNG: "BRIEF",
