@@ -8,6 +8,7 @@ import math
 from collections import defaultdict
 from typing import Optional, Sequence
 
+from ..errors import NotFound
 from ..models import Model, OptionContract
 
 
@@ -115,8 +116,10 @@ class OptionsOverview(Model):
 
 
 def is_monthly(exp: str) -> bool:
-    """Monatsverfall = dritter Freitag (Tag 15–21)."""
+    """Monatsverfall = dritter Freitag (Tag 15–21); an einem Börsenfeiertag der Donnerstag davor."""
     d = dt.date.fromisoformat(exp)
+    if d.weekday() == 3:
+        d += dt.timedelta(days=1)
     return d.weekday() == 4 and 15 <= d.day <= 21
 
 
@@ -170,10 +173,18 @@ def interp_iv(points: list[tuple[float, float]], x: float) -> Optional[float]:
 
 
 def iv_at_delta(contracts: Sequence[OptionContract], kind: str, target: float) -> Optional[float]:
-    best = min((c for c in contracts if c.type == kind and c.delta is not None and c.iv), key=lambda c: abs((c.delta or 0) - target), default=None)
-    if best is None or abs((best.delta or 0) - target) > 0.15:
+    """IV bei einem Ziel-Delta (z. B. −0,25 für den 25-Delta-Put), linear zwischen den beiden
+    benachbarten Strikes interpoliert. Früher galt der nächstgelegene Strike, wodurch der Skew
+    bei kleinen Kursbewegungen sprang."""
+    pts = sorted({(c.delta, c.iv) for c in contracts if c.type == kind and c.delta is not None and c.iv})
+    if not pts:
         return None
-    return best.iv
+    for (d0, v0), (d1, v1) in zip(pts, pts[1:]):
+        if d0 <= target <= d1:
+            return v0 if d1 == d0 else v0 + (v1 - v0) * (target - d0) / (d1 - d0)
+    # Ziel außerhalb der Kette: nur sehr nahe Randwerte gelten lassen
+    edge = min(pts, key=lambda p: abs(p[0] - target))
+    return edge[1] if abs(edge[0] - target) <= 0.05 else None
 
 
 def summarize_expiry(exp: str, contracts: Sequence[OptionContract], spot: Optional[float], today: dt.date) -> ExpirySummary:
@@ -297,7 +308,9 @@ def chain(ticker: str, contracts: Sequence[OptionContract], spot: Optional[float
     exps = sorted({c.exp for c in contracts if c.exp >= today.isoformat()})
     if not exps:
         return OptionChain(ticker=ticker, spot=spot, exp="", dte=0, expirations=[], rows=[])
-    chosen = exp if exp in exps else next((e for e in exps if is_monthly(e) and (dt.date.fromisoformat(e) - today).days >= 7), exps[0])
+    if exp and exp not in exps:
+        raise NotFound(f"Kein Verfall am {exp}. Verfügbar: {', '.join(exps[:8])}{' …' if len(exps) > 8 else ''}")
+    chosen = exp or next((e for e in exps if is_monthly(e) and (dt.date.fromisoformat(e) - today).days >= 7), exps[0])
     rows: dict[float, ChainRow] = {}
     for c in contracts:
         if c.exp != chosen:

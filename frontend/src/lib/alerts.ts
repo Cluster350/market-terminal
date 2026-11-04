@@ -87,7 +87,13 @@ export const alertsApi = IS_STATIC
     };
 
 export const useAlerts = () =>
-  useQuery({ queryKey: ["alerts"], queryFn: alertsApi.list, refetchInterval: IS_STATIC ? false : 15_000, staleTime: 5_000 });
+  useQuery({
+    queryKey: ["alerts"],
+    queryFn: alertsApi.list,
+    refetchInterval: IS_STATIC ? false : 15_000,
+    refetchIntervalInBackground: true, // Alarme sollen auch melden, wenn das Terminal im Hintergrund-Tab liegt
+    staleTime: 5_000,
+  });
 
 /** Nach einer Änderung die Liste neu laden (auch die Linien im Chart). */
 export function useAlertsRefresh() {
@@ -112,16 +118,22 @@ export function alertStatus(a: Alert): AlertStatus {
 
 const SEEN_KEY = "mt.alerts.seen.v1";
 
+// Ersatz im Speicher, falls der Browser keinen Speicher erlaubt: Sonst galt jeder Abruf als
+// „erster Start“, und es kam nie ein Hinweis.
+let memSeen: Set<string> | null = null;
+
 export function readSeen(): Set<string> | null {
   try {
     const raw = localStorage.getItem(SEEN_KEY);
-    return raw === null ? null : new Set(JSON.parse(raw) as string[]);
+    if (raw !== null) return new Set(JSON.parse(raw) as string[]);
+    return memSeen;
   } catch {
-    return null;
+    return memSeen;
   }
 }
 
 export function writeSeen(ids: Iterable<string>) {
+  memSeen = new Set(Array.from(ids).slice(-300));
   try {
     localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(ids).slice(-300)));
   } catch {

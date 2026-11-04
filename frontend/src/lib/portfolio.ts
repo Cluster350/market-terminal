@@ -4,6 +4,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ApiError, file, IS_STATIC, request } from "./api";
 import { normalizeTicker } from "./commands";
+import { displayTicker } from "./format";
 
 export type Base = "EUR" | "USD" | "CHF" | "GBP";
 export const BASES: Base[] = ["EUR", "USD", "CHF", "GBP"];
@@ -158,7 +159,7 @@ export function parseNumber(raw: string): number | null {
   const dot = s.lastIndexOf(".");
   if (comma > dot) s = s.replace(/\./g, "").replace(",", ".");
   else if (dot > comma && comma >= 0) s = s.replace(/,/g, "");
-  else if (comma < 0 && /^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ""); // 1.000 = tausend
+  else if (comma < 0 && /^-?[1-9]\d{0,2}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ""); // 1.000 = tausend, aber 0.865 bleibt 0,865
   const x = Number(s);
   return Number.isFinite(x) ? x : null;
 }
@@ -167,19 +168,22 @@ export function parseNumber(raw: string): number | null {
 export function parseDate(raw: string): string | null {
   const s = raw.trim();
   if (!s) return null;
+  let y: string, mo: string, d: string;
   let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  m = /^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/.exec(s);
-  if (m) {
-    const y = m[3].length === 2 ? `20${m[3]}` : m[3];
-    return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-  }
-  return null;
+  if (m) [, y, mo, d] = m;
+  else if ((m = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/.exec(s))) [y, mo, d] = [m[3].length === 2 ? `20${m[3]}` : m[3], m[2], m[1]];
+  else return null;
+  const iso = `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  // nur echte Kalendertage (31.02. gibt es nicht; früher lehnte erst der Server das ganze Depot ab)
+  const t = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === iso ? iso : null;
 }
 
 export interface CsvResult {
   positions: Position[];
   errors: string[];
+  /** Zeilennummern je Ticker (für Meldungen beim Übernehmen) */
+  lines: Record<string, number[]>;
 }
 
 /**
@@ -188,6 +192,7 @@ export interface CsvResult {
  */
 export function parseCsv(text: string): CsvResult {
   const errors: string[] = [];
+  const where: Record<string, number[]> = {};
   let positions: Position[] = [];
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   lines.forEach((line, n) => {
@@ -220,14 +225,18 @@ export function parseCsv(text: string): CsvResult {
       note: (cells[4] ?? "").slice(0, 200),
     };
     positions = mergePosition(positions, pos).positions;
+    (where[ticker] ??= []).push(n + 1);
   });
-  return { positions, errors };
+  return { positions, errors, lines: where };
 }
 
 const csvNum = (x: number | null) => (x === null ? "" : String(x).replace(".", ","));
 
+const deDate = (iso: string | null) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : "");
+
+/** Export im selben Format wie der Import: Terminal-Ticker (SAP GR) und Datum TT.MM.JJJJ. */
 export function toCsv(p: Portfolio): string {
   const head = "Ticker;Stück;Einstandskurs;Kaufdatum;Notiz";
-  const rows = p.positions.map((x) => [x.ticker, csvNum(x.quantity), csvNum(x.cost), x.opened ?? "", x.note.replace(/[;\r\n]/g, " ")].join(";"));
+  const rows = p.positions.map((x) => [displayTicker(x.ticker), csvNum(x.quantity), csvNum(x.cost), deDate(x.opened), x.note.replace(/[;\r\n]/g, " ")].join(";"));
   return [head, ...rows].join("\r\n") + "\r\n";
 }

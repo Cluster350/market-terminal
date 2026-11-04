@@ -58,8 +58,33 @@ describe("CSV", () => {
   it("schreibt und liest dieselbe Liste", () => {
     const p: Portfolio = { version: 1, base: "EUR", benchmark: null, cash: 0, updated: null, sample: false, positions: [pos("SAP.XETRA", 12.5, 182.25, "2024-03-15")] };
     const csv = toCsv(p);
-    expect(csv.split("\r\n")[1]).toBe("SAP.XETRA;12,5;182,25;2024-03-15;");
+    // Export im Terminal-Format (SAP GR, TT.MM.JJJJ) – der Import liest es wieder ein
+    expect(csv.split("\r\n")[1]).toBe("SAP GR;12,5;182,25;15.03.2024;");
     expect(parseCsv(csv).positions[0]).toMatchObject({ ticker: "SAP.XETRA", quantity: 12.5, cost: 182.25, opened: "2024-03-15" });
+  });
+
+  it("nennt Zeilennummern je Ticker und lehnt unmögliche Daten ab", () => {
+    const r = parseCsv("NWND US; 10; 100; 31.02.2024\nSAP GR; 5\nNWND US; 5; 120");
+    expect(r.lines["NWND.US"]).toEqual([1, 3]);
+    expect(r.positions.find((x) => x.ticker === "NWND.US")?.opened).toBeNull();
+    expect(r.errors.some((e) => e.includes("Zeile 1") && e.includes("31.02.2024"))).toBe(true);
+  });
+});
+
+describe("Zahlen und Daten", () => {
+  it("liest 0.865 als Dezimalzahl, 1.000 als Tausend", () => {
+    expect(parseNumber("0.865")).toBe(0.865);
+    expect(parseNumber("0.500")).toBe(0.5);
+    expect(parseNumber("1.000")).toBe(1000);
+    expect(parseNumber("12.345.678")).toBe(12345678);
+    expect(parseNumber("1,5")).toBe(1.5);
+  });
+  it("akzeptiert nur echte Kalendertage", () => {
+    expect(parseDate("29.02.2024")).toBe("2024-02-29");
+    expect(parseDate("29.02.2025")).toBeNull();
+    expect(parseDate("31.04.2026")).toBeNull();
+    expect(parseDate("2026-13-01")).toBeNull();
+    expect(parseDate("5.1.26")).toBe("2026-01-05");
   });
 });
 

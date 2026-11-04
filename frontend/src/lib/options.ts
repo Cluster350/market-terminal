@@ -1,6 +1,6 @@
 // Optionen (OMON): Kennzahlen und Optionskette je US-Aktie (EODHD-Marketplace bzw. Demo-Ketten).
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ApiError, file, IS_STATIC, request } from "./api";
 
 export interface OptionQuote {
@@ -95,6 +95,12 @@ export interface OptionsOverview {
   contracts: number;
 }
 
+/** Vorige Daten nur beim Verfallswechsel desselben Werts weiter zeigen, nie nach einem Tickerwechsel
+ * (sonst stünden kurz Kurs und Kette des alten Werts unter dem neuen Ticker). */
+export function sameTicker<T>(prev: T | undefined, prevQuery: { queryKey: readonly unknown[] } | undefined, t: string | null): T | undefined {
+  return prevQuery && prevQuery.queryKey[1] === t ? prev : undefined;
+}
+
 const safe = (t: string) => t.replace(/[^A-Za-z0-9.\-_]/g, "_");
 const STATIC_MSG = "Im statischen Demo sind Optionen nur für NWND US und QBIT US (nächster Monatsverfall) enthalten.";
 
@@ -123,7 +129,7 @@ export const useOptionsOverview = (t: string | null, exp: string | null) =>
     queryFn: () => optionsApi.overview(t!, exp),
     enabled: !!t,
     staleTime: 120_000,
-    placeholderData: keepPreviousData,
+    placeholderData: (prev, prevQuery) => sameTicker(prev, prevQuery, t),
     retry: (n, e) => !(e instanceof ApiError && e.status >= 400 && e.status < 500) && n < 1,
   });
 
@@ -133,7 +139,7 @@ export const useOptionChain = (t: string | null, exp: string | null, enabled = t
     queryFn: () => optionsApi.chain(t!, exp),
     enabled: !!t && enabled,
     staleTime: 120_000,
-    placeholderData: keepPreviousData,
+    placeholderData: (prev, prevQuery) => sameTicker(prev, prevQuery, t),
     retry: (n, e) => !(e instanceof ApiError && e.status >= 400 && e.status < 500) && n < 1,
   });
 

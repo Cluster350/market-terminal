@@ -765,81 +765,118 @@ class DemoProvider:
 
     @staticmethod
     def _option_expirations(today: dt.date) -> list[dt.date]:
-        """Wochenverfälle (5), Monatsverfälle (3. Freitag, 8 Monate), Quartale und Januar-LEAPS."""
+        """Wochenverfälle (5), Monatsverfälle (3. Freitag, 8 Monate), Quartale und Januar-LEAPS.
+
+        Fällt ein Verfall auf einen US-Börsenfeiertag (Karfreitag, Juneteenth …), verfällt die
+        Serie am Handelstag davor."""
         def third_friday(y: int, m: int) -> dt.date:
             d = dt.date(y, m, 15)
             return d + dt.timedelta(days=(4 - d.weekday()) % 7)
 
+        def trading_day(d: dt.date) -> dt.date:
+            while d.weekday() >= 5 or d in holidays("us", d.year):
+                d -= dt.timedelta(days=1)
+            return d
+
         out: set[dt.date] = set()
         friday = today + dt.timedelta(days=(4 - today.weekday()) % 7 or 7)
         for k in range(5):
-            out.add(friday + dt.timedelta(weeks=k))
+            out.add(trading_day(friday + dt.timedelta(weeks=k)))
         y, m = today.year, today.month
         for k in range(15):
             yy, mm = y + (m - 1 + k) // 12, (m - 1 + k) % 12 + 1
             if k <= 8 or mm in (3, 6, 9, 12):
-                out.add(third_friday(yy, mm))
-        out.add(third_friday(today.year + 1, 1))
+                out.add(trading_day(third_friday(yy, mm)))
+        out.add(trading_day(third_friday(today.year + 1, 1)))
         return sorted(d for d in out if d > today and (d - today).days <= 430)
 
     async def options(self, ticker: str) -> list[OptionContract]:
+        """Synthetische US-Optionskette (amerikanisch bewertet, Barone-Adesi/Whaley).
+
+        Preise und Greeks folgen dem aktuellen Kurs; Strikes, Open Interest und Umsatz hängen am
+        letzten Schlusskurs und bleiben über den Tag gleich (Open Interest meldet die Börse nur
+        einmal täglich)."""
         self._require(ticker)
         if ticker not in _COMPANY or not ticker.endswith(".US"):
             raise NotFound("Optionsdaten gibt es nur für US-Aktien (im Demo-Datensatz die fiktiven US-Werte).")
         from ..services import options_math as bs
+        from ..services.options import is_monthly
 
         today = self.today()
-        spot = (await self.quotes([ticker]))[0].last or self._effective(ticker)["c"][-1]
-        closes = [c for c in self._effective(ticker)["c"][-61:] if c]
+        eff = self._effective(ticker)
+        spot = (await self.quotes([ticker]))[0].last or eff["c"][-1]
+        prior = [c for d, c in zip(eff["days"], eff["c"]) if d < today and c]
+        ref = prior[-1] if prior else spot
+        closes = [c for d, c in zip(eff["days"], eff["c"]) if d < today and c][-61:]
         rets = [math.log(b / a) for a, b in zip(closes, closes[1:]) if a and b]
         mean = sum(rets) / len(rets) if rets else 0.0
         hv = math.sqrt(sum((x - mean) ** 2 for x in rets) / max(len(rets) - 1, 1) * 252) if rets else 0.3
         base_iv = max(0.16, min(1.2, hv * 1.08 + 0.02))
-        r = _interp(D.CURVE_KNOTS["US"], today)[0] / 100
+        try:  # derselbe Geldmarktzins wie in der US-Zinskurve (GC, FWD)
+            r = self._effective("US3M.GBOND")["c"][-1] / 100
+        except (KeyError, IndexError, NotFound):
+            r = _interp(D.CURVE_KNOTS["US"], today)[0] / 100
         raw = self._fundamentals_raw(ticker)
         q = float(raw["Highlights"].get("DividendYield") or 0)
-        upcoming = sorted(dt.date.fromisoformat(rec["reportDate"]) for rec in raw["Earnings"]["History"].values() if rec.get("reportDate") and dt.date.fromisoformat(rec["reportDate"]) > today)
-        earnings = upcoming[0] if upcoming else None
-        step = 1.0 if spot < 25 else 2.5 if spot < 100 else 5.0 if spot < 250 else 10.0 if spot < 500 else 25.0
+        # Nächste Quartalszahlen: auch heute nachbörslich zählt noch als künftiges Ereignis
+        events = []
+        for rec in raw["Earnings"]["History"].values():
+            if not rec.get("reportDate"):
+                continue
+            rep = dt.date.fromisoformat(rec["reportDate"])
+            after = rec.get("beforeAfterMarket") != "BeforeMarket"
+            if rep > today or (rep == today and after):
+                events.append((rep, after))
+        earnings = min(events) if events else None
+        step = 1.0 if ref < 25 else 2.5 if ref < 100 else 5.0 if ref < 250 else 10.0 if ref < 500 else 25.0
+        fine = {1.0: 0.5, 2.5: 1.0, 5.0: 2.5, 10.0: 5.0, 25.0: 10.0}[step]  # kurze Laufzeiten mit engeren Strikes
         code = ticker.split(".")[0]
         size = _COMPANY[ticker][5]  # Marktkapitalisierung (Mrd.) als Maß für das Interesse
         out: list[OptionContract] = []
         for exp in self._option_expirations(today):
             days = (exp - today).days
             t = days / 365
-            monthly = 15 <= exp.day <= 21
-            # Laufzeitstruktur leicht steigend; Quartalszahlen vor dem Verfall erhöhen die IV (Ereignisvarianz)
+            monthly = is_monthly(exp.isoformat())
+            # Laufzeitstruktur leicht steigend; Quartalszahlen vor dem Verfall erhöhen die IV (Ereignisvarianz).
+            # Zahlen am Verfallstag selbst zählen nur, wenn sie vorbörslich kommen.
             iv_t = base_iv * (0.94 + 0.06 * min(t, 1.0) ** 0.5)
-            if earnings and earnings <= exp:
+            if earnings and (earnings[0] < exp or (earnings[0] == exp and not earnings[1])):
                 iv_t = math.sqrt(iv_t**2 + 0.055**2 / max(t, 1 / 365))
             width = min(0.55, 0.12 + 1.1 * iv_t * math.sqrt(t))
-            lo, hi = math.floor(spot * (1 - width) / step), math.ceil(spot * (1 + width) / step)
+            st = fine if days <= 45 else step
+            lo, hi = math.floor(ref * (1 - width) / st), math.ceil(ref * (1 + width) / st)
             for i in range(max(1, lo), hi + 1):
-                k = round(i * step, 2)
+                k = round(i * st, 2)
                 m = max(-2.5, min(2.5, math.log(k / spot) / max(math.sqrt(t), 0.1)))
                 iv = max(0.06, min(3.0, iv_t * (1 - 0.18 * m + 0.12 * m * m)))  # Skew: Puts teurer
                 for kind in ("call", "put"):
                     rng = _rng("opt", ticker, today.isoformat(), exp.isoformat(), kind, k)
-                    theo = bs.price(kind, spot, k, t, r, q, iv)
-                    g = bs.greeks(kind, spot, k, t, r, q, iv)
+                    # Calls etwas weniger Skew als Puts (Nachfrage nach Absicherung)
+                    iv_k = max(0.06, iv * (1 - 0.015 * m) if kind == "call" else iv)
+                    theo = bs.american_price(kind, spot, k, t, r, q, iv_k)
+                    g = bs.american_greeks(kind, spot, k, t, r, q, iv_k)
                     spread = max(0.01, 0.02 + 0.035 * theo)
                     bid = max(0.0, round(theo - spread / 2, 2))
                     ask = round(max(theo + spread / 2, bid + 0.01), 2)
-                    dist = math.log(k / spot)
+                    dist = math.log(k / ref)
                     oi = 9000 * math.sqrt(size / 100) * math.exp(-dist * dist / (2 * (0.10 + 0.25 * t) ** 2))
                     oi *= (1.0 if monthly else 0.45) * (0.35 if days > 200 else 1.0)
                     oi *= 1.6 if abs(k % (step * 4)) < 1e-9 else 1.0
-                    oi *= (1.15 if kind == "put" and k < spot else 1.0) * rng.uniform(0.55, 1.45)
-                    oi = round(oi) if theo >= 0.005 else round(oi * 0.2)
+                    oi *= 0.6 if st < step and abs(k % step) > 1e-9 else 1.0
+                    oi *= (1.15 if kind == "put" and k < ref else 1.0) * rng.uniform(0.55, 1.45)
+                    ref_theo = bs.price(kind, ref, k, t, r, q, iv_t)  # nur Vortageswerte: über den Tag stabil
+                    oi = round(oi) if ref_theo >= 0.005 else round(oi * 0.2)
                     vol_ratio = rng.uniform(0.02, 0.3) * (2.2 if days <= 10 else 1.0)
                     if rng.random() < 0.012:
                         vol_ratio = rng.uniform(1.5, 4.0)  # auffälliger Umsatz
                     volume = round(oi * vol_ratio)
+                    # letzter Abschluss innerhalb von Geld und Brief
+                    last = min(ask, max(bid, round(theo + rng.gauss(0, 0.3) * spread, 2))) if volume else None
                     out.append(OptionContract(
                         contract=f"{code}{exp:%y%m%d}{kind[0].upper()}{int(round(k * 1000)):08d}",
                         type=kind, exp=exp.isoformat(), strike=k, bid=bid, ask=ask,  # type: ignore[arg-type]
-                        last=round(max(0.01, theo * (1 + rng.gauss(0, 0.03))), 2) if volume else None,
-                        volume=volume, open_interest=oi, iv=round(iv, 4),
+                        last=max(0.01, last) if last is not None else None,
+                        volume=volume, open_interest=oi, iv=round(iv_k, 4),
                         delta=round(g["delta"], 4), gamma=round(g["gamma"], 5), theta=round(g["theta"], 4), vega=round(g["vega"], 4),
                     ))
         return out

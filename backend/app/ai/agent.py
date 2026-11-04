@@ -48,7 +48,12 @@ async def run_agent(client: LLMClient, terminal: Terminal, req: AskRequest, *, m
             answer = strip_think(msg.get("content", ""))
             break
         messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": [c["raw"] for c in calls]})
-        for call in calls[:4]:
+        for i, call in enumerate(calls):
+            if i >= 4:
+                # höchstens vier Werkzeuge je Schritt; jede tool_call_id braucht trotzdem eine Antwort,
+                # sonst lehnen strenge OpenAI-kompatible Server die nächste Anfrage ab (400)
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps({"fehler": "Zu viele Werkzeuge in einem Schritt; bitte einzeln anfordern."}, ensure_ascii=False)})
+                continue
             result = await run_tool(terminal, call["name"], call["args"])
             results.append(result)
             args = call["args"] if isinstance(call["args"], dict) else {}

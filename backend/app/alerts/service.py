@@ -150,6 +150,8 @@ class AlertService:
                 raise NotFound("Alarm nicht gefunden (in einem anderen Fenster gelöscht?).")
             a = state.alerts[i]
             upd: dict = {k: v for k, v in patch.model_dump(exclude_unset=True).items() if v is not None}
+            if a.kind == "change" and upd.get("level", 0) > 100:
+                raise BadRequest("Tagesveränderung bitte als Prozentwert bis 100 eingeben.")
             if "note" in upd:
                 upd["note"] = " ".join(str(upd["note"]).split())
             rearm = "level" in upd or upd.get("active") is True or (upd.get("alarm") is True and not a.alarm)

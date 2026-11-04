@@ -4,7 +4,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import { Empty, ErrorState, Loading, Table, TickerLink, type Column } from "../components/ui";
-import { ApiError, IS_STATIC } from "../lib/api";
+import { api, ApiError, IS_STATIC } from "../lib/api";
 import { normalizeTicker } from "../lib/commands";
 import { explain } from "../lib/glossary";
 import { displayTicker, fmt, fmtDate, fmtPct, fmtPrice, fmtShortDate, fmtSigned, isNum, sectorDe, tone } from "../lib/format";
@@ -150,11 +150,34 @@ function ImportBox({ portfolio, onDone, save, busy }: { portfolio: Portfolio; on
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"add" | "replace">("add");
   const parsed = useMemo(() => parseCsv(text), [text]);
+  const [checking, setChecking] = useState(false);
   async function apply() {
+    // Ticker vorab prüfen: Unbekannte Zeilen werden übersprungen und mit Zeilennummer genannt,
+    // statt dass der Server das ganze Depot ablehnt
+    setChecking(true);
+    const known = await Promise.all(
+      parsed.positions.map((p) =>
+        api.resolve(p.ticker).then(
+          () => true,
+          (e) => !(e instanceof ApiError && e.status === 404),
+        ),
+      ),
+    );
+    setChecking(false);
+    const ok = parsed.positions.filter((_, i) => known[i]);
+    const skipped = parsed.positions.filter((_, i) => !known[i]).map((p) => `${displayTicker(p.ticker)} (Zeile ${(parsed.lines[p.ticker] ?? []).join(", ")})`);
+    if (!ok.length) return onDone(`Nichts übernommen – unbekannte Ticker: ${skipped.join(", ")}.`);
     let positions = mode === "replace" ? [] : portfolio.positions;
-    for (const p of parsed.positions) positions = mergePosition(positions, p).positions;
+    for (const p of ok) positions = mergePosition(positions, p).positions;
     if (positions.length > 200) return onDone("Höchstens 200 Positionen.");
-    if (await save({ ...portfolio, positions })) onDone(`${parsed.positions.length} Positionen übernommen.`);
+    // „Depot ersetzen“ ersetzt auch die Kasse (früher blieb die Kasse des Musterdepots stehen)
+    const next = mode === "replace" ? { ...portfolio, positions, cash: 0 } : { ...portfolio, positions };
+    if (await save(next)) {
+      const parts = [`${ok.length} Positionen übernommen`];
+      if (mode === "replace" && portfolio.cash) parts.push("Kasse auf 0 gesetzt");
+      if (skipped.length) parts.push(`übersprungen (unbekannter Ticker): ${skipped.join(", ")}`);
+      onDone(parts.join(" · ") + ".");
+    }
   }
   return (
     <div className="depot-import">
@@ -164,15 +187,15 @@ function ImportBox({ portfolio, onDone, save, busy }: { portfolio: Portfolio; on
       </div>
       <textarea className="field" rows={5} value={text} onChange={(e) => setText(e.target.value)} aria-label="Depotliste einfügen" placeholder={"NWND US; 40; 120,50; 02.01.2025\nSAP GR; 20"} />
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <span className="small">{parsed.positions.length} Positionen erkannt</span>
+        <span className="small" title="Die Ticker werden beim Übernehmen geprüft; unbekannte Zeilen werden übersprungen.">{parsed.positions.length} Positionen lesbar</span>
         <label className="check">
           <input type="radio" checked={mode === "add"} onChange={() => setMode("add")} /> hinzufügen
         </label>
         <label className="check">
           <input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} /> Depot ersetzen
         </label>
-        <button className="btn primary" disabled={!parsed.positions.length || busy} onClick={apply}>
-          Übernehmen
+        <button className="btn primary" disabled={!parsed.positions.length || busy || checking} onClick={apply}>
+          {checking ? "Prüfe Ticker …" : "Übernehmen"}
         </button>
         <button className="btn" onClick={() => onDone("")}>
           Schließen

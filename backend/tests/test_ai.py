@@ -326,3 +326,20 @@ def test_prompt_injection_stays_inside_the_data():
     run(llm_brief(client, data, {}))
     content = fake.requests[-1]["messages"][1]["content"]
     assert content.count("</daten>") == 1 and "\\u003c/daten>" in content
+
+
+def test_agent_answers_every_tool_call_id():
+    """Fünf Werkzeuge in einem Schritt: Jede tool_call_id braucht eine Antwort (sonst 400 bei strengen Servern)."""
+    from app.ai.agent import run_agent
+    from app.ai.client import LLMClient
+    from app.ai.models import AskRequest
+
+    five = {"role": "assistant", "content": None, "tool_calls": [
+        {"id": f"c{i}", "type": "function", "function": {"name": "maerkte", "arguments": "{}"}} for i in range(5)]}
+    fake = FakeLMStudio(script=[five, answer("ok")])
+    client = LLMClient("http://lmstudio.test/v1", transport=httpx.MockTransport(fake))
+    asyncio.run(run_agent(client, terminal(), AskRequest(question="Wie laufen die Märkte?")))
+    msgs = fake.requests[1]["messages"]
+    asked = [c["id"] for m in msgs if m["role"] == "assistant" for c in (m.get("tool_calls") or [])]
+    answered = [m["tool_call_id"] for m in msgs if m["role"] == "tool"]
+    assert sorted(asked) == sorted(answered)

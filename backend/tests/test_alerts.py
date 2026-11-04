@@ -126,3 +126,9 @@ def test_api_and_ai_tool(tmp_path):
         assert c.delete("/api/alerts/events").json() == {"ok": True}
         assert c.delete(f"/api/alerts/{a['id']}").json() == {"ok": True}
         assert c.get("/api/alerts").json()["alerts"] == []
+
+
+def test_patch_keeps_percent_limit(svc):
+    a = run(svc.create(AlertIn(ticker="NWND", kind="change", level=5, direction="above")))
+    with pytest.raises(BadRequest):
+        run(svc.update(a.id, AlertPatch(level=500)))

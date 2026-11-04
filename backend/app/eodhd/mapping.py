@@ -744,8 +744,6 @@ def option_contracts(data: Any) -> list[OptionContract]:
         if kind not in ("call", "put") or strike is None or not exp:
             continue
         iv = num(a.get("volatility") if a.get("volatility") is not None else a.get("implied_volatility"))
-        if iv is not None and iv > 3:  # in Prozent geliefert
-            iv = iv / 100
         out.append(OptionContract(
             contract=text(a.get("contract")) or f"{a.get('underlying_symbol', '')}{exp}{kind[0].upper()}{strike}",
             type=kind,  # type: ignore[arg-type]
@@ -754,4 +752,11 @@ def option_contracts(data: Any) -> list[OptionContract]:
             volume=num(a.get("volume")), open_interest=num(a.get("open_interest")), iv=iv,
             delta=num(a.get("delta")), gamma=num(a.get("gamma")), theta=num(a.get("theta")), vega=num(a.get("vega")),
         ))
+    # Einheit der IV einmal je Antwort bestimmen: Dezimal (0,45) oder Prozent (45). Je Zeile zu raten
+    # machte aus einer echten Dezimal-IV von 4,5 (450 %, kurz vor Verfall weit aus dem Geld) 0,045.
+    ivs = sorted(c.iv for c in out if c.iv is not None and c.iv > 0)
+    if ivs and ivs[(len(ivs) - 1) // 2] > 3:  # unterer Median
+        for c in out:
+            if c.iv is not None:
+                c.iv = c.iv / 100
     return out

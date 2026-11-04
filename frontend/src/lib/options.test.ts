@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PAGES } from "../state/workspace";
 import { FN, resolveFn } from "./commands";
-import { contractLabel, strikeWindow, type ChainRow } from "./options";
+import { contractLabel, sameTicker, strikeWindow, type ChainRow } from "./options";
 
 const row = (strike: number): ChainRow => ({ strike, call: null, put: null });
 
@@ -23,5 +23,14 @@ describe("Optionen (OMON)", () => {
     expect(resolveFn("OVDV")).toBe("OMON");
     expect(FN.OMON.needsTicker).toBe(true);
     expect(PAGES.find((p) => p.id === "equity")!.pool).toContain("OMON");
+  });
+});
+
+describe("Platzhalter beim Tickerwechsel", () => {
+  it("zeigt vorige Daten nur für denselben Wert", () => {
+    const prev = { ticker: "NWND.US" };
+    expect(sameTicker(prev, { queryKey: ["options-overview", "NWND.US", null] }, "NWND.US")).toBe(prev);
+    expect(sameTicker(prev, { queryKey: ["options-overview", "NWND.US", null] }, "QBIT.US")).toBeUndefined();
+    expect(sameTicker(prev, undefined, "QBIT.US")).toBeUndefined();
   });
 });

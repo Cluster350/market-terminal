@@ -1,13 +1,14 @@
 // OMON – Optionen: Kennzahlen, Positionierung (Open Interest), Optionskette und Volatilität
 // einer US-Aktie. Tagesenddaten; Optionen gibt es bei EODHD nur für US-Werte.
 
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef } from "react";
 import type { EOption } from "../components/EChart";
 import { Empty, ErrorState, Loading, Seg } from "../components/ui";
 import { explain } from "../lib/glossary";
 import { fmt, fmtBig, fmtDate, fmtPct, fmtPrice, isEquity } from "../lib/format";
 import { contractLabel, strikeWindow, useOptionChain, useOptionsOverview, type ActiveContract, type ExpirySummary, type OptionQuote, type OptionsOverview } from "../lib/options";
 import { isOneOf, usePersistentState } from "../lib/persist";
+import { useStatus } from "../lib/queries";
 import type { ScreenProps } from "./types";
 
 const EChart = lazy(() => import("../components/EChart"));
@@ -44,7 +45,7 @@ function Kpis({ o }: { o: OptionsOverview }) {
         <div className="kpi-v">{ivPct(o.iv30)}</div>
         <div className="kpi-s">HV 30T {ivPct(o.hv30)} · 1J {ivPct(o.hv1y)}</div>
       </div>
-      <div className="kpi" title="Implizite geteilt durch tatsächliche Schwankung der letzten 30 Handelstage. Über 1: Optionen eher teuer.">
+      <div className="kpi" title="Implizite Volatilität (30 Kalendertage) geteilt durch die tatsächliche Schwankung der letzten 21 Handelstage (≈ 30 Kalendertage). Über 1: Optionen eher teuer.">
         <div className="kpi-l">IV / HV</div>
         <div className={`kpi-v ${o.ivHv && o.ivHv > 1.2 ? "down" : o.ivHv && o.ivHv < 0.85 ? "up" : ""}`}>{ratio(o.ivHv)}</div>
         <div className="kpi-s">{o.ivHv ? (o.ivHv > 1.2 ? "Optionen teuer" : o.ivHv < 0.85 ? "Optionen günstig" : "normal") : ""}</div>
@@ -84,7 +85,21 @@ function Kpis({ o }: { o: OptionsOverview }) {
   );
 }
 
-function ContractTable({ rows, title, hint }: { rows: ActiveContract[]; title: string; hint?: string }) {
+/** Kennzahlen in einer Zeile – in der Kette, damit auch in kleinen Panels Platz für die Strikes bleibt. */
+function KpiLine({ o }: { o: OptionsOverview }) {
+  const f = o.focus;
+  const parts = [
+    `IV 30T ${ivPct(o.iv30)}`,
+    `HV 30T ${ivPct(o.hv30)}`,
+    f?.movePct !== null && f?.movePct !== undefined ? `Erw. Bewegung ±${fmt(f.movePct, 1)} %` : null,
+    `Put/Call ${ratio(o.pcVolume)}`,
+    f?.skew25 !== null && f?.skew25 !== undefined ? `Skew 25Δ ${f.skew25 > 0 ? "+" : ""}${fmt(f.skew25, 1)} Pkt.` : null,
+    f?.maxPain ? `Max Pain ${fmtPrice(f.maxPain)}` : null,
+  ];
+  return <div className="opt-kpiline small">{parts.filter(Boolean).join(" · ")}</div>;
+}
+
+function ContractTable({ rows, title, hint, onOpen }: { rows: ActiveContract[]; title: string; hint?: string; onOpen?: (c: ActiveContract) => void }) {
   return (
     <div>
       <div className="section-title" title={hint}>{title}</div>
@@ -104,7 +119,7 @@ function ContractTable({ rows, title, hint }: { rows: ActiveContract[]; title: s
           </thead>
           <tbody>
             {rows.map((c) => (
-              <tr key={c.contract}>
+              <tr key={c.contract} className={onOpen ? "clickable" : ""} title={onOpen ? "Klick: Kette dieses Verfalls öffnen" : undefined} onClick={onOpen ? () => onOpen(c) : undefined}>
                 <td className={c.type === "call" ? "up" : "down"}>{contractLabel(c)}</td>
                 <td className="num">{fmtBig(c.volume)}</td>
                 <td className="num">{fmtBig(c.openInterest)}</td>
@@ -120,7 +135,7 @@ function ContractTable({ rows, title, hint }: { rows: ActiveContract[]; title: s
   );
 }
 
-function OverviewView({ o }: { o: OptionsOverview }) {
+function OverviewView({ o, onOpen }: { o: OptionsOverview; onOpen: (c: ActiveContract) => void }) {
   const f = o.focus!;
   const spot = o.spot;
   const oiOption: EOption = {
@@ -180,10 +195,10 @@ function OverviewView({ o }: { o: OptionsOverview }) {
             ))}
           </div>
         </div>
-        <ContractTable rows={o.unusual} title="Auffällige Umsätze" hint={explain("Auffällige Umsätze")} />
+        <ContractTable rows={o.unusual} title="Auffällige Umsätze" hint={explain("Auffällige Umsätze")} onOpen={onOpen} />
       </div>
       <div style={{ padding: "0 8px" }}>
-        <ContractTable rows={o.mostActive} title="Aktivste Kontrakte (alle Verfälle)" />
+        <ContractTable rows={o.mostActive} title="Aktivste Kontrakte (alle Verfälle)" onOpen={onOpen} />
       </div>
     </>
   );
@@ -222,6 +237,12 @@ function ChainView({ ticker, exp }: { ticker: string; exp: string | null }) {
   const [win, setWin] = usePersistentState<(typeof WINDOWS)[number]>("omon.window", "20", isOneOf(WINDOWS));
   const [greeks, setGreeks] = usePersistentState("omon.greeks", false, (x): x is boolean => typeof x === "boolean");
   const q = useOptionChain(ticker, exp);
+  const atmRef = useRef<HTMLTableRowElement | null>(null);
+  const chainKey = q.data ? `${q.data.ticker}|${q.data.exp}|${win}` : "";
+  useEffect(() => {
+    // beim Öffnen und bei Verfalls- oder Bereichswechsel die Zeile am Geld in die Mitte holen
+    atmRef.current?.scrollIntoView({ block: "center", inline: "nearest" });
+  }, [chainKey]);
   if (q.isPending) return <Loading rows={10} />;
   if (q.isError && !q.data) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   const ch = q.data!;
@@ -266,7 +287,7 @@ function ChainView({ ticker, exp }: { ticker: string; exp: string | null }) {
               const callItm = ch.spot !== null && r.strike < ch.spot;
               const putItm = ch.spot !== null && r.strike > ch.spot;
               return (
-                <tr key={r.strike} className={atm ? "opt-atm" : ""}>
+                <tr key={r.strike} ref={atm ? atmRef : undefined} className={atm ? "opt-atm" : ""}>
                   <QuoteCells q={r.call} side="call" greeks={greeks} itm={callItm} />
                   <td className="opt-strike">{fmtPrice(r.strike)}</td>
                   <QuoteCells q={r.put} side="put" greeks={greeks} itm={putItm} />
@@ -338,12 +359,31 @@ function VolView({ o, onPick }: { o: OptionsOverview; onPick: (exp: string) => v
   );
 }
 
+const isExpMap = (x: unknown): x is Record<string, string> =>
+  !!x && typeof x === "object" && !Array.isArray(x) && Object.values(x).every((v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v));
+
 export function OMON({ ticker }: ScreenProps) {
   const [view, setView] = usePersistentState<(typeof VIEWS)[number]>("omon.view", "overview", isOneOf(VIEWS));
-  const [exp, setExp] = useState<string | null>(null);
-  useEffect(() => setExp(null), [ticker]); // Verfälle gehören zum Wertpapier
+  // gewählter Verfall je Wertpapier, bleibt bei Seitenwechsel und Neuladen erhalten
+  const [expMap, setExpMap] = usePersistentState<Record<string, string>>("omon.exp", {}, isExpMap);
+  const today = new Date().toISOString().slice(0, 10);
+  const stored = ticker ? expMap[ticker] : undefined;
+  const exp = stored && stored >= today ? stored : null;
+  const setExp = (e: string) => {
+    if (!ticker) return;
+    setExpMap((m) => {
+      const next = { ...m, [ticker]: e };
+      for (const k of Object.keys(next)) if (next[k] < today) delete next[k]; // abgelaufene Verfälle aufräumen
+      return next;
+    });
+  };
+  const status = useStatus();
   const q = useOptionsOverview(isEquity(ticker) ? ticker : null, exp);
   const o = q.data;
+  const openContract = (c: ActiveContract) => {
+    setExp(c.exp);
+    setView("chain");
+  };
   const exps = useMemo(() => o?.expirations ?? [], [o]);
   if (!ticker) return <Empty>Kein Wertpapier gewählt.</Empty>;
   if (!isEquity(ticker)) return <Empty>Optionen gibt es nur für Aktien und ETFs (bei EODHD für US-Werte).</Empty>;
@@ -361,7 +401,9 @@ export function OMON({ ticker }: ScreenProps) {
             </select>
           </label>
         )}
-        <span className="small muted" style={{ marginLeft: "auto" }}>Tagesenddaten · {o?.spot ? `Kurs ${fmtPrice(o.spot)}` : ""}</span>
+        <span className="small muted" style={{ marginLeft: "auto" }} title={status.data?.mode === "demo" ? "Demo: Ketten mit Black-Scholes bzw. Barone-Adesi/Whaley aus dem aktuellen Kurs berechnet; Open Interest und Umsatz gelten für den ganzen Tag" : "Tagesenddaten aus dem EODHD-Marketplace (US Stock Options Data API)"}>
+          {[status.data?.mode === "demo" ? "Demo-Kette" : "Tagesenddaten", o?.spot ? `Kurs ${fmtPrice(o.spot)}` : null].filter(Boolean).join(" · ")}
+        </span>
       </div>
       <div className="panel-body" style={{ overflow: "auto" }}>
         {q.isPending ? (
@@ -372,8 +414,8 @@ export function OMON({ ticker }: ScreenProps) {
           <Empty>Keine Optionsdaten.</Empty>
         ) : (
           <>
-            <Kpis o={o} />
-            {view === "overview" ? <OverviewView o={o} /> : view === "chain" ? <ChainView ticker={ticker} exp={o.focus.exp} /> : <VolView o={o} onPick={setExp} />}
+            {view === "chain" ? <KpiLine o={o} /> : <Kpis o={o} />}
+            {view === "overview" ? <OverviewView o={o} onOpen={openContract} /> : view === "chain" ? <ChainView ticker={ticker} exp={o.focus.exp} /> : <VolView o={o} onPick={setExp} />}
           </>
         )}
       </div>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import logging
 from typing import Any, Optional
 from urllib.parse import quote as urlquote
 
@@ -13,6 +14,8 @@ from ..config import Settings
 from ..eodhd import mapping
 from ..eodhd.client import EODHDClient
 from ..errors import NotFound, PlanNotIncluded, TerminalError
+log = logging.getLogger("terminal")
+
 from ..models import (
     Company,
     EarningsEvent,
@@ -187,7 +190,7 @@ class EODHDProvider:
         code, _, exch = ticker.rpartition(".")
         if exch != "US":
             raise NotFound("Optionsdaten gibt es bei EODHD nur für US-Aktien und -ETFs.")
-        today = dt.date.today()
+        today = dt.datetime.now(dt.timezone.utc).date()  # wie die Routen (UTC), damit „heute“ überall gleich gilt
         fields = "contract,type,exp_date,strike,bid,ask,last,volume,open_interest,volatility,delta,gamma,theta,vega"
         out: list[OptionContract] = []
         limit = 1000
@@ -211,10 +214,14 @@ class EODHDProvider:
                     "Optionsdaten sind bei EODHD ein Zusatzprodukt (Marketplace „US Stock Options Data API“). "
                     "Ohne dieses Abo bleibt OMON leer."
                 ) from exc
-            batch = mapping.option_contracts(data)
-            out.extend(batch)
-            if len(batch) < limit:
+            out.extend(mapping.option_contracts(data))
+            rows = data.get("data") if isinstance(data, dict) else data
+            # an der Zahl der gelieferten Zeilen abbrechen, nicht an den übernommenen: sonst endete
+            # der Abruf, sobald auf einer vollen Seite eine unbrauchbare Zeile (ohne Strike) stand
+            if not isinstance(rows, list) or len(rows) < limit:
                 break
+        else:
+            log.warning("Optionen %s: nach %d Kontrakten abgeschnitten (fernere Verfälle fehlen)", ticker, len(out))
         if not out:
             raise NotFound(f"Keine Optionsdaten für {ticker}.")
         return out
