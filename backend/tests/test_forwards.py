@@ -31,9 +31,15 @@ def test_hedge_sign():
 
 def test_forward_rates_and_interpolation():
     curve = [(1.0, 3.0), (2.0, 4.0), (10.0, 4.5)]
-    f = forward_rate(curve, 1, 1)
-    assert (1.03) * (1 + f / 100) == pytest.approx(1.04**2)
-    assert forward_rate(curve, 0, 2) == pytest.approx(4.0)
+    # Par-Renditen -> Abzinsungsfaktoren (Bootstrapping): DF1 = 1/1,03; DF2 = (1 − 0,04·DF1)/1,04
+    df1 = 1 / 1.03
+    df2 = (1 - 0.04 * df1) / 1.04
+    assert forward_rate(curve, 1, 1) == pytest.approx((df1 / df2 - 1) * 100)
+    assert forward_rate(curve, 0, 2) == pytest.approx((df2 ** -0.5 - 1) * 100)  # Nullkuponsatz 2 J. ≈ 4,02 %
+    assert forward_rate(curve, 0, 1) == pytest.approx(3.0)
+    # glatte Forwards: keine Sägezähne zwischen den Stützstellen
+    fw = [forward_rate(curve, s, 1) for s in range(2, 9)]
+    assert all(abs(b - a) < 0.25 for a, b in zip(fw, fw[1:]))
     assert forward_rate(curve, 5, 10) is None  # über das Kurvenende hinaus
     assert interp(curve, 0.25) == 3.0 and interp(curve, 1.5) == pytest.approx(3.5) and interp(curve, 30) == 4.5
     assert interp([], 1) is None

@@ -20,6 +20,7 @@ import {
 import { IS_STATIC } from "../lib/api";
 import { FN, type FnCode } from "../lib/commands";
 import { displayTicker, fmtTime } from "../lib/format";
+import { glossaryAnswer } from "../lib/glossary";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
 
@@ -284,6 +285,13 @@ export function ASK({ active }: ScreenProps) {
     }
     setMessages((ms) => [...ms, { role: "user", text }]);
     setInput("");
+    // Begriffsfragen („Was ist eine Put-Option?“) ohne Sprachmodell direkt aus dem Glossar beantworten
+    const g = status.data?.mode !== "lmstudio" ? glossaryAnswer(text) : null;
+    if (g) {
+      const result: AskResult = { answer: `**${g[0]}**: ${g[1]}\n\n(Aus dem Glossar – alle Begriffe unter HELP → Begriffe.)`, trace: [], unverified: [], suggestions: [], engine: "demo", model: "Glossar", steps: 0, seconds: 0 };
+      setMessages((ms) => [...ms, { role: "assistant", result }]);
+      return;
+    }
     const ctrl = new AbortController();
     ctrlRef.current = ctrl;
     setBusy({ since: Date.now(), ctrl });

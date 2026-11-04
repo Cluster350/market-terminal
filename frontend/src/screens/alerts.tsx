@@ -6,10 +6,10 @@ import { Empty, ErrorState, Loading, Table, TickerLink, type Column } from "../c
 import { IS_STATIC } from "../lib/api";
 import { alertStatus, alertsApi, conditionLabel, useAlerts, useAlertsRefresh, type Alert, type AlertInput } from "../lib/alerts";
 import { normalizeTicker } from "../lib/commands";
-import { displayTicker, fmtDate, fmtPct, fmtPrice, fmtTime, tone } from "../lib/format";
+import { displayTicker, fmt, fmtDate, fmtPct, fmtPrice, fmtTime, tone } from "../lib/format";
 import { isBool, usePersistentState } from "../lib/persist";
 import { parseNumber } from "../lib/portfolio";
-import { useQuotes } from "../lib/queries";
+import { useExampleTickers, useQuotes, useStatus } from "../lib/queries";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
 
@@ -44,6 +44,9 @@ export function ALRT(_: ScreenProps) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [edit, setEdit] = useState<{ id: string; level: string; note: string } | null>(null);
+  const examples = useExampleTickers();
+  const status = useStatus();
   const formTicker = normalizeTicker(tickerText);
   const quote = useQuotes(formTicker ? [formTicker] : []).data?.[0];
 
@@ -62,9 +65,16 @@ export function ALRT(_: ScreenProps) {
   }
 
   async function submit() {
-    if (!formTicker) return setMsg({ text: "Ticker nicht erkannt (z. B. SAP GR, AAPL US, DAX Index).", err: true });
+    if (!formTicker) return setMsg({ text: `Ticker nicht erkannt (z. B. ${examples[0]}, ${examples[1]}, DAX Index).`, err: true });
     const level = parseNumber(value);
     if (level === null || level <= 0) return setMsg({ text: "Bitte einen Wert größer 0 eingeben.", err: true });
+    // „Kurs fällt unter 60“ bei einem Kurs von 58 löste sofort aus – meist ein Versehen
+    const last = quote?.last;
+    if (last != null && ((kind === "above" && last >= level) || (kind === "below" && last <= level))) {
+      const where = kind === "above" ? "über" : "unter";
+      const ok = window.confirm(`${displayTicker(formTicker)} steht schon ${where} ${fmtPrice(level, formTicker)} (Kurs ${fmtPrice(last, formTicker)}). Der Alarm löst sofort aus. Trotzdem anlegen?`);
+      if (!ok) return;
+    }
     await act(async () => {
       await alertsApi.create(toInput(formTicker, kind, level, note.trim()));
       setValue("");
@@ -81,26 +91,58 @@ export function ALRT(_: ScreenProps) {
       key: "s", label: "Status", sort: (a) => ["armed", "fired", "off", "mark"].indexOf(alertStatus(a)),
       render: (a) => {
         const st = alertStatus(a);
+        const waiting = st === "armed" && a.waitCross;
         return (
-          <span className="nowrap">
+          <span className="nowrap" title={waiting ? "Die Bedingung war beim Scharfschalten schon erfüllt – der Alarm meldet sich, wenn der Kurs die Marke neu erreicht." : undefined}>
             <span className={`st-dot st-${st}`} />
-            {STATUS_LABEL[st]}
+            {waiting ? "scharf (wartet)" : STATUS_LABEL[st]}
           </span>
         );
       },
     },
     { key: "t", label: "Wertpapier", sort: (a) => a.ticker, render: (a) => <TickerLink ticker={a.ticker} open="GP" /> },
-    { key: "c", label: "Bedingung", sort: (a) => a.level, render: (a) => conditionLabel(a) },
     {
-      key: "p", label: "Kurs", num: true, sort: (a) => a.price ?? null,
+      key: "c", label: "Bedingung", sort: (a) => a.level,
+      render: (a) =>
+        edit?.id === a.id ? (
+          <form
+            className="alrt-edit"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const level = parseNumber(edit.level);
+              if (level === null || level <= 0) return setMsg({ text: "Bitte einen Wert größer 0 eingeben.", err: true });
+              const e2 = edit;
+              setEdit(null);
+              void act(() => alertsApi.update(a.id, { level, note: e2.note.trim() }), "Geändert.");
+            }}
+          >
+            <input className="field" autoFocus value={edit.level} onChange={(e) => setEdit({ ...edit, level: e.target.value })} style={{ width: "9ch" }} aria-label="Neuer Wert" />
+            <input className="field" value={edit.note} onChange={(e) => setEdit({ ...edit, note: e.target.value })} maxLength={200} placeholder="Notiz" style={{ width: "14ch" }} aria-label="Notiz" />
+            <button type="submit" className="tool" title="Übernehmen">✓</button>
+            <button type="button" className="tool" title="Abbrechen" onClick={() => setEdit(null)}>✕</button>
+          </form>
+        ) : (
+          <span>
+            {conditionLabel(a)}
+            {a.note ? <span className="muted"> · {a.note}</span> : null}
+          </span>
+        ),
+    },
+    {
+      key: "p", label: "Kurs / Tag", num: true, sort: (a) => a.price ?? null, title: "Kursalarme: aktueller Kurs; Tagesalarme: Veränderung heute",
       render: (a) => (a.kind === "change" ? <span className={tone(a.changePct, 2)}>{fmtPct(a.changePct)}</span> : fmtPrice(a.price, a.ticker)),
     },
     {
       key: "d", label: "Abstand", num: true, sort: (a) => (a.distancePct === null || a.distancePct === undefined ? null : Math.abs(a.distancePct)),
       title: "Wie weit die Marke vom aktuellen Kurs entfernt ist",
-      render: (a) => (a.kind === "price" ? fmtPct(a.distancePct, 1) : "–"),
+      render: (a) => {
+        if (a.kind === "price") return fmtPct(a.distancePct, 1);
+        if (a.changePct == null) return "–";
+        // Tagesalarme: wie viele Prozentpunkte noch bis zur Schwelle
+        const gap = a.direction === "above" ? a.level - a.changePct : a.changePct + a.level;
+        return gap > 0 ? `noch ${fmt(gap, 1)} Pkt.` : "erreicht";
+      },
     },
-    { key: "n", label: "Notiz", className: "col-opt1", render: (a) => <span className="muted">{a.note || ""}</span> },
     {
       key: "f", label: "Ausgelöst", className: "col-opt2", sort: (a) => a.triggeredAt ?? "",
       render: (a) => (a.triggeredAt ? `${fmtDate(a.triggeredAt).slice(0, 6)} ${fmtTime(a.triggeredAt)} · ${fmtPrice(a.triggeredPrice, a.ticker)}` : ""),
@@ -118,8 +160,15 @@ export function ALRT(_: ScreenProps) {
         const st = alertStatus(a);
         return (
           <span className="nowrap">
+            <button className="tool" title="Wert und Notiz ändern" onClick={() => setEdit({ id: a.id, level: fmt(a.level, a.level < 10 ? 4 : 2).replace(/0+$/, "").replace(/,$/, ""), note: a.note })}>
+              ✎
+            </button>
             {(st === "fired" || st === "off") && (
-              <button className="tool" title="Wieder scharf schalten (Richtung vom heutigen Kurs aus)" onClick={() => act(() => alertsApi.update(a.id, { active: true }))}>
+              <button
+                className="tool"
+                title={a.kind === "price" && a.autoDir !== false ? "Wieder scharf schalten (Richtung vom heutigen Kurs aus)" : "Wieder scharf schalten – meldet sich, wenn die Bedingung neu erreicht wird"}
+                onClick={() => act(() => alertsApi.update(a.id, { active: true }))}
+              >
                 ↻
               </button>
             )}
@@ -189,7 +238,7 @@ export function ALRT(_: ScreenProps) {
           >
             <label>
               Wertpapier
-              <input className="field" value={tickerText} onChange={(e) => setTickerText(e.target.value)} placeholder="z. B. SAP GR" style={{ width: "14ch" }} aria-label="Wertpapier für den Alarm" />
+              <input className="field" value={tickerText} onChange={(e) => setTickerText(e.target.value)} placeholder={`z. B. ${examples[0]}`} style={{ width: "14ch" }} aria-label="Wertpapier für den Alarm" />
             </label>
             <label>
               Art
@@ -230,7 +279,9 @@ export function ALRT(_: ScreenProps) {
           <Table rows={d.alerts} columns={columns} rowKey={(a) => a.id} initialSort={{ key: "s", desc: false }} />
         ) : (
           <Empty>
-            Noch keine Alarme. Oben anlegen – oder im Kurschart (GP) mit <b className="lbl">＋ Marke</b> direkt in den Chart klicken.
+            <span>
+              Noch keine Alarme. Oben anlegen – oder im Kurschart (GP) mit <b className="lbl">＋ Marke</b> direkt in den Chart klicken.
+            </span>
           </Empty>
         )}
         <div style={{ padding: "0 10px" }}>
@@ -255,8 +306,9 @@ export function ALRT(_: ScreenProps) {
           )}
         </div>
         <div className="notes">
-          Ein Alarm meldet sich einmal und steht dann auf „ausgelöst“; ↻ schaltet ihn wieder scharf. Der Server prüft, solange das schwarze Fenster
-          offen ist – auch ohne Browser. Kurse von EODHD sind meist 15–20 Minuten verzögert.
+          Ein Alarm meldet sich einmal und steht dann auf „ausgelöst“; ↻ schaltet ihn wieder scharf, ✎ ändert Wert und Notiz. Geprüft wird im
+          Hintergrund, solange das Terminal läuft (das Startfenster offen ist) – auch ohne Browser. Außerhalb der Handelszeit einer Börse bewegt sich
+          der Kurs nicht, Alarme lösen dann erst zur nächsten Eröffnung aus. {status.data?.mode === "demo" ? "Demo-Kurse ändern sich im 5-Minuten-Takt." : "Kurse von EODHD sind meist 15–20 Minuten verzögert."}
         </div>
       </div>
     </>

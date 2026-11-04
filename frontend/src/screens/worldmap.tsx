@@ -29,8 +29,9 @@ const VIEW_KEYS = Object.keys(VIEWS) as (keyof typeof VIEWS)[];
 
 export function formatMetric(m: Metric, v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "–";
-  const sign = m.signed && v > 0 ? "+" : "";
-  return `${sign}${fmt(v, m.digits)}${m.unit === "bp" ? " bp" : " %"}`;
+  const shown = Number(v.toFixed(m.digits)) === 0 ? 0 : v; // kein „+0,0 %“ neben „0,0 %“
+  const sign = m.signed && shown > 0 ? "+" : "";
+  return `${sign}${fmt(Math.abs(shown) === 0 ? 0 : shown, m.digits)}${m.unit === "bp" ? " bp" : " %"}`;
 }
 
 /** Farbe eines Werts: nur bei Veränderungen (grün gut, rot schlecht; steigende Renditen rot). */
@@ -66,6 +67,9 @@ export function WMAP(_: ScreenProps) {
         .sort((a, b) => b.v - a.v),
     [q.data, metric],
   );
+  // Rangliste und Farbskala nur aus den Ländern des Ausschnitts
+  const members = VIEWS[view]?.members;
+  const inView = useMemo(() => (members ? rows.filter((r) => members.includes(r.c.iso3)) : rows), [rows, members]);
 
   function open(c: WorldCountry) {
     if (metric.group === "equity" && c.index) ws.setSecurity(c.index.ticker, { open: "GP", stay: true });
@@ -74,7 +78,11 @@ export function WMAP(_: ScreenProps) {
   }
 
   const option = useMemo(() => {
-    const range = colorRange(rows.map((r) => r.v), metric.scale, metric.domain);
+    const range = colorRange(inView.map((r) => r.v), metric.scale, metric.domain);
+    const vals = inView.map((r) => r.v);
+    // Werte außerhalb der Skala kennzeichnen (≤/≥), statt die Skala stillschweigend zu kappen
+    const hiMark = vals.some((x) => x > range.max + 1e-9) ? "≥ " : "";
+    const loMark = vals.some((x) => x < range.min - 1e-9) ? "≤ " : "";
     const v = VIEWS[view];
     const byIso = new Map(rows.map((r) => [r.c.iso3, r]));
     return {
@@ -96,7 +104,7 @@ export function WMAP(_: ScreenProps) {
         bottom: 6,
         itemWidth: 9,
         itemHeight: 130,
-        text: [formatMetric(metric, range.max), formatMetric(metric, range.min)],
+        text: [hiMark + formatMetric(metric, range.max), loMark + formatMetric(metric, range.min)],
         textGap: 6,
         textStyle: { color: "#8f8f8f", fontSize: 10 },
         inRange: { color: range.colors },
@@ -118,10 +126,10 @@ export function WMAP(_: ScreenProps) {
         },
       ],
     };
-  }, [rows, metric, view]);
+  }, [rows, inView, metric, view]);
 
-  const best = rows[0];
-  const worst = rows[rows.length - 1];
+  const best = inView[0];
+  const worst = inView[inView.length - 1];
   const groupMetrics = METRICS.filter((m) => m.group === group);
 
   return (
@@ -132,7 +140,7 @@ export function WMAP(_: ScreenProps) {
         <span className="sep" />
         <Seg label="Ausschnitt" value={view} options={VIEW_KEYS.map((k) => ({ value: k, label: VIEWS[k].label }))} onChange={setView} />
         <span className="small muted" style={{ marginLeft: "auto" }}>
-          {rows.length} Länder{q.data?.asOf ? ` · Stand ${fmtDate(q.data.asOf)}` : ""}
+          {inView.length} Länder{q.data?.asOf ? ` · Stand ${fmtDate(q.data.asOf)}` : ""}
         </span>
       </div>
       <div className="panel-body wmap-body">
@@ -155,13 +163,13 @@ export function WMAP(_: ScreenProps) {
               />
               {best && worst && best !== worst && (
                 <div className="wmap-extremes">
-                  <span className={toneOf(metric, best.v)}>▲ {best.c.name} {formatMetric(metric, best.v)}</span>
-                  <span className={toneOf(metric, worst.v)}>▼ {worst.c.name} {formatMetric(metric, worst.v)}</span>
+                  <span className={toneOf(metric, best.v)}>Höchster: {best.c.name} {formatMetric(metric, best.v)}</span>
+                  <span className={toneOf(metric, worst.v)}>Niedrigster: {worst.c.name} {formatMetric(metric, worst.v)}</span>
                 </div>
               )}
             </div>
             <div className="wmap-list" role="list" aria-label={`Rangliste ${metric.label}`}>
-              {rows.map((r, i) => (
+              {inView.map((r, i) => (
                 <button key={r.c.iso3} type="button" role="listitem" className="wmap-row" onClick={() => open(r.c)} title={detail(r.c, metric)}>
                   <span className="dim">{i + 1}</span>
                   <span className="wmap-name">{r.c.name}</span>

@@ -108,7 +108,9 @@ def _event(item: NewsInput, text: str) -> str:
         return "uebernahme"
     if re.search(r"jahresprognose|ausblick|margenziel|prognose an|prognose gesenkt", title):
         return "prognose"
-    if item.topic == "earnings" or re.search(r"quartal|gewinnerwartung|umsatzprognose|gewinn je aktie", text):
+    # „im kommenden Quartal“ ist keine Quartalsmeldung (früher als Zahlen „über den Erwartungen“ eingeordnet)
+    quarterly = re.search(r"quartalszahl|quartalsergebnis|quartalsbericht|gewinnerwartung|gewinn je aktie|(ersten|zweiten|dritten|vierten|abgelaufenen) quartal", text)
+    if item.topic == "earnings" or quarterly:
         return "quartalszahlen"
     if item.topic == "analyst" or re.search(r"stuft|kursziel|einstufung", text):
         return "analyst"
@@ -240,32 +242,44 @@ def brief(d: BriefData, relevance: dict[str, int]) -> Brief:
         sections.append(BriefSection(title="Märkte", points=markets))
 
     mine: list[BriefPoint] = []
-    moved = sorted((q for q in d.watch if q.change_pct is not None), key=lambda q: -abs(q.change_pct or 0))
+    depot = set(d.depot)
+    tag = lambda t: f"{display(t)} (Depot)" if t in depot else display(t)  # noqa: E731
+    # Depotwerte zuerst, innerhalb nach Stärke der Bewegung
+    moved = sorted((q for q in d.watch if q.change_pct is not None), key=lambda q: (q.ticker not in depot, -abs(q.change_pct or 0)))
     if moved:
-        mine.append(BriefPoint(text="Größte Bewegungen: " + ", ".join(f"{display(q.ticker)} {pct(q.change_pct)}" for q in moved[:3]) + ".", sources=["W"]))
+        mine.append(BriefPoint(text="Größte Bewegungen: " + ", ".join(f"{tag(q.ticker)} {pct(q.change_pct)}" for q in moved[:3]) + ".", sources=["PORT" if moved[0].ticker in depot else "W"]))
     watch = {q.ticker for q in d.watch}
     important = [n for n in sorted(d.news, key=lambda n: n.date, reverse=True) if relevance.get(n.id, 0) >= 2 and set(n.symbols) & watch]
+    important.sort(key=lambda n: not (set(n.symbols) & depot))  # Meldungen zu Depotwerten zuerst (stabil)
     for n in important[:3]:
-        mine.append(BriefPoint(text=f"{display(n.symbols[0])}: {n.title}", sources=[n.id]))
+        first = next((x for x in n.symbols if x in depot), n.symbols[0])
+        mine.append(BriefPoint(text=f"{tag(first)}: {n.title}", sources=[n.id]))
     if mine:
         sections.append(BriefSection(title="Ihre Werte", points=mine))
 
-    dates: list[BriefPoint] = []
+    dates: list[tuple[str, BriefPoint]] = []  # (Zeitpunkt, Punkt) – am Ende zeitlich sortiert
     today = d.today
-    events = sorted(d.events, key=lambda e: (-e.importance, e.date))
-    for e in events[:3]:
+    # die drei wichtigsten Termine, dann zeitlich sortiert
+    events = sorted(sorted(d.events, key=lambda e: (-e.importance, e.date))[:3], key=lambda e: e.date)
+    for e in events:
         est = f" (Prognose {de(e.estimate, 1)}{' ' + e.unit if e.unit else ''})" if e.estimate is not None else ""
         clock = _local_time(e.date)
         day = "" if e.date[:10] == today else f"{_weekday(e.date[:10])}, "
-        dates.append(BriefPoint(text=f"{day}{clock + ' Uhr: ' if clock else ''}{e.country} {e.event}{est}.", sources=["ECO"]))
-    if d.earnings:
-        names = ", ".join(r.name or display(r.ticker) for r in d.earnings[:4])
-        more = f" und {len(d.earnings) - 4} weitere" if len(d.earnings) > 4 else ""
-        when = "heute" if d.earnings[0].report_date[:10] == today else f"am {_weekday(d.earnings[0].report_date[:10])}"
-        dates.append(BriefPoint(text=f"Quartalszahlen {when}: {names}{more}.", sources=["EVTS"]))
+        dates.append((e.date, BriefPoint(text=f"{day}{clock + ' Uhr: ' if clock else ''}{e.country} {e.event}{est}.", sources=["ECO"])))
+    mine_set = depot | watch
+    for day_ in sorted({r.report_date[:10] for r in d.earnings}):
+        # Depot- und Watchlist-Werte zuerst
+        rows = sorted((r for r in d.earnings if r.report_date[:10] == day_), key=lambda r: (r.ticker not in depot, r.ticker not in mine_set))
+        names = ", ".join((r.name or display(r.ticker)) + (" (Depot)" if r.ticker in depot else " (Watchlist)" if r.ticker in watch else "") for r in rows[:4])
+        more = f" und {len(rows) - 4} weitere" if len(rows) > 4 else ""
+        only_pre = all(r.timing == "BeforeMarket" for r in rows)
+        when = "heute" if day_ == today else f"{_weekday(day_)}{' vor Eröffnung' if only_pre else ''}"
+        dates.append((day_ + ("T00" if only_pre else "T99"), BriefPoint(text=f"Quartalszahlen {when}: {names}{more}.", sources=["EVTS"])))
     if dates:
-        upcoming = all(e.date[:10] != today for e in d.events) and all(r.report_date[:10] != today for r in d.earnings)
-        sections.append(BriefSection(title="Nächste Termine" if upcoming else "Termine heute", points=dates))
+        # Überschrift nach den tatsächlich genannten Terminen (früher „Termine heute“ über Donnerstagsterminen)
+        days = {e.date[:10] for e in events} | {r.report_date[:10] for r in d.earnings}
+        title = "Termine heute" if days == {today} else "Nächste Termine" if today not in days else "Termine"
+        sections.append(BriefSection(title=title, points=[p for _, p in sorted(dates, key=lambda x: x[0])]))
 
     rates: list[BriefPoint] = []
     if d.yields:
@@ -312,12 +326,27 @@ _MARKETS = re.compile(r"märkte|marktüberblick|indizes|wie läuft der markt|wie
 _ALERTS = re.compile(r"alarm|kursmarke|marken\b|benachrichtig")
 _DEPOT = re.compile(r"depot|portfolio|meine positionen|meine werte|mein risiko|klumpenrisiko")
 _EARN_CAL = re.compile(r"(wer|welche).*(quartalszahlen|berichtet|earnings)|earnings.?kalender|berichtssaison")
+_MOVERS = re.compile(r"bewegen sich|am stärksten|größten? (gewinner|verlierer|bewegung)|top.?(gewinner|verlierer)|tagesgewinner|tagesverlierer|movers")
+_OPTIONS = re.compile(r"option|implizit|straddle|erwartete bewegung|put.?call|max pain|einpreisen.*(zahlen|bewegung)")
+_FWD = re.compile(r"absicher|hedg|terminkurs|devisentermin|forward|swap.?punkt")
+_RATES = re.compile(r"zinskurve|\bkurve|\brendite|staatsanleihe|anleihen|\bbund|treasur|1y1y|5y5y|eingepreist|preist .*(fed|ezb|notenbank|zins)|steilheit|zinsen")
 
 DEMO_HINT = (
-    "Die Demo-KI versteht nur einfache Fragen: zu einem Wertpapier („Wie steht NWND?“, „Kennzahlen von NRDW GR“), "
-    "zu Terminen („Welche Termine stehen heute an?“) und zum Marktüberblick. Freie Fragen beantwortet ein Sprachmodell: "
+    "Die Demo-KI versteht nur einfache Fragen: zu einem Wertpapier („Wie steht NWND?“, „Kennzahlen von NRDW GR“, "
+    "„Was preisen die Optionen für NWND ein?“), zu Terminen („Welche Termine stehen heute an?“), zu den größten Bewegungen, "
+    "Zinskurven („Wie steil ist die US-Kurve?“), Devisenterminen („Was kostet die USD-Absicherung?“), Depot und Alarmen. Freie Fragen beantwortet ein Sprachmodell: "
     "In LM Studio ein Modell laden und unter „Developer“ den Server starten."
 )
+
+
+def _dmy(iso: Optional[str]) -> str:
+    """2026-07-23 -> 23.07.2026"""
+    if not iso or len(iso) < 10:
+        return iso or "–"
+    return f"{iso[8:10]}.{iso[5:7]}.{iso[0:4]}"
+
+
+_TIMING = {"BeforeMarket": "vor Eröffnung", "AfterMarket": "nach Börsenschluss"}
 
 
 async def _find_ticker(t: Terminal, question: str, active: Optional[str]) -> Optional[str]:
@@ -388,22 +417,77 @@ async def ask(t: Terminal, req: AskRequest) -> AskResult:
             if res["sektoren"]:
                 s0 = res["sektoren"][0]
                 lines.append(f"- Schwerpunkt: {SECTOR_DE.get(s0['sektor'], s0['sektor'])} mit {de(s0['gewicht_prozent'], 1)} %.")
+    elif _FWD.search(q):
+        pair = re.search(r"\b(eur|usd|gbp|chf|jpy|cnh|cny|cad|aud|nok|sek|dkk)\s*/?\s*(eur|usd|gbp|chf|jpy|cnh|cny|cad|aud|nok|sek|dkk)\b", q)
+        ccys = re.findall(r"\b(eur|usd|gbp|chf|jpy|cnh|cad|aud)\b", q)
+        home = "CHF" if "chf-anleger" in q or "schweizer" in q else "EUR"
+        if pair:
+            p = (pair.group(1) + pair.group(2)).upper()
+        else:
+            other = next((c.upper() for c in ccys if c.upper() != home), "USD")
+            p = f"{home}{other}"
+        res = await call("devisentermin", {"paar": p, "heimatwaehrung": home})
+        if "fehler" in res:
+            lines.append(res["fehler"])
+        else:
+            rows = {r["laufzeit"]: r for r in res["termine"]}
+            lines.append(f"{res['paar']}: Kassa {de(res['kassa'], 5)}." + (f" Terminkurs 3 Monate {de(rows['3M']['terminkurs'], 5)}, 1 Jahr {de(rows['1Y']['terminkurs'], 5)} ({de(rows['1Y']['swap_punkte'], 1, sign=True)} Pips)." if "3M" in rows and "1Y" in rows else ""))
+            for h in (res.get("absicherung") or {}).get("kosten_pa", []):
+                v = h["ertrag_kosten_1j_prozent_pa"]
+                if v is not None:
+                    lines.append(f"- Absicherung von {h['waehrung']} für einen {home}-Anleger: {'Ertrag' if v >= 0 else 'Kosten'} {de(abs(v), 2)} % pro Jahr (≈ Zinsdifferenz).")
+            lines.append(f"- {res['hinweis']}.")
+    elif _MOVERS.search(q):
+        ex = "US" if re.search(r"\bus\b|us-|amerika|wall street", q) else "XETRA" if re.search(r"deutsch|xetra|dax", q) else "LSE" if re.search(r"london|brit", q) else None
+        res = await call("bewegungen", {"boerse": ex} if ex else {})
+        where = {"US": "an US-Börsen", "XETRA": "auf Xetra", "LSE": "in London"}.get(ex or "", "über alle Börsen")
+        g, lo = res.get("gewinner") or [], res.get("verlierer") or []
+        lines.append(f"Größte Bewegungen heute {where}:")
+        if g:
+            lines.append("- Gewinner: " + ", ".join(f"{r['name'] or display(r['ticker'])} ({display(r['ticker'])}) {pct(r['tag_prozent'])}" for r in g[:4]) + ".")
+        if lo:
+            lines.append("- Verlierer: " + ", ".join(f"{r['name'] or display(r['ticker'])} ({display(r['ticker'])}) {pct(r['tag_prozent'])}" for r in lo[:4]) + ".")
     elif _EARN_CAL.search(q):
         res = await call("earnings_kalender", {})
         rows = res.get("termine") or []
         lines.append(f"Quartalsberichte in den nächsten 7 Tagen: {len(rows)}." if rows else "In den nächsten 7 Tagen stehen keine Quartalsberichte an.")
-        for r in rows[:6]:
-            lines.append(f"- {r['datum']}: {r['name'] or display(r['ticker'])} ({display(r['ticker'])}), EPS-Schätzung {de(r['eps_schaetzung'], 2)}")
+        rows = sorted(rows, key=lambda r: r["datum"])
+        for r in rows[:8]:
+            when = f"{_weekday(r['datum'][:10])} {_dmy(r['datum'])}"
+            timing = f", {_TIMING[r['zeitpunkt']]}" if r.get("zeitpunkt") in _TIMING else ""
+            lines.append(f"- {when}{timing}: {r['name'] or display(r['ticker'])} ({display(r['ticker'])}), EPS-Schätzung {de(r['eps_schaetzung'], 2)}")
+        if len(rows) > 8:
+            lines.append(f"- … und {len(rows) - 8} weitere (alle in EVTS).")
+    elif _RATES.search(q):
+        land = "DE" if re.search(r"deutsch|bund\b|\bde\b", q) else "IT" if "ital" in q else "UK" if re.search(r"brit|gilt|\buk\b", q) else "JP" if "japan" in q else "FR" if "frankreich" in q else "US"
+        res = await call("zinsen", {"land": land})
+        if "fehler" in res:
+            lines.append(res["fehler"])
+        else:
+            r = {x["laufzeit"]: x for x in res["renditen"]}
+            parts = [f"{k} {de(r[k]['rendite_prozent'], 2)} %" for k in ("2Y", "10Y", "30Y") if k in r and r[k]["rendite_prozent"] is not None]
+            lines.append(f"Zinskurve {res['name']}: " + ", ".join(parts) + ".")
+            if res.get("steilheit_2j_10j_bp") is not None:
+                st = res["steilheit_2j_10j_bp"]
+                lines.append(f"- Steilheit 2J/10J: {de(st, 0, sign=True)} bp ({'normal steigend' if st > 0 else 'invers'}).")
+            if "10Y" in r and r["10Y"].get("veraenderung_1m_bp") is not None:
+                lines.append(f"- 10 Jahre zum Vormonat: {de(r['10Y']['veraenderung_1m_bp'], 0, sign=True)} bp.")
+            keys = {k["kennzahl"]: k for k in res.get("eingepreiste_zinsen") or []}
+            shown = [f"{k} {de(keys[k]['zins_prozent'], 2)} %" for k in ("1Y1Y", "2Y1Y", "5Y5Y") if k in keys and keys[k]["zins_prozent"] is not None]
+            if shown and "3M" in r:
+                lines.append(f"- Eingepreist (aus der Kurve berechnet): {', '.join(shown)}; heute 3 Monate {de(r['3M']['rendite_prozent'], 2)} %.")
     elif _CAL.search(q):
         today = t.now().date()
         days = 0 if "heute" in q else 1 if "morgen" in q else 6
         start = today + dt.timedelta(days=1) if "morgen" in q else today
         res = await call("kalender", {"von": start.isoformat(), "bis": (start + dt.timedelta(days=days if days != 1 else 0)).isoformat(), "wichtigkeit": 2})
         rows = res.get("termine") or []
-        lines.append(f"Wichtige Wirtschaftstermine {res.get('von')} bis {res.get('bis')}: {len(rows)}." if rows else "Im Zeitraum stehen keine wichtigen Wirtschaftstermine an.")
-        for r in sorted(rows, key=lambda r: (-r["wichtigkeit"], r["datum"]))[:6]:
+        lines.append(f"Wichtige Wirtschaftstermine {_dmy(res.get('von'))} bis {_dmy(res.get('bis'))}: {len(rows)}." if rows else "Im Zeitraum stehen keine wichtigen Wirtschaftstermine an.")
+        for r in sorted(rows, key=lambda r: r["datum"])[:8]:
             est = f", Prognose {de(r['prognose'], 1)}{' ' + r['einheit'] if r.get('einheit') else ''}" if r.get("prognose") is not None else ""
-            lines.append(f"- {r['datum'][:10]} {_local_time(r['datum'])} {r['land']} {r['termin']}{est}")
+            lines.append(f"- {_weekday(r['datum'][:10])} {_dmy(r['datum'])} {_local_time(r['datum'])} {r['land']} {r['termin']}{est}")
+        if len(rows) > 8:
+            lines.append(f"- … und {len(rows) - 8} weitere (alle in ECO).")
     elif _MARKETS.search(q):
         res = await call("maerkte", {})
         lines.append("Marktüberblick:")
@@ -425,7 +509,23 @@ async def ask(t: Terminal, req: AskRequest) -> AskResult:
         digits = _price_digits(k.get("kurs"))
         lines.append(f"{name} ({display(ticker)}) steht bei {de(k.get('kurs'), digits)} {k.get('waehrung') or ''}".rstrip() + f", {pct(k.get('veraenderung_prozent'))} zum Vortag.")
         equity = not re.search(r"\.(INDX|FOREX|CC|GBOND|COMM)$", ticker)
-        if equity and (re.search(r"bewert|kgv|teuer|günstig|billig|kennzahl|dividende|marge|analyst", q) or len(q) < 40):
+        wants_options = bool(_OPTIONS.search(q))
+        if equity and wants_options:
+            o = await call("optionen", {"ticker": ticker})
+            if "fehler" in o:
+                lines.append(f"- Optionen: {o['fehler']}")
+            else:
+                lines.append(f"- Optionen: implizite Volatilität 30 Tage {de(o['implizite_vola_30t_prozent'], 1)} %, tatsächliche Schwankung 30 Tage {de(o['historische_vola_30t_prozent'], 1)} %.")
+                f = o.get("naechster_monatsverfall")
+                if f and f.get("erwartete_bewegung_prozent") is not None:
+                    lines.append(f"- Erwartete Bewegung bis {_dmy(f['datum'])} (Monatsverfall): ±{de(f['erwartete_bewegung_prozent'], 1)} %.")
+                e = o.get("naechste_quartalszahlen")
+                if e and e.get("erster_verfall_danach"):
+                    move = f", erwartete Bewegung bis dahin ±{de(e['erwartete_bewegung_bis_dahin_prozent'], 1)} %" if e.get("erwartete_bewegung_bis_dahin_prozent") is not None else ""
+                    iv = f" (ATM-IV {de(e['atm_iv_davor_prozent'], 0)} % → {de(e['atm_iv_danach_prozent'], 0)} %)" if e.get("atm_iv_davor_prozent") is not None and e.get("atm_iv_danach_prozent") is not None else ""
+                    lines.append(f"- Quartalszahlen {_dmy(e['datum'])} {_TIMING.get(e.get('zeitpunkt') or '', '')}: erster Verfall danach {_dmy(e['erster_verfall_danach'])}{move}{iv}.".replace("  ", " "))
+                lines.append(f"- Put/Call (Umsatz) {de(o.get('put_call_volumen'), 2)}; meistes Call-Open-Interest bei {', '.join(de(x, 0 if float(x).is_integer() else 1) for x in o['call_strikes_hoechstes_oi'][:2])}, Put-Open-Interest bei {', '.join(de(x, 0 if float(x).is_integer() else 1) for x in o['put_strikes_hoechstes_oi'][:2])}.")
+        if equity and not wants_options and (re.search(r"bewert|kgv|teuer|günstig|billig|kennzahl|dividende|marge|analyst", q) or len(q) < 40):
             f = await call("kennzahlen", {"ticker": ticker})
             if "fehler" not in f:
                 parts = [f"KGV {de(f.get('kgv'), 1)}"]
@@ -444,9 +544,14 @@ async def ask(t: Terminal, req: AskRequest) -> AskResult:
             e = await call("earnings", {"ticker": ticker})
             if "fehler" not in e and e.get("letzte_berichte"):
                 last = e["letzte_berichte"][0]
-                lines.append(f"- Letzter Bericht {last['quartal']}: EPS {de(last['eps_ist'], 2)} gegen Schätzung {de(last['eps_schaetzung'], 2)} ({pct(last['ueberraschung_prozent'])}).")
+                lines.append(f"- Letzter Bericht am {_dmy(last['berichtet_am'])} (Quartal bis {_dmy(last['quartal_ende'])}): EPS {de(last['eps_ist'], 2)} gegen Schätzung {de(last['eps_schaetzung'], 2)} ({pct(last['ueberraschung_prozent'])}).")
+            hit = e.get("schaetzung_uebertroffen") if "fehler" not in e else None
+            if hit:
+                lines.append(f"- Schätzung übertroffen in {hit['uebertroffen']} von {hit['quartale']} Quartalen.")
             if "fehler" not in e and e.get("naechster_bericht"):
-                lines.append(f"- Nächster Bericht: {e['naechster_bericht']['datum']}.")
+                n = e["naechster_bericht"]
+                est = f", EPS-Schätzung {de(n['eps_schaetzung'], 2)}" if n.get("eps_schaetzung") is not None else ""
+                lines.append(f"- Nächster Bericht: {_weekday(n['datum'][:10])}, {_dmy(n['datum'])} {_TIMING.get(n.get('zeitpunkt') or '', '')}{est}.".replace(" ,", ",").replace("  ", " "))
         if re.search(r"entwicklung|performance|jahr|monat|woche|trend|seit", q):
             w = await call("wertentwicklung", {"ticker": ticker})
             if "fehler" not in w:

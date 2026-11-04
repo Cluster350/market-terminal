@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 
 from ..ai.models import AiStatus, AskRequest, AskResult, Brief, BriefRequest, NewsInsightResult, NewsRequest
 from ..ai.service import AIService
+from .portfolio_routes import current_portfolio
 
 router = APIRouter(prefix="/api/ai")
 
@@ -26,7 +27,12 @@ async def news(request: Request, body: NewsRequest):
 
 @router.post("/brief", response_model=Brief)
 async def brief(request: Request, body: BriefRequest):
-    return await AI(request).brief(body)
+    # Depotwerte gehören zu „Ihre Werte“ (früher nur die Watchlist)
+    try:
+        depot = [p.ticker for p in (await current_portfolio(request.app)).positions]
+    except Exception:  # noqa: BLE001 – ohne Depot bleibt das Briefing bei der Watchlist
+        depot = []
+    return await AI(request).brief(body, depot)
 
 
 @router.post("/ask", response_model=AskResult)

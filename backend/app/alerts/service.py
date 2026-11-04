@@ -126,13 +126,14 @@ class AlertService:
         if body.kind == "change" and body.level > 100:
             raise BadRequest("Tagesveränderung bitte als Prozentwert bis 100 eingeben.")
         direction = body.direction
+        auto = direction is None
         if direction is None:
             if body.kind == "change":
                 raise BadRequest("Bitte Tagesplus oder Tagesminus wählen.")
             direction = await self._direction(ticker, body.level)
         alert = Alert(
             id=secrets.token_hex(6), ticker=ticker, kind=body.kind, level=body.level, direction=direction,  # type: ignore[arg-type]
-            alarm=body.alarm, active=True, note=" ".join(body.note.split()), created=_now(),
+            alarm=body.alarm, active=True, auto_dir=auto, note=" ".join(body.note.split()), created=_now(),
         )
         async with self._lock:
             state = self.load()
@@ -155,14 +156,23 @@ class AlertService:
             if "note" in upd:
                 upd["note"] = " ".join(str(upd["note"]).split())
             rearm = "level" in upd or upd.get("active") is True or (upd.get("alarm") is True and not a.alarm)
+            if "direction" in upd:
+                upd["auto_dir"] = False
             if rearm:
-                upd.update(active=True, triggered_at=None, triggered_price=None)
-                # Kursmarke neu ausrichten: Alarm gilt in Richtung der Marke vom heutigen Kurs aus
-                if a.kind == "price" and "direction" not in upd:
+                upd.update(active=True, triggered_at=None, triggered_price=None, wait_cross=False)
+                if a.kind == "price" and "direction" not in upd and a.auto_dir:
+                    # Kursmarke neu ausrichten: Alarm gilt in Richtung der Marke vom heutigen Kurs aus
                     try:
                         upd["direction"] = await self._direction(a.ticker, upd.get("level", a.level))
                     except BadRequest:
                         pass
+                else:
+                    # bewusst gewählte Richtung bleibt („Stopp unter 150“ wird nicht zum Kaufsignal);
+                    # ist sie gerade erfüllt, meldet sich der Alarm erst, wenn der Kurs sie neu erreicht
+                    probe = a.model_copy(update=upd)
+                    q = (await self._quotes([a.ticker])).get(a.ticker)
+                    if q is not None and is_met(probe, q):
+                        upd["wait_cross"] = True
             state.alerts[i] = a.model_copy(update=upd)
             self._save(state)
             return state.alerts[i]
@@ -194,9 +204,18 @@ class AlertService:
                 return []
             quotes = await self._quotes([a.ticker for a in armed])
             fired: list[AlertEvent] = []
+            changed = False
             for i, a in enumerate(state.alerts):
                 q = quotes.get(a.ticker)
-                if not (a.alarm and a.active) or q is None or not is_met(a, q):
+                if not (a.alarm and a.active) or q is None:
+                    continue
+                if a.wait_cross:
+                    # erst wieder auf die andere Seite, dann zählt das erneute Erreichen
+                    if not is_met(a, q):
+                        state.alerts[i] = a.model_copy(update={"wait_cross": False})
+                        changed = True
+                    continue
+                if not is_met(a, q):
                     continue
                 now = _now()
                 state.alerts[i] = a.model_copy(update={"active": False, "triggered_at": now, "triggered_price": q.last})
@@ -213,6 +232,7 @@ class AlertService:
                 ))
             if fired:
                 state.events = (list(reversed(fired)) + state.events)[:MAX_EVENTS]
+            if fired or changed:
                 self._save(state)
                 for e in fired:
                     log.info("Alarm ausgelöst: %s", e.message)

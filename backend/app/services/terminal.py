@@ -46,6 +46,7 @@ from ..models import (
 )
 from ..providers.base import MACRO_INDICATORS, WORLD, Instrument, Provider, ScreenFilter
 from . import metrics
+from .tickers import display
 from .util import pct
 
 log = logging.getLogger("terminal")
@@ -438,23 +439,24 @@ class Terminal:
                                             chg_1w=r.chg_1w, chg_1m=r.chg_1m, chg_ytd=r.chg_ytd)
                 as_of = max(as_of or "", r.as_of or "") or None
             note = "Wertentwicklung des wichtigsten Aktienindex je Land in Landeswährung."
-        elif group == "rates":
-            async def bond(iso: str, cc: str) -> None:
-                nonlocal as_of
-                ticker = f"{cc}10Y.GBOND"
-                async with self._sem:
-                    try:
-                        h = await self.history(ticker)
-                    except TerminalError:
-                        return
-                pairs = [(d[:10], x) for d, x in zip(h.t, h.c) if x is not None]
-                if not pairs:
+        async def bond(iso: str, cc: str) -> None:
+            nonlocal as_of
+            ticker = f"{cc}10Y.GBOND"
+            async with self._sem:
+                try:
+                    h = await self.history(ticker)
+                except TerminalError:
                     return
-                cutoff = metrics.shift_date(dt.date.fromisoformat(pairs[-1][0]), 1).isoformat()
-                before = [x for d, x in pairs if d <= cutoff]
-                out[iso].bond = WorldBond(ticker=ticker, value=pairs[-1][1], chg_1m_bp=None if not before else round((pairs[-1][1] - before[-1]) * 100, 1))
+            pairs = [(d[:10], x) for d, x in zip(h.t, h.c) if x is not None]
+            if not pairs:
+                return
+            cutoff = metrics.shift_date(dt.date.fromisoformat(pairs[-1][0]), 1).isoformat()
+            before = [x for d, x in pairs if d <= cutoff]
+            out[iso].bond = WorldBond(ticker=ticker, value=pairs[-1][1], chg_1m_bp=None if not before else round((pairs[-1][1] - before[-1]) * 100, 1))
+            if group == "rates":
                 as_of = max(as_of or "", pairs[-1][0])
 
+        if group == "rates":
             await asyncio.gather(*(bond(iso, cc) for iso, _, cc, _, _ in WORLD if cc))
             note = "Rendite zehnjähriger Staatsanleihen; Veränderung in Basispunkten gegenüber vor einem Monat."
         else:
@@ -463,6 +465,15 @@ class Terminal:
                 if row.country in out:
                     out[row.country].macro = row.values
             indicators, note = table.indicators, table.note
+            # Realzins einheitlich als Rendite 10 J. minus Inflation (die Jahresreihe nutzte eine andere
+            # Definition und zeigte z. B. für die Türkei −9,5 % trotz 31,8 % Rendite und 25,4 % Inflation)
+            await asyncio.gather(*(bond(iso, cc) for iso, _, cc, _, _ in WORLD if cc))
+            for c in out.values():
+                infl = c.macro.get("inflation_consumer_prices_annual")
+                if c.bond and c.bond.value is not None and infl is not None and infl.value is not None:
+                    c.macro["real_interest_rate"] = infl.model_copy(update={"value": round(c.bond.value - infl.value, 2)})
+                else:
+                    c.macro.pop("real_interest_rate", None)
         return WorldMap(group=group, countries=list(out.values()), indicators=indicators, as_of=as_of, note=note)  # type: ignore[arg-type]
 
     def screen_fields(self) -> list[ScreenField]:
@@ -673,10 +684,14 @@ class Terminal:
         code = ticker.rpartition(".")[0]
         try:
             suggestions = [h.ticker for h in await self.search(code, 4) if h.ticker != ticker][:3]
+            if not suggestions and len(code) >= 3:
+                # Tippfehler wie NWDN statt NWND: nach Kürzeln mit denselben Buchstaben suchen
+                suggestions = [h.ticker for h in await self.search(code[:2], 12) if sorted(h.ticker.split(".")[0]) == sorted(code)][:3]
         except TerminalError:
             suggestions = []
-        hint = f" Meinten Sie: {', '.join(suggestions)}?" if suggestions else ""
-        raise NotFound(f"Unbekannter Ticker {ticker}.{hint}")
+        # in Terminal-Schreibweise (NWND US statt NWND.US)
+        hint = f" Meinten Sie: {', '.join(display(s) for s in suggestions)}?" if suggestions else ""
+        raise NotFound(f"Unbekannter Ticker {display(ticker)}.{hint}")
 
     async def earnings_calendar(self, start: dt.date, end: dt.date) -> list[EarningsEvent]:
         if end < start:

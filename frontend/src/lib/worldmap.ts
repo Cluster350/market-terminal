@@ -69,7 +69,7 @@ export const METRICS: Metric[] = [
   { key: "infl", group: "macro", label: "Inflation", unit: "%", digits: 1, scale: "lowGood", signed: false, domain: [0, 8], ...macro("inflation_consumer_prices_annual") },
   { key: "unemp", group: "macro", label: "Arbeitslosigkeit", unit: "%", digits: 1, scale: "lowGood", signed: false, domain: [3, 12], ...macro("unemployment_total_percent") },
   { key: "debt", group: "macro", label: "Staatsschulden/BIP", unit: "%", digits: 0, scale: "lowGood", signed: false, domain: [30, 130], ...macro("debt_percent_gdp") },
-  { key: "real", group: "macro", label: "Realzins", unit: "%", digits: 1, scale: "diverging", signed: true, ...macro("real_interest_rate") },
+  { key: "real", group: "macro", label: "Realzins (10 J. − Inflation)", unit: "%", digits: 1, scale: "diverging", signed: true, ...macro("real_interest_rate") },
 ];
 
 export const METRIC_BY_KEY: Record<string, Metric> = Object.fromEntries(METRICS.map((m) => [m.key, m]));
@@ -79,7 +79,7 @@ const COLORS: Record<Scale, string[]> = {
   diverging: ["#d43c3c", "#5a2a2a", "#2a2a2a", "#1f4d36", "#29d17d"],
   inverse: ["#29d17d", "#1f4d36", "#2a2a2a", "#5a2a2a", "#d43c3c"],
   lowGood: ["#29d17d", "#9bbf3a", "#f2c200", "#ff8a3d", "#d43c3c"],
-  level: ["#10263d", "#1d4a75", "#2f74b5", "#66b8ff", "#bfe2ff"],
+  level: ["#1f4a72", "#2a63a0", "#3f86cf", "#7cc3ff", "#cfeaff"], // dunkelstes Blau heller als „keine Daten“
 };
 
 /** Farbskala und Bereich: Abweichungen symmetrisch um 0, sonst vom kleinsten zum größten Wert. */
@@ -149,11 +149,13 @@ export interface View {
   label: string;
   center?: [number, number];
   zoom: number;
+  /** Länder des Ausschnitts: Farbskala und Rangliste nur aus diesen (Europa hatte die Welt-Skala) */
+  members?: string[];
 }
 
 export const VIEWS: Record<string, View> = {
   welt: { label: "Welt", zoom: 1.15 },
-  europa: { label: "Europa", center: [14, 53], zoom: 4.6 },
-  amerika: { label: "Amerika", center: [-80, 12], zoom: 1.9 },
-  asien: { label: "Asien/Pazifik", center: [118, 8], zoom: 2.1 },
+  europa: { label: "Europa", center: [14, 53], zoom: 4.6, members: ["DEU", "FRA", "GBR", "ITA", "ESP", "NLD", "BEL", "AUT", "CHE", "SWE", "NOR", "DNK", "FIN", "POL", "PRT", "GRC", "IRL"] },
+  amerika: { label: "Amerika", center: [-80, 12], zoom: 1.9, members: ["USA", "CAN", "MEX", "BRA", "ARG", "CHL"] },
+  asien: { label: "Asien/Pazifik", center: [118, 8], zoom: 2.1, members: ["JPN", "CHN", "IND", "KOR", "TWN", "IDN", "AUS", "NZL"] },
 };

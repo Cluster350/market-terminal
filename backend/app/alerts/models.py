@@ -26,6 +26,8 @@ class Alert(Model):
     direction: Direction
     alarm: bool = True  # False: nur Kursmarke im Chart, ohne Benachrichtigung
     active: bool = True  # scharf; nach dem Auslösen False, bis erneut scharf geschaltet
+    auto_dir: bool = True  # Richtung aus dem Kurs abgeleitet (Kursmarke); False: bewusst gewählt („unter 150“)
+    wait_cross: bool = False  # Bedingung war beim Scharfschalten schon erfüllt: erst melden, wenn der Kurs sie neu erreicht
     note: str = ""
     created: str
     triggered_at: Optional[str] = None

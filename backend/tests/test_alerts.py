@@ -81,9 +81,9 @@ def test_fires_once_logs_and_rearms(svc, tmp_path):
     first = next(x for x in state.alerts if x.id == a.id)
     assert not first.active and first.triggered_price == pytest.approx(p)
     assert next(x for x in state.alerts if x.id == mark.id).active  # Marke bleibt unberührt
-    # Wieder scharf: Richtung wird am heutigen Kurs neu ausgerichtet -> kein sofortiges Auslösen
+    # Wieder scharf: bewusst gewählte Richtung bleibt („Stopp“), meldet sich aber erst nach neuem Erreichen
     re = run(svc.update(a.id, AlertPatch(active=True)))
-    assert re.active and re.direction == "above" and re.triggered_at is None
+    assert re.active and re.direction == "below" and re.wait_cross and re.triggered_at is None
     assert run(svc.check()) == []
     data = json.loads((tmp_path / "alarme-demo.json").read_text(encoding="utf-8"))
     assert len(data["events"]) == 1 and data["alerts"][0]["ticker"] == "NWND.US"
@@ -132,3 +132,27 @@ def test_patch_keeps_percent_limit(svc):
     a = run(svc.create(AlertIn(ticker="NWND", kind="change", level=5, direction="above")))
     with pytest.raises(BadRequest):
         run(svc.update(a.id, AlertPatch(level=500)))
+
+
+def test_rearmed_stop_waits_for_new_cross(svc, monkeypatch):
+    """Stopp „unter 150“ bei 145: nach ↻ erst melden, wenn der Kurs über 150 war und wieder fällt."""
+    px = {"v": 145.0}
+
+    async def quotes(tickers):
+        return {t: Quote(ticker=t, last=px["v"], change_pct=0.0) for t in tickers}
+
+    monkeypatch.setattr(svc, "_quotes", quotes)
+    a = run(svc.create(AlertIn(ticker="NWND", level=150, direction="below")))
+    assert not a.auto_dir
+    assert len(run(svc.check())) == 1  # bewusst so angelegt: meldet sofort
+    re = run(svc.update(a.id, AlertPatch(active=True)))
+    assert re.direction == "below" and re.wait_cross
+    assert run(svc.check()) == []  # noch unter 150: wartet
+    px["v"] = 152.0
+    assert run(svc.check()) == []  # über 150: jetzt scharf
+    assert not next(x for x in svc.load().alerts if x.id == a.id).wait_cross
+    px["v"] = 149.0
+    assert len(run(svc.check())) == 1  # neu unterschritten
+    # Kursmarke (Richtung automatisch) wird beim Wieder-Scharfschalten neu ausgerichtet
+    m = run(svc.create(AlertIn(ticker="NWND", level=140)))
+    assert m.auto_dir and m.direction == "below"

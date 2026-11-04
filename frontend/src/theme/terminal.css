@@ -645,6 +645,7 @@ table.corr td { width: 42px; height: 20px; text-align: center; color: var(--valu
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 .alrt-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--rule); background: #0f0f0f; }
 .alrt-form label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: var(--fs-xs); }
+.alrt-edit { display: inline-flex; gap: 4px; align-items: center; }
 .st-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
 .st-armed { background: var(--label); }
 .st-fired { background: var(--up); }
@@ -713,6 +714,9 @@ table.corr td { width: 42px; height: 20px; text-align: center; color: var(--valu
 .opt-walls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .opt-wall { display: flex; gap: 10px; font-size: var(--fs-s); padding: 2px 0; border-bottom: 1px solid #141414; }
 table.opt-chain th.opt-side { text-align: center; letter-spacing: 0.08em; }
+/* Kopfzeilen der Kette bleiben beim Scrollen (Sprung zur Zeile am Geld) sichtbar */
+table.opt-chain thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); }
+table.opt-chain thead tr:nth-child(2) th { top: 21px; }
 table.opt-chain .opt-strike, table.opt-chain .opt-strike-h { text-align: center; background: var(--panel-head); color: var(--label); font-weight: 600; border-left: 1px solid var(--rule); border-right: 1px solid var(--rule); }
 table.opt-chain td.opt-itm { background: rgba(102, 184, 255, 0.13); }
 .opt-kpiline { padding: 4px 8px; color: var(--muted); border-bottom: 1px solid var(--rule); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

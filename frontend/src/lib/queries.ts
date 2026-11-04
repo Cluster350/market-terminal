@@ -13,6 +13,12 @@ export function retry(count: number, error: unknown): boolean {
 export const useStatus = () =>
   useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: poll(60_000), staleTime: 30_000 });
 
+/** Beispiel-Ticker, die es in der aktuellen Datenquelle auch gibt (Demo: fiktive Firmen). */
+export function useExampleTickers(): [string, string, string] {
+  const st = useStatus();
+  return IS_STATIC || st.data?.mode === "demo" ? ["ELBT GR", "NWND US", "THMS LN"] : ["SAP GR", "AAPL US", "VOD LN"];
+}
+
 export const useQuotes = (tickers: string[]) =>
   useQuery({
     queryKey: ["quotes", tickers],

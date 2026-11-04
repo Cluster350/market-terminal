@@ -167,20 +167,20 @@ class AIService:
 
     # --- Morgenbriefing -------------------------------------------------------
 
-    async def brief(self, req: BriefRequest) -> Brief:
+    async def brief(self, req: BriefRequest, depot: Optional[list[str]] = None) -> Brief:
         engine = await self._require()
-        tickers: list[str] = []
+        tickers: list[str] = list(dict.fromkeys(depot or []))[:20]  # Depotwerte zuerst, dann die Watchlist
         for raw in req.tickers:
             with contextlib.suppress(TerminalError):
                 t = normalize(raw)
                 if t not in tickers:
                     tickers.append(t)
-        key = (engine, tuple(sorted(tickers)))
+        key = (engine, tuple(sorted(tickers)), tuple(sorted(depot or [])))
         async with self._brief_lock:
             hit = self._briefs.get(key)
             if hit and not req.refresh and time.monotonic() - hit[0] < BRIEF_TTL:
                 return hit[1]
-            data = await gather_brief_data(self.terminal, tickers)
+            data = await gather_brief_data(self.terminal, tickers, depot)
             relevance = self._relevance(engine, data.news)
             if engine == "demo" or self.client is None:
                 result = demo.brief(data, relevance)

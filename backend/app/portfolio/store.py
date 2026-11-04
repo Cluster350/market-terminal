@@ -24,7 +24,7 @@ from .models import Portfolio, Position
 log = logging.getLogger("terminal.portfolio")
 
 NOT_HOLDABLE = {
-    "INDX": "Indizes lassen sich nicht direkt halten – bitte einen ETF auf den Index wählen (z. B. EXS1 GR für den DAX).",
+    "INDX": "Indizes lassen sich nicht direkt halten – bitte einen ETF auf den Index wählen (mit EODHD z. B. EXS1 GR für den DAX; die Demo-Daten enthalten keine ETFs).",
     "GBOND": "Anleihe-Renditen lassen sich nicht als Position führen.",
     "FOREX": "Devisenpaare lassen sich nicht als Position führen; Kasse bitte im Feld „Kasse“ eintragen.",
 }

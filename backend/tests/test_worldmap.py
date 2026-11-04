@@ -65,3 +65,10 @@ def test_new_tickers_open_in_the_terminal(client):
     assert client.get("/api/resolve?q=SSEC.INDX").json()["name"] == "Shanghai Composite"
     h = client.get("/api/history/ES10Y.GBOND").json()
     assert h["c"][-1] > 0 and len(h["t"]) > 1000
+
+
+def test_real_rate_is_ten_year_minus_inflation(client):
+    d = client.get("/api/macro/worldmap", params={"group": "macro"}).json()
+    tur = next(c for c in d["countries"] if c["iso3"] == "TUR")
+    real, infl = tur["macro"]["real_interest_rate"]["value"], tur["macro"]["inflation_consumer_prices_annual"]["value"]
+    assert tur["bond"] is not None and real == pytest.approx(tur["bond"]["value"] - infl, abs=0.01)

@@ -27,6 +27,10 @@ export function AlertCenter() {
     writeSeen(seen);
     if (!fresh.length) return;
     setToasts((t) => [...fresh, ...t.filter((x) => !fresh.some((f) => f.id === x.id))].slice(0, 5));
+    // nach einer Minute ausblenden (bleibt im Protokoll in ALRT und im Zähler der Statusleiste);
+    // vorher verdeckten stehengebliebene Hinweise die Tabelle
+    const ids = new Set(fresh.map((f) => f.id));
+    window.setTimeout(() => setToasts((t) => t.filter((x) => !ids.has(x.id))), 60_000);
     if (soundOn()) beep();
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       for (const e of fresh.slice(0, 3)) {

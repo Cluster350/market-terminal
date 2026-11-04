@@ -214,14 +214,14 @@ def unverified_numbers(answer: str, results: list[dict], question: str = "") -> 
 
 def suggestions_from(trace: list[ToolTrace]) -> list[Suggestion]:
     """Passende Terminal-Funktionen zu den abgefragten Daten (öffnen erst per Klick)."""
-    fn_for = {"kurs": "GP", "wertentwicklung": "GP", "kennzahlen": "DES", "finanzen": "FA", "earnings": "ERN", "news": "CN", "peers": "RV", "kalender": "ECO", "earnings_kalender": "EVTS", "maerkte": "WEI", "screener": "EQS", "depot": "PORT", "alarme": "ALRT", "optionen": "OMON"}
+    fn_for = {"kurs": "GP", "wertentwicklung": "GP", "kennzahlen": "DES", "finanzen": "FA", "earnings": "ERN", "news": "CN", "peers": "RV", "kalender": "ECO", "earnings_kalender": "EVTS", "maerkte": "WEI", "screener": "EQS", "depot": "PORT", "alarme": "ALRT", "optionen": "OMON", "bewegungen": "MOST", "zinsen": "GC", "devisentermin": "FWD"}
     out: list[Suggestion] = []
     seen: set[tuple[Optional[str], Optional[str]]] = set()
     for t in trace:
         fn = fn_for.get(t.tool)
         if not fn or not t.ok:
             continue
-        ticker = t.args.get("ticker") if fn not in ("ECO", "EVTS", "WEI", "EQS", "PORT", "ALRT") else None
+        ticker = t.args.get("ticker") if fn not in ("ECO", "EVTS", "WEI", "EQS", "PORT", "ALRT", "MOST", "GC", "FWD") else None
         key = (fn, ticker)
         if key in seen:
             continue

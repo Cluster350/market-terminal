@@ -343,3 +343,44 @@ def test_agent_answers_every_tool_call_id():
     asked = [c["id"] for m in msgs if m["role"] == "assistant" for c in (m.get("tool_calls") or [])]
     answered = [m["tool_call_id"] for m in msgs if m["role"] == "tool"]
     assert sorted(asked) == sorted(answered)
+
+
+def test_brief_marks_depot_and_names_days_honestly():
+    """Mittwoch: Wirtschaftstermine erst am Donnerstag -> nicht „Termine heute“; Depotwerte gekennzeichnet,
+    Quartalszahlen von morgen vor Eröffnung enthalten."""
+    from app.ai.brief import gather_brief_data
+
+    wed = dt.datetime(2026, 11, 4, 9, 30, tzinfo=dt.timezone.utc)
+    t = Terminal(DemoProvider(now_fn=lambda: wed), TTLCache())
+    d = asyncio.run(gather_brief_data(t, ["DLTA.AS", "NWND.US", "THMS.LSE", "VLTA.US"], ["THMS.LSE", "NWND.US"]))
+    b = demo.brief(d, {})
+    titles = [s.title for s in b.sections]
+    dates = next(s for s in b.sections if s.title in ("Termine heute", "Nächste Termine", "Termine"))
+    texts = [p.text for p in dates.points]
+    if any(x.startswith("Donnerstag") for x in texts):
+        assert dates.title != "Termine heute"
+    assert any("vor Eröffnung" in x for x in texts)
+    mine = next(s for s in b.sections if s.title == "Ihre Werte")
+    assert "(Depot)" in mine.points[0].text and "Ihre Werte" in titles
+
+
+@pytest.mark.parametrize("question,tool,needle", [
+    ("Was preisen die Optionen für NWND ein?", "optionen", "Erwartete Bewegung"),
+    ("Welche US-Werte bewegen sich heute am stärksten?", "bewegungen", "an US-Börsen"),
+    ("Wie steil ist die US-Kurve, was preist der Markt für die Fed ein?", "zinsen", "Steilheit"),
+    ("Was kostet einen EUR-Anleger die Absicherung seiner USD-Positionen?", "devisentermin", "pro Jahr"),
+    ("Wann berichtet VLTA und wie oft hat VLTA die Schätzungen übertroffen?", "earnings", "übertroffen in"),
+])
+def test_demo_ask_understands_more_questions(question, tool, needle):
+    from app.ai.models import AskRequest
+
+    r = asyncio.run(demo.ask(terminal(), AskRequest(question=question)))
+    assert tool in [x.tool for x in r.trace] and needle in r.answer, r.answer
+
+
+def test_demo_news_rule_ignores_next_quarter():
+    from app.ai.models import NewsInput
+
+    item = NewsInput(id="x", title="Rheinchem SE stellt neue Produktgeneration vor", content="Die Auslieferung soll im kommenden Quartal beginnen.",
+                     date="2026-11-04T10:00:00Z", source="demo", symbols=["RHNC.XETRA"], topic=None, polarity=0.2, urgent=False)
+    assert demo.analyze_news(item).event != "quartalszahlen"

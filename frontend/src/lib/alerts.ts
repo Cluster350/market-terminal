@@ -15,6 +15,10 @@ export interface Alert {
   direction: Direction;
   alarm: boolean;
   active: boolean;
+  /** Richtung aus dem Kurs abgeleitet (Kursmarke) statt bewusst gewählt */
+  autoDir?: boolean;
+  /** war beim Scharfschalten schon erfüllt: meldet sich erst, wenn der Kurs die Marke neu erreicht */
+  waitCross?: boolean;
   note: string;
   created: string;
   triggeredAt: string | null;

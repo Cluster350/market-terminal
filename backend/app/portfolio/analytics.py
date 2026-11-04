@@ -126,10 +126,19 @@ def ffill(grid: Sequence[str], dates: Sequence[str], values: Sequence[Optional[f
 class FxBook:
     """Umrechnung Handelswährung -> Basiswährung, heute und an einem Datum."""
 
-    def __init__(self, base: str, now_usd: dict[str, float], hist_usd: dict[str, tuple[list[str], list[float]]]):
+    def __init__(self, base: str, now_usd: dict[str, float], hist_usd: dict[str, tuple[list[str], list[float]]],
+                 prev_usd: Optional[dict[str, float]] = None):
         self.base = base
         self.now_usd = now_usd
         self.hist_usd = hist_usd
+        self.prev_usd = prev_usd or {}
+
+    def prev(self, ccy: str) -> Optional[float]:
+        """Kurs zum Vortagesschluss (für das Tagesergebnis inkl. Währungsbewegung)."""
+        c, f = self._norm(ccy)
+        a = 1.0 if c == "USD" else self.prev_usd.get(c, self.now_usd.get(c))
+        b = 1.0 if self.base == "USD" else self.prev_usd.get(self.base, self.now_usd.get(self.base))
+        return None if a is None or not b else a / b * f
 
     @staticmethod
     def _norm(ccy: str) -> tuple[str, float]:
@@ -162,12 +171,15 @@ async def fx_book(t: Terminal, base: str, currencies: set[str]) -> FxBook:
     needed = {("GBP" if c == "GBX" else c) for c in currencies | {base}} - {"USD"}
     pairs = {c: USD_PAIRS[c] for c in needed if c in USD_PAIRS}
     now_usd: dict[str, float] = {"USD": 1.0}
+    prev_usd: dict[str, float] = {"USD": 1.0}
     hist_usd: dict[str, tuple[list[str], list[float]]] = {}
     if pairs:
         try:
-            quotes = {q.ticker: q.last for q in await t.quotes(sorted({p for p, _ in pairs.values()}))}
+            raw = await t.quotes(sorted({p for p, _ in pairs.values()}))
+            quotes = {q.ticker: q.last for q in raw}
+            prevs = {q.ticker: q.prev_close for q in raw}
         except TerminalError:
-            quotes = {}
+            quotes, prevs = {}, {}
 
         async def hist(c: str, ticker: str, invert: bool) -> None:
             try:
@@ -189,7 +201,10 @@ async def fx_book(t: Terminal, base: str, currencies: set[str]) -> FxBook:
                 now_usd[c] = 1.0 / px if invert else px
             elif c in hist_usd:
                 now_usd[c] = hist_usd[c][1][-1]
-    return FxBook(base, now_usd, hist_usd)
+            pv = prevs.get(ticker)
+            if pv:
+                prev_usd[c] = 1.0 / pv if invert else pv
+    return FxBook(base, now_usd, hist_usd, prev_usd)
 
 
 # --- Stammdaten je Position -------------------------------------------------------------
@@ -279,7 +294,10 @@ async def analyze(t: Terminal, p: Portfolio) -> Analytics:
             row.value = pos.quantity * q.last * rate
             now_values[pos.ticker] = row.value
             if q.prev_close:
-                row.day_pnl = pos.quantity * (q.last - q.prev_close) * rate
+                # Tagesergebnis in Basiswährung: heutiger Wert minus Wert zum Vortagesschluss,
+                # beide mit ihrem Devisenkurs (früher fehlte die Währungsbewegung des Tages)
+                prev_rate = fx.prev(ccy) or rate
+                row.day_pnl = pos.quantity * (q.last * rate - q.prev_close * prev_rate)
             if pos.cost:
                 cost_rate = (fx.at(ccy, pos.opened) if pos.opened else None) or rate
                 basis = pos.quantity * pos.cost * cost_rate
@@ -399,7 +417,10 @@ async def _risk(t: Terminal, p: Portfolio, rows: list[PositionRow], fx: FxBook, 
     weights = [(r.weight or 0.0) / 100 for _, r, _ in usable]
     all_w = sorted((abs(r.weight or 0.0) for r in rows if r.weight is not None), reverse=True)
     risk.top5_weight = sum(all_w[:5])
-    sq = sum((w / 100) ** 2 for w in all_w)
+    # Effektive Positionszahl 1/Σw² mit Gewichten innerhalb der Wertpapiere (ohne Kasse);
+    # mit Kasse im Nenner kamen bei 3 Positionen 4,5 heraus
+    tot = sum(all_w)
+    sq = sum((w / tot) ** 2 for w in all_w) if tot else 0.0
     risk.effective_n = 1.0 / sq if sq else None
     big = max((r for r in rows if r.weight is not None), key=lambda r: abs(r.weight or 0.0), default=None)
     if big:

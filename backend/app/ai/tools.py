@@ -131,13 +131,15 @@ async def _earnings(t: Terminal, a: dict) -> dict:
     ticker = await resolve_ticker(t, a.get("ticker"))
     e = await t.earnings(ticker)
     hist = [
-        {"quartal": h.date, "bericht": h.report_date, "eps_ist": _r(h.eps_actual, 3), "eps_schaetzung": _r(h.eps_estimate, 3), "ueberraschung_prozent": _r(h.surprise_pct)}
+        {"quartal_ende": h.date, "berichtet_am": h.report_date, "zeitpunkt": h.timing, "eps_ist": _r(h.eps_actual, 3), "eps_schaetzung": _r(h.eps_estimate, 3), "ueberraschung_prozent": _r(h.surprise_pct)}
         for h in e.history[:4]
     ]
+    scored = [h for h in e.history[:8] if h.eps_actual is not None and h.eps_estimate is not None]
     nxt = e.next
     return {
         "ticker": ticker, "waehrung": e.currency, "letzte_berichte": hist,
-        "naechster_bericht": None if nxt is None else {"datum": nxt.report_date, "zeitpunkt": nxt.timing, "eps_schaetzung": _r(nxt.eps_estimate, 3)},
+        "schaetzung_uebertroffen": {"quartale": len(scored), "uebertroffen": sum(1 for h in scored if h.eps_actual >= h.eps_estimate)} if scored else None,
+        "naechster_bericht": None if nxt is None else {"datum": nxt.report_date, "zeitpunkt": nxt.timing, "quartal_ende": nxt.date, "eps_schaetzung": _r(nxt.eps_estimate, 3)},
     }
 
 
@@ -268,6 +270,19 @@ async def _optionen(t: Terminal, a: dict) -> dict:
     o = opt.overview(ticker, contracts, spot, [c for c in h.c if c], t.now().date())
     f = o.focus
     pct = lambda x: None if x is None else round(x * 100, 1)  # noqa: E731
+    nxt_earn = None
+    try:
+        e = await t.earnings(ticker)
+        if e.next and e.next.report_date:
+            day, timing = e.next.report_date[:10], e.next.timing
+            # erster Verfall, der den Bericht enthält (nachbörslich am Verfallstag zählt erst der nächste)
+            after = next((s for s in o.expirations if s.exp > day or (s.exp == day and timing == "BeforeMarket")), None)
+            before = [s for s in o.expirations if s.exp < (after.exp if after else "9999")]
+            nxt_earn = {"datum": day, "zeitpunkt": timing, "erster_verfall_danach": after.exp if after else None,
+                        "erwartete_bewegung_bis_dahin_prozent": _r(after.move_pct) if after else None,
+                        "atm_iv_davor_prozent": pct(before[-1].atm_iv) if before else None, "atm_iv_danach_prozent": pct(after.atm_iv) if after else None}
+    except TerminalError:
+        pass
     return {
         "ticker": ticker, "kurs": _r(spot, 2), "implizite_vola_30t_prozent": pct(o.iv30), "historische_vola_30t_prozent": pct(o.hv30),
         "put_call_volumen": _r(o.pc_volume), "put_call_open_interest": _r(o.pc_oi),
@@ -275,6 +290,11 @@ async def _optionen(t: Terminal, a: dict) -> dict:
             "datum": f.exp, "tage": f.dte, "atm_iv_prozent": pct(f.atm_iv), "erwartete_bewegung_prozent": _r(f.move_pct),
             "straddle_preis": _r(f.straddle), "max_pain": f.max_pain, "skew_25_delta_punkte": _r(f.skew25, 1),
         },
+        "verfaelle": [
+            {"datum": s.exp, "tage": s.dte, "monatlich": s.monthly, "atm_iv_prozent": pct(s.atm_iv), "erwartete_bewegung_prozent": _r(s.move_pct), "skew_25_delta_punkte": _r(s.skew25, 1)}
+            for s in o.expirations[:10]
+        ],
+        "naechste_quartalszahlen": nxt_earn,
         "call_strikes_hoechstes_oi": [w.strike for w in o.call_walls], "put_strikes_hoechstes_oi": [w.strike for w in o.put_walls],
         "auffaellige_umsaetze": [{"kontrakt": u.contract, "volumen": u.volume, "volumen_zu_oi": _r(u.vol_oi)} for u in o.unusual[:5]],
     }
@@ -308,6 +328,58 @@ def _date(raw: Any, default: dt.date) -> dt.date:
         return default
 
 
+async def _bewegungen(t: Terminal, a: dict) -> dict:
+    """Größte Gewinner und Verlierer des Tages, wahlweise nur eine Börse (US, XETRA, LSE …)."""
+    ex = str(a.get("boerse") or "").strip().upper() or None
+    m = await t.movers(ex)
+    row = lambda r: {"ticker": r.ticker, "name": r.name, "kurs": _r(r.price), "tag_prozent": _r(r.chg_1d), "boerse": r.exchange}  # noqa: E731
+    return {"boerse": ex or "alle", "gewinner": [row(r) for r in m.gainers[:8]], "verlierer": [row(r) for r in m.losers[:8]]}
+
+
+async def _zinsen(t: Terminal, a: dict) -> dict:
+    """Zinskurve eines Landes mit Veränderung zum Vormonat, Steilheit und eingepreisten künftigen Zinsen."""
+    from ..services.forwards import Forwards
+
+    land = str(a.get("land") or "US").strip().upper()
+    land = {"DEUTSCHLAND": "DE", "USA": "US", "GB": "UK", "ITALIEN": "IT", "JAPAN": "JP", "FRANKREICH": "FR"}.get(land, land)
+    curves = await t.curves([land])
+    if not curves:
+        return {"fehler": f"Keine Zinskurve für {land}."}
+    c = curves[0]
+    pts = {p.tenor: p for p in c.points}
+    out: dict = {
+        "land": c.country, "name": c.name, "stand": c.as_of,
+        "renditen": [{"laufzeit": p.tenor, "rendite_prozent": _r(p.y, 3), "veraenderung_1m_bp": None if p.y is None or p.y_1m is None else round((p.y - p.y_1m) * 100)} for p in c.points],
+    }
+    if pts.get("2Y") and pts.get("10Y") and pts["2Y"].y is not None and pts["10Y"].y is not None:
+        out["steilheit_2j_10j_bp"] = round((pts["10Y"].y - pts["2Y"].y) * 100)
+    try:
+        fw = await Forwards(t).rates(land)
+        out["eingepreiste_zinsen"] = [{"kennzahl": k.label, "zins_prozent": _r(k.rate, 3), "veraenderung_1m_bp": _r(k.change_1m_bp, 0)} for k in fw.keys]
+    except TerminalError:
+        pass
+    return out
+
+
+async def _devisentermin(t: Terminal, a: dict) -> dict:
+    """Devisen-Terminkurse eines Paars und die Kosten der Absicherung aus Sicht einer Heimatwährung."""
+    from ..services.forwards import Forwards
+
+    pair = str(a.get("paar") or "EURUSD").replace("/", "").replace(" ", "").upper()[:6]
+    f = Forwards(t)
+    fx = await f.fx(pair)
+    out: dict = {
+        "paar": f"{fx.base}/{fx.quote}", "kassa": _r(fx.spot, 5),
+        "termine": [{"laufzeit": r.tenor, "terminkurs": _r(r.outright, 5), "swap_punkte": _r(r.points, 1), "aufschlag_basis_prozent_pa": _r(r.premium_pa, 2)} for r in fx.rows],
+        "hinweis": "berechnet aus Kassakurs und Zinsen beider Währungen (gedeckte Zinsparität), keine Börsenkurse",
+    }
+    home = str(a.get("heimatwaehrung") or "").strip().upper()
+    if home:
+        h = await f.hedge(home, [c for c in (fx.base, fx.quote) if c != home])
+        out["absicherung"] = {"heimatwaehrung": h.home, "kosten_pa": [{"waehrung": r.currency, "ertrag_kosten_1j_prozent_pa": _r(r.hedge_1y_pa, 2)} for r in h.rows]}
+    return out
+
+
 def _obj(props: dict, required: tuple[str, ...] = ()) -> dict:
     return {"type": "object", "properties": props, "required": list(required)}
 
@@ -329,8 +401,15 @@ TOOLS: list[Tool] = [
     Tool("screener", "Aktien filtern nach Sektor (englischer Name, z. B. 'Utilities'), maximalem KGV, Mindest-Dividendenrendite in % und Mindest-Marktkapitalisierung in Mrd.",
          _obj({"sektor": {"type": "string"}, "kgv_max": {"type": "number"}, "dividende_min": {"type": "number"}, "marktkap_min_mrd": {"type": "number"}, "sortierung": {"type": "string", "enum": ["marktkap", "dividende", "kgv", "momentum"]}}), _screener),
     Tool("suche", "Wertpapiere über Namen oder Kürzel finden.", _obj({"text": {"type": "string"}}, ("text",)), _suche),
-    Tool("optionen", "Optionsmarkt einer US-Aktie: implizite und historische Volatilität, erwartete Kursbewegung bis zum Monatsverfall, "
-         "Put/Call-Verhältnis, Max Pain, Skew, Strikes mit dem höchsten Open Interest, auffällige Umsätze.", _obj({"ticker": TICKER}, ("ticker",)), _optionen),
+    Tool("optionen", "Optionsmarkt einer US-Aktie: implizite und historische Volatilität, erwartete Kursbewegung je Verfall, "
+         "nächste Quartalszahlen mit dem ersten Verfall danach, Put/Call-Verhältnis, Max Pain, Skew, Strikes mit dem höchsten Open Interest, auffällige Umsätze.",
+         _obj({"ticker": TICKER}, ("ticker",)), _optionen),
+    Tool("bewegungen", "Größte Gewinner und Verlierer des Tages, optional nur einer Börse (US, XETRA, LSE, PA, AS, SW).",
+         _obj({"boerse": {"type": "string"}}), _bewegungen),
+    Tool("zinsen", "Zinskurve eines Landes (US, DE, UK, FR, IT, JP): Renditen je Laufzeit, Veränderung 1 Monat, Steilheit 2J/10J und eingepreiste künftige Zinsen (1Y1Y, 5Y5Y …).",
+         _obj({"land": {"type": "string"}}), _zinsen),
+    Tool("devisentermin", "Devisen-Terminkurse (1 Woche bis 2 Jahre) eines Paars wie EURUSD und optional die Absicherungskosten für eine Heimatwährung (EUR, CHF …).",
+         _obj({"paar": {"type": "string"}, "heimatwaehrung": {"type": "string"}}), _devisentermin),
     Tool("alarme", "Kursalarme und Kursmarken des Nutzers mit Status, Abstand zum Kurs und zuletzt ausgelöste Alarme.", _obj({}), _alarme),
     Tool("depot", "Das eigene Depot des Nutzers: Wert, Ergebnis heute und seit Kauf, Positionen mit Gewicht und Risikoanteil, "
          "Volatilität, Beta, Drawdown, Value at Risk, Sektoren.", _obj({}), _depot),
@@ -365,11 +444,16 @@ def summarize(name: str, args: dict, result: dict) -> str:
         "kurs": "Kurs", "wertentwicklung": "Wertentwicklung", "kennzahlen": "Kennzahlen", "finanzen": "Finanzdaten",
         "earnings": "Quartalszahlen", "news": "Nachrichten", "kalender": "Wirtschaftskalender", "earnings_kalender": "Earnings-Kalender",
         "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot", "alarme": "Alarme", "optionen": "Optionen",
+        "bewegungen": "Größte Bewegungen", "zinsen": "Zinskurve", "devisentermin": "Devisentermine",
     }.get(name, name)
     subject = result.get("ticker") or args.get("ticker") or args.get("text") or ""
     if isinstance(subject, str) and "." in subject:
         subject = display(subject)
     count = ""
+    if name == "zinsen" and result.get("land"):
+        subject = str(result["land"])
+    if name == "devisentermin" and result.get("paar"):
+        subject = str(result["paar"])
     for key in ("meldungen", "termine", "werte", "treffer", "positionen", "alarme"):
         if isinstance(result.get(key), list):
             count = f" ({len(result[key])})"

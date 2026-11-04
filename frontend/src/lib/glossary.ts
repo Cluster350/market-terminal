@@ -9,7 +9,7 @@ export const GLOSSARY: Record<string, string> = {
   "EV/EBITDA": "Unternehmenswert (Börsenwert plus Nettoschulden) geteilt durch den operativen Gewinn vor Abschreibungen. Vergleichbar auch bei unterschiedlicher Verschuldung.",
   "EV/Umsatz": "Unternehmenswert geteilt durch den Jahresumsatz.",
   "Enterprise Value": "Unternehmenswert: Börsenwert plus Nettoverschuldung.",
-  Beta: "Schwankung der Aktie im Verhältnis zum Heimatindex (1 Jahr, Tagesrenditen). Über 1: schwankt stärker als der Markt.",
+  Beta: "Schwankung im Verhältnis zu einem Index (1 Jahr, Tagesrenditen): bei einer Aktie zum Heimatindex, im Depot (RISK) zum gewählten Vergleichsindex. Über 1: schwankt stärker als der Markt.",
   Nettomarge: "Gewinn nach Steuern in % des Umsatzes.",
   "Operative Marge": "Operatives Ergebnis (EBIT) in % des Umsatzes.",
   Eigenkapitalrendite: "Gewinn in % des Eigenkapitals (ROE).",
@@ -49,10 +49,56 @@ export const GLOSSARY: Record<string, string> = {
   "KI-Relevanz": "Wie stark eine Meldung den Kurs bewegen dürfte: 0 unwichtig, 1 gering, 2 kursrelevant, 3 stark kursbewegend (Punkte ●●● in der Nachrichtenliste).",
   "Ohne Beleg": "Markierte Zahl in einer KI-Antwort: Sie steht in keinem der Datensätze, die die KI abgefragt hat. Bitte selbst prüfen.",
   TTM: "Trailing Twelve Months: die letzten vier berichteten Quartale.",
+  // Grundbegriffe für Einsteiger
+  Option: "Recht (keine Pflicht), eine Aktie bis zu einem Tag (Verfall) zu einem festen Preis (Strike) zu kaufen (Call) oder zu verkaufen (Put). Ein Kontrakt umfasst in den USA meist 100 Aktien; der Preis heißt Prämie.",
+  Call: "Kaufoption: gewinnt an Wert, wenn der Kurs steigt. Lohnt sich am Verfall, wenn der Kurs über dem Strike liegt.",
+  Put: "Verkaufsoption: gewinnt an Wert, wenn der Kurs fällt – oft als Absicherung genutzt. Lohnt sich am Verfall, wenn der Kurs unter dem Strike liegt.",
+  Strike: "Ausübungspreis einer Option: der Preis, zu dem gekauft (Call) oder verkauft (Put) werden darf.",
+  Verfall: "Letzter Tag einer Option. US-Monatsoptionen verfallen am dritten Freitag, Wochenoptionen jeden Freitag (an Börsenfeiertagen am Donnerstag davor).",
+  "Im Geld": "Option mit innerem Wert: Call mit Strike unter dem Kurs, Put mit Strike über dem Kurs. In OMON hinterlegt.",
+  Straddle: "Kauf von Call und Put mit demselben Strike und Verfall – setzt auf eine große Bewegung, egal in welche Richtung.",
+  Delta: "Wie stark sich der Optionspreis bewegt, wenn die Aktie um 1 steigt (Call 0 bis 1, Put −1 bis 0); grob auch die Wahrscheinlichkeit, am Verfall im Geld zu liegen.",
+  Theta: "Wertverlust einer Option pro Tag, nur durch die verstreichende Zeit.",
+  Vega: "Wie stark sich der Optionspreis ändert, wenn die implizite Volatilität um einen Prozentpunkt steigt.",
+  ETF: "Börsengehandelter Indexfonds: bildet einen Index (z. B. DAX, MSCI World) nach und lässt sich wie eine Aktie kaufen. Die Demo-Daten enthalten keine ETFs.",
+  Einstand: "Durchschnittlicher Kaufkurs einer Position (bei Nachkäufen gemittelt). Daraus ergibt sich das Ergebnis seit Kauf.",
+  Dividendenrendite: "Jährliche Dividende geteilt durch den Kurs, in Prozent.",
+  Leerverkauf: "Verkauf geliehener Aktien in der Erwartung fallender Kurse; später werden sie günstiger zurückgekauft.",
   FIX: "Fixiertes Panel: behält sein Wertpapier, auch wenn die übrigen Panels wechseln.",
 };
 
 /** Tooltip-Text zu einem Begriff (exakt oder ohne Zusatz in Klammern). */
 export function explain(term: string): string | undefined {
   return GLOSSARY[term] ?? GLOSSARY[term.replace(/\s*\(.*\)$/, "")];
+}
+
+const SYNONYMS: Record<string, string> = {
+  "put-option": "Put", "putoption": "Put", "puts": "Put", "verkaufsoption": "Put",
+  "call-option": "Call", "calloption": "Call", "calls": "Call", "kaufoption": "Call",
+  optionen: "Option", "basispreis": "Strike", "ausübungspreis": "Strike", "strike-preis": "Strike",
+  verfallstag: "Verfall", verfallsdatum: "Verfall", etfs: "ETF", indexfonds: "ETF",
+  volatilität: "Schwankung (Volatilität)", vola: "Schwankung (Volatilität)", kgv: "KGV (TTM)",
+  "einstandskurs": "Einstand", "kaufkurs": "Einstand", "var": "Value at Risk", drawdown: "Max. Drawdown",
+  "iv": "Implizite Volatilität", "max-pain": "Max Pain", "open-interest": "Open Interest", "5y5y": "Forward-Zins", "1y1y": "Forward-Zins",
+};
+
+/**
+ * Antwort auf „Was ist …?“ aus dem Glossar (für die Demo-KI, die freie Fragen nicht versteht).
+ * Liefert [Begriff, Erklärung] oder null.
+ */
+export function glossaryAnswer(question: string): [string, string] | null {
+  const m = /^\s*(?:was\s+(?:ist|sind|bedeutet|bedeuten|heißt|meint\s+man\s+mit)|erkläre?(?:n\s+sie)?(?:\s+mir)?|wofür\s+steht)\s+(?:eine?n?\s+|der\s+|die\s+|das\s+)?(.+?)[\s?.!]*$/i.exec(question);
+  if (!m) return null;
+  const raw = m[1].trim().toLowerCase();
+  const byLower = new Map<string, string>();
+  for (const k of Object.keys(GLOSSARY)) {
+    byLower.set(k.toLowerCase(), k);
+    byLower.set(k.replace(/\s*\(.*\)$/, "").toLowerCase(), k);
+  }
+  const candidates = [raw, raw.replace(/\s+/g, "-"), raw.replace(/(en|s|n)$/, "")];
+  for (const c of candidates) {
+    const key = SYNONYMS[c] ?? byLower.get(c);
+    if (key && GLOSSARY[key]) return [key, GLOSSARY[key]];
+  }
+  return null;
 }

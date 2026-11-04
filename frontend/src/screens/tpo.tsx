@@ -74,7 +74,10 @@ function Grid({ mp, ticker, view, last }: { mp: MarketProfile; ticker: string; v
         const isLast = i === lastIdx;
         return (
           <div key={i} className="tpo-row" role="row">
-            <div className={`tpo-price ${isLast ? "last" : ""}`} ref={isLast ? lastRow : undefined}>{fmtPrice(price, ticker)}</div>
+            {/* Mitte der Preisstufe – so steht der POC (ebenfalls Stufenmitte) mit demselben Wert in der Zeile */}
+            <div className={`tpo-price ${isLast ? "last" : ""}`} ref={isLast ? lastRow : undefined} title={`${fmtPrice(price, ticker)} – ${fmtPrice(price + mp.step, ticker)}`}>
+              {fmtPrice(price + mp.step / 2, ticker)}
+            </div>
             {mp.sessions.map((s, k) => {
               const inSession = i >= s.lowIndex && i <= s.highIndex;
               // Volumen-Ansicht: POC und Value Area nach Volumen, sonst nach Buchstaben

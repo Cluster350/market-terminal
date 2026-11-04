@@ -9,6 +9,8 @@ kurzlaufender Staatsanleihen – eine Näherung an die Geldmarktsätze.
 
 from __future__ import annotations
 
+import math
+
 import asyncio
 import datetime as dt
 from typing import Optional
@@ -26,7 +28,7 @@ CCY_COUNTRY = {
 MONEY_TENORS = [("3M", 0.25), ("6M", 0.5), ("1Y", 1.0), ("2Y", 2.0)]
 FX_TENORS = [("1W", 7 / 365), ("1M", 1 / 12), ("2M", 2 / 12), ("3M", 0.25), ("6M", 0.5), ("9M", 0.75), ("1Y", 1.0), ("18M", 1.5), ("2Y", 2.0)]
 HEDGE_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD", "SEK", "NOK", "DKK", "CNH"]
-RATE_FORWARD_STARTS = [0, 1, 2, 3, 4, 5, 7, 10, 15]
+RATE_FORWARD_STARTS = list(range(0, 16))  # alle Jahre (früher fehlten 6, 8, 9, 11–14)
 RATE_FORWARD_KEYS = [("1Y1Y", 1, 1), ("2Y1Y", 2, 1), ("2Y3Y", 2, 3), ("5Y5Y", 5, 5), ("10Y10Y", 10, 10)]
 
 
@@ -134,15 +136,63 @@ def hedge_pa(home_rate: float, foreign_rate: float, t: float) -> float:
     return annualized(growth(home_rate, t) / growth(foreign_rate, t), t)
 
 
-def forward_rate(curve: list[tuple[float, float]], start: float, length: float) -> Optional[float]:
-    """Implizierter Zins für `length` Jahre ab `start` (Renditen als jährlich verzinste Nullkuponsätze)."""
-    end = start + length
-    if not curve or end > max(t for t, _ in curve) + 1e-9:
+def smooth(curve: list[tuple[float, float]], t: float) -> Optional[float]:
+    """Rendite zur Laufzeit t, monoton-kubisch interpoliert (Fritsch-Carlson). Anders als die lineare
+    Interpolation hat die Kurve an den Stützstellen keine Knicke – daraus gerechnete Forwards zeigen
+    sonst Sägezähne (4,00 % in 4 J., 4,22 % in 5 J., 4,10 % in 7 J.)."""
+    pts = sorted(curve)
+    if not pts:
         return None
-    y2 = interp(curve, end)
-    if start == 0:
-        return y2
-    y1 = interp(curve, start)
+    if t <= pts[0][0]:
+        return pts[0][1]
+    if t >= pts[-1][0]:
+        return pts[-1][1]
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    n = len(xs)
+    d = [(ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) for i in range(n - 1)]
+    m = [d[0]] + [0.0 if d[i - 1] * d[i] <= 0 else (d[i - 1] + d[i]) / 2 for i in range(1, n - 1)] + [d[-1]]
+    for i in range(n - 1):  # Überschwinger vermeiden (monoton zwischen den Stützstellen)
+        if d[i] == 0:
+            m[i] = m[i + 1] = 0.0
+            continue
+        a, b = m[i] / d[i], m[i + 1] / d[i]
+        h = a * a + b * b
+        if h > 9:
+            k = 3 / math.sqrt(h)
+            m[i], m[i + 1] = k * a * d[i], k * b * d[i]
+    i = max(j for j in range(n - 1) if xs[j] <= t)
+    hx = xs[i + 1] - xs[i]
+    u = (t - xs[i]) / hx
+    h00, h10, h01, h11 = 2 * u**3 - 3 * u**2 + 1, u**3 - 2 * u**2 + u, -2 * u**3 + 3 * u**2, u**3 - u**2
+    return h00 * ys[i] + h10 * hx * m[i] + h01 * ys[i + 1] + h11 * hx * m[i + 1]
+
+
+def discount_factors(curve: list[tuple[float, float]], years: int) -> list[float]:
+    """Abzinsungsfaktoren für 0..years Jahre aus Renditen von Kuponanleihen (jährlicher Kupon,
+    Renditen als Par-Renditen): klassisches Bootstrapping, Zwischenlaufzeiten glatt interpoliert."""
+    dfs = [1.0]
+    annuity = 0.0
+    for n in range(1, years + 1):
+        c = (smooth(curve, float(n)) or 0.0) / 100
+        df = (1 - c * annuity) / (1 + c)
+        dfs.append(df)
+        annuity += df
+    return dfs
+
+
+def forward_rate(curve: list[tuple[float, float]], start: float, length: float) -> Optional[float]:
+    """Implizierter Zins (jährlich verzinst) für `length` Jahre ab `start`, aus den gebootstrappten
+    Nullkuponsätzen der Kurve. start = 0 ergibt den Nullkuponsatz."""
+    end = start + length
+    if not curve or end > max(t for t, _ in curve) + 1e-9 or length <= 0:
+        return None
+    if float(start).is_integer() and float(end).is_integer():
+        dfs = discount_factors(curve, int(end))
+        d1, d2 = dfs[int(start)], dfs[int(end)]
+        if d1 <= 0 or d2 <= 0:
+            return None
+        return ((d1 / d2) ** (1 / length) - 1) * 100
+    y2, y1 = smooth(curve, end), smooth(curve, start)
     if y1 is None or y2 is None:
         return None
     return (((1 + y2 / 100) ** end / (1 + y1 / 100) ** start) ** (1 / length) - 1) * 100

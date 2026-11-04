@@ -568,8 +568,17 @@ class DemoProvider:
             scale = 0.0
         path = [base + b * scale for base, b in zip(lin, bridge)]
         daily_vol = series["v"][day_index] or 0.0
-        weights = [1.6 if k < n * 0.12 or k > n * 0.88 else 0.8 for k in range(n)]
-        wsum = sum(weights)
+        # Umsatz über den Tag: U-Form (Eröffnung und Schluss lebhaft), mehr Umsatz bei großen Bewegungen
+        # und zufällige Schwankung je Balken. Früher hatte jede Kerze dasselbe Volumen – dann gleichen sich
+        # Volumenprofil und TPO, und VWAP ist nur ein Zeitmittel. Eigene Zufallsquelle: Kurse bleiben gleich.
+        vrng = _rng("bars-vol", ticker, day.isoformat())
+        moves = [abs(path[k + 1] - path[k]) for k in range(n)]
+        avg_move = (sum(moves) / n) or 1.0
+        weights = [
+            (0.55 + 1.8 * (2 * (k + 0.5) / n - 1) ** 2) * (0.6 + 0.8 * moves[k] / avg_move) * math.exp(vrng.gauss(0, 0.35))
+            for k in range(n)
+        ]
+        wsum = sum(weights) or 1.0
         bars = []
         wiggle = 0.0004 if series["kind"] == "price" else 0.002
         for k in range(n):
@@ -978,9 +987,10 @@ class DemoProvider:
         Kennzahl in DES zum Chart, statt aus einem Sektorwert geschätzt zu sein."""
         bench = self._BENCHMARKS.get(ticker.rpartition(".")[2], "GSPC.INDX")
         s, b = self._daily(ticker), self._daily(bench)
-        cutoff = s["days"][-1] - dt.timedelta(days=365)
+        today = self.today()
+        cutoff = today - dt.timedelta(days=365)
         mb = dict(zip(b["days"], b["c"]))
-        pairs = [(c, mb[d]) for d, c in zip(s["days"], s["c"]) if d >= cutoff and d in mb]
+        pairs = [(c, mb[d]) for d, c in zip(s["days"], s["c"]) if cutoff <= d < today and d in mb]  # ohne den laufenden Tag
         rs = [math.log(pairs[k][0] / pairs[k - 1][0]) for k in range(1, len(pairs))]
         rb = [math.log(pairs[k][1] / pairs[k - 1][1]) for k in range(1, len(pairs))]
         if len(rs) < 60:
@@ -1165,7 +1175,10 @@ class DemoProvider:
         eps_cy = eps_ttm * (1 + growth * 0.5)
         eps_ny = eps_cy * (1 + growth)
 
-        hist_closes = self._daily(ticker)["c"]
+        # Technische Kennzahlen bis zum Vortagesschluss wie bei EODHD (die Tagesreihe enthält schon den
+        # erst am Abend feststehenden Schlusskurs – das ergab einen Blick in die Zukunft)
+        daily = self._daily(ticker)
+        hist_closes = [c for d, c in zip(daily["days"], daily["c"]) if d < self.today()]
         tech_hi, tech_lo = metrics.window_high_low([d.isoformat() for d in series["days"]], series["h"], series["l"])
         # Kursziel nach dem letzten Bericht festgelegt, nicht täglich mit dem Kurs mitlaufend
         last_report = self._report_date(ticker, quarters[0])[0]

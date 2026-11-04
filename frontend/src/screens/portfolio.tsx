@@ -25,6 +25,7 @@ import {
   type PositionRow,
 } from "../lib/portfolio";
 import { useHedge } from "../lib/forwards";
+import { useExampleTickers } from "../lib/queries";
 import type { ScreenProps } from "./types";
 
 const EChart = lazy(() => import("../components/EChart"));
@@ -88,6 +89,7 @@ function PositionForm({ draft, onChange, onSubmit, onCancel, busy, price }: {
   draft: Draft; onChange: (d: Draft) => void; onSubmit: () => void; onCancel: () => void; busy: boolean; price?: string;
 }) {
   const set = (k: keyof Draft) => (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...draft, [k]: e.target.value });
+  const examples = useExampleTickers();
   return (
     <form
       className="depot-form"
@@ -104,7 +106,7 @@ function PositionForm({ draft, onChange, onSubmit, onCancel, busy, price }: {
     >
       <label>
         Ticker
-        <input className="field" value={draft.ticker} onChange={set("ticker")} disabled={!!draft.id} placeholder="z. B. SAP GR" autoFocus={!draft.id} style={{ width: "13ch" }} />
+        <input className="field" value={draft.ticker} onChange={set("ticker")} disabled={!!draft.id} placeholder={`z. B. ${examples[0]}`} autoFocus={!draft.id} style={{ width: "13ch" }} />
       </label>
       <label>
         Stück
@@ -132,9 +134,9 @@ function PositionForm({ draft, onChange, onSubmit, onCancel, busy, price }: {
   );
 }
 
-function readDraft(d: Draft): { position?: Position; error?: string } {
+function readDraft(d: Draft, examples: string[]): { position?: Position; error?: string } {
   const ticker = normalizeTicker(d.ticker);
-  if (!ticker) return { error: "Ticker nicht erkannt (z. B. SAP GR, AAPL US, VOD LN)." };
+  if (!ticker) return { error: `Ticker nicht erkannt (z. B. ${examples.join(", ")}).` };
   const quantity = parseNumber(d.quantity);
   if (quantity === null || quantity === 0) return { error: "Bitte eine Stückzahl eingeben (negativ für Leerverkauf)." };
   const cost = d.cost.trim() ? parseNumber(d.cost) : null;
@@ -147,6 +149,7 @@ function readDraft(d: Draft): { position?: Position; error?: string } {
 // --- Import ------------------------------------------------------------------------------
 
 function ImportBox({ portfolio, onDone, save, busy }: { portfolio: Portfolio; onDone: (msg: string) => void; save: (p: Portfolio) => Promise<boolean>; busy: boolean }) {
+  const examples = useExampleTickers();
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"add" | "replace">("add");
   const parsed = useMemo(() => parseCsv(text), [text]);
@@ -182,10 +185,10 @@ function ImportBox({ portfolio, onDone, save, busy }: { portfolio: Portfolio; on
   return (
     <div className="depot-import">
       <div className="small muted">
-        Eine Zeile je Position: <code>Ticker; Stück; Einstandskurs; Kaufdatum; Notiz</code> – z. B. <code>SAP GR; 20; 182,50; 15.03.2024</code>. Kurs, Datum
+        Eine Zeile je Position: <code>Ticker; Stück; Einstandskurs; Kaufdatum; Notiz</code> – z. B. <code>{examples[0]}; 20; 182,50; 15.03.2024</code>. Kurs, Datum
         und Notiz sind freiwillig. Kopieren aus Excel (Tabulator) geht auch.
       </div>
-      <textarea className="field" rows={5} value={text} onChange={(e) => setText(e.target.value)} aria-label="Depotliste einfügen" placeholder={"NWND US; 40; 120,50; 02.01.2025\nSAP GR; 20"} />
+      <textarea className="field" rows={5} value={text} onChange={(e) => setText(e.target.value)} aria-label="Depotliste einfügen" placeholder={`${examples[1]}; 40; 120,50; 02.01.2025\n${examples[0]}; 20`} />
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <span className="small" title="Die Ticker werden beim Übernehmen geprüft; unbekannte Zeilen werden übersprungen.">{parsed.positions.length} Positionen lesbar</span>
         <label className="check">
@@ -229,7 +232,10 @@ function Bars({ title, slices, label }: { title: string; slices: { key: string; 
   return (
     <div className="alloc">
       <div className="section-title">{title}</div>
-      {slices.slice(0, 8).map((s) => (
+      {(slices.length > 8
+        ? [...slices.slice(0, 7), { key: "Sonstige", weight: slices.slice(7).reduce((a, s) => a + s.weight, 0), value: slices.slice(7).reduce((a, s) => a + s.value, 0) }]
+        : slices
+      ).map((s) => (
         <div key={s.key} className="alloc-row" title={`${label ? label(s.key) : s.key}: ${fmtPct(s.weight, 1, false)}`}>
           <span className="alloc-k">{label ? label(s.key) : s.key}</span>
           <span className="alloc-bar">
@@ -284,6 +290,7 @@ function HedgeBox({ base, slices }: { base: string; slices: { key: string; weigh
 // --- PORT --------------------------------------------------------------------------------
 
 export function PORT(_: ScreenProps) {
+  const examples = useExampleTickers();
   const pq = usePortfolio();
   const p = pq.data;
   const aq = usePortfolioAnalytics(p?.version);
@@ -302,8 +309,19 @@ export function PORT(_: ScreenProps) {
 
   async function submitDraft() {
     if (!draft || !p) return;
-    const { position, error: err } = readDraft(draft);
+    const { position, error: err } = readDraft(draft, examples);
     if (!position) return setFormError(err ?? null);
+    // Plausibilität: Einstand weit weg vom aktuellen Kurs (Tippfehler, Pence statt Pfund, Kurs vor einem Split)
+    if (position.cost) {
+      const last = await api.quotes([position.ticker]).then((qs) => qs[0]?.last ?? null, () => null);
+      if (last && (position.cost / last > 4 || position.cost / last < 0.25)) {
+        const ok = window.confirm(
+          `Einstandskurs ${fmt(position.cost, 2)} weicht stark vom aktuellen Kurs ${fmt(last, 2)} ab (Faktor ${fmt(Math.max(position.cost / last, last / position.cost), 1)}). ` +
+            "Stimmt das? (Häufige Ursachen: Tippfehler, Pence statt Pfund, Kurs vor einem Aktiensplit.)",
+        );
+        if (!ok) return;
+      }
+    }
     let positions: Position[];
     let merged = false;
     if (draft.id) positions = p.positions.map((x) => (x.id === draft.id ? { ...position, id: x.id, ticker: x.ticker, currency: x.currency } : x));
@@ -326,6 +344,7 @@ export function PORT(_: ScreenProps) {
     const cash = cashText.trim() ? parseNumber(cashText) : 0;
     setCashText(null);
     if (cash === null) return setError("Kasse: bitte einen Betrag eingeben.");
+    if (Math.abs(cash) >= 10_000_000 && !window.confirm(`Kasse ${fmt(cash, 0)} ${p.base} übernehmen? Das ist ungewöhnlich viel – bitte die Nullen prüfen.`)) return;
     if (cash !== p.cash) await save({ ...p, cash });
   }
 

@@ -1,7 +1,7 @@
 // FWD – Terminkurse: Devisen-Terminkurse, Kosten/Ertrag der Währungsabsicherung und vom
 // Anleihemarkt eingepreiste künftige Zinsen. Alles berechnet aus Kassakursen und Zinskurven.
 
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import type { EOption } from "../components/EChart";
 import { Empty, ErrorState, Loading, Seg } from "../components/ui";
 import { explain } from "../lib/glossary";
@@ -42,8 +42,21 @@ function Chart({ option, height = 200 }: { option: EOption; height?: number }) {
   );
 }
 
-function FxView() {
-  const [pair, setPair] = usePersistentState<string>("fwd.pair", "EURUSD", isOneOf(FX_PAIRS));
+const isPair = (x: unknown): x is string => typeof x === "string" && /^[A-Z]{6}$/.test(x);
+
+/** Devisenpaar aus dem geladenen Ticker (USDJPY Curncy -> USDJPY), sonst null. */
+export function pairFromTicker(t: string | null | undefined): string | null {
+  const m = t ? /^([A-Z]{6})\.FOREX$/.exec(t) : null;
+  return m ? m[1] : null;
+}
+
+function FxView({ ticker }: { ticker: string | null }) {
+  const [pair, setPair] = usePersistentState<string>("fwd.pair", "EURUSD", isPair);
+  const loaded = pairFromTicker(ticker);
+  useEffect(() => {
+    if (loaded) setPair(loaded); // „USDJPY Curncy FWD“ zeigt USD/JPY (früher blieb das zuletzt gewählte Paar)
+  }, [loaded, setPair]);
+  const pairs = FX_PAIRS.includes(pair) ? FX_PAIRS : [pair, ...FX_PAIRS];
   const q = useFxForwards(pair);
   const d = q.data;
   const digits = d ? outrightDigits(d.pip) : 5;
@@ -53,7 +66,7 @@ function FxView() {
         <label className="small muted">
           Paar{" "}
           <select className="field" value={pair} onChange={(e) => setPair(e.target.value)} aria-label="Devisenpaar">
-            {FX_PAIRS.map((p) => (
+            {pairs.map((p) => (
               <option key={p} value={p}>{pairLabel(p)}</option>
             ))}
           </select>
@@ -103,10 +116,18 @@ function FxView() {
             <Chart
               option={{
                 grid: { left: 54, right: 12, top: 14, bottom: 26 },
-                tooltip: { ...TIP, trigger: "axis", valueFormatter: (v: number) => fmt(v, digits) },
-                xAxis: { type: "category", data: ["Kassa", ...d.rows.map((r) => r.tenor)], ...AXIS },
+                tooltip: {
+                  ...TIP, trigger: "axis",
+                  formatter: (ps: { data: [number, number] }[]) => {
+                    const [x, y] = ps[0]?.data ?? [0, 0];
+                    const tenor = x === 0 ? "Kassa" : d.rows.find((r) => Math.abs(r.years - x) < 1e-6)?.tenor ?? `${fmt(x, 2)} J.`;
+                    return `${tenor}: ${fmt(y, digits)}`;
+                  },
+                },
+                // Zeitachse in Jahren: 1 Woche ist nicht mehr so breit wie 18 Monate bis 2 Jahre
+                xAxis: { type: "value", name: "Jahre", nameTextStyle: { color: "#8f8f8f", fontSize: 10 }, min: 0, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => fmt(v, v % 1 ? 1 : 0) } },
                 yAxis: { type: "value", scale: true, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => fmt(v, digits - 1) } },
-                series: [{ type: "line", data: [d.spot, ...d.rows.map((r) => r.outright)], symbolSize: 5, lineStyle: { color: "#ffa028", width: 1.6 }, itemStyle: { color: "#ffa028" } }],
+                series: [{ type: "line", data: [[0, d.spot], ...d.rows.map((r) => [r.years, r.outright])], symbolSize: 5, lineStyle: { color: "#ffa028", width: 1.6 }, itemStyle: { color: "#ffa028" } }],
               }}
             />
             <div className="small muted" style={{ fontFamily: "var(--sans)", lineHeight: 1.45, padding: "4px 2px" }}>
@@ -221,12 +242,20 @@ function RatesView() {
                 option={{
                   grid: { left: 42, right: 12, top: 26, bottom: 26 },
                   legend: { top: 0, right: 6, textStyle: { color: "#8f8f8f", fontSize: 10 }, itemHeight: 2 },
-                  tooltip: { ...TIP, trigger: "axis", valueFormatter: (v: number) => `${fmt(v, 2)} %` },
+                  tooltip: { ...TIP, trigger: "axis", valueFormatter: (v: number) => `${fmt(v, 3)} %` },
                   xAxis: { type: "value", name: "Jahre", nameTextStyle: { color: "#8f8f8f", fontSize: 10 }, ...AXIS, min: 0 },
-                  yAxis: { type: "value", scale: true, ...AXIS },
+                  yAxis: { type: "value", scale: true, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => `${fmt(v, 1)} %` } },
                   series: [
                     { name: "Rendite heute", type: "line", data: d.spot.map((p) => [p.years, p.rate]), symbolSize: 4, lineStyle: { color: "#66b8ff", width: 1.4 }, itemStyle: { color: "#66b8ff" } },
-                    { name: "1-J.-Zins ab Jahr …", type: "line", step: "end", data: d.forwards.filter((f) => f.rate !== null).map((f) => [f.start, f.rate]), symbol: "none", lineStyle: { color: "#ffa028", width: 1.6 }, itemStyle: { color: "#ffa028" } },
+                    {
+                      name: "Forward 1 J.", type: "line", step: "end", symbol: "none", lineStyle: { color: "#ffa028", width: 1.6 }, itemStyle: { color: "#ffa028" },
+                      // letzte Stufe bis zum Ende ihres Jahres zeichnen (sonst nur ein senkrechter Strich)
+                      data: (() => {
+                        const pts = d.forwards.filter((f) => f.rate !== null).map((f) => [f.start, f.rate!]);
+                        const last = pts[pts.length - 1];
+                        return last ? [...pts, [last[0] + 1, last[1]]] : pts;
+                      })(),
+                    },
                   ],
                 }}
               />
@@ -244,8 +273,8 @@ function RatesView() {
                 {d.forwards.map((f) => (
                   <tr key={f.start}>
                     <td>{f.start === 0 ? "sofort" : `in ${f.start} J.`}</td>
-                    <td className="num"><b>{pctOrDash(f.rate)}</b></td>
-                    <td className="num">{pctOrDash(f.rate1m)}</td>
+                    <td className="num"><b>{pctOrDash(f.rate, 3)}</b></td>
+                    <td className="num">{pctOrDash(f.rate1m, 3)}</td>
                     <td className={`num ${tone(f.rate !== null && f.rate1m !== null ? f.rate - f.rate1m : null, 2)}`}>
                       {f.rate !== null && f.rate1m !== null ? bp((f.rate - f.rate1m) * 100) : "–"}
                     </td>
@@ -264,8 +293,12 @@ function RatesView() {
   );
 }
 
-export function FWD(_: ScreenProps) {
+export function FWD({ ticker }: ScreenProps) {
   const [view, setView] = usePersistentState<(typeof VIEWS)[number]>("fwd.view", "fx", isOneOf(VIEWS));
+  const loadedPair = pairFromTicker(ticker);
+  useEffect(() => {
+    if (loadedPair) setView("fx");
+  }, [loadedPair, setView]);
   return (
     <>
       <div className="toolbar">
@@ -273,11 +306,11 @@ export function FWD(_: ScreenProps) {
         <span className="small muted" style={{ marginLeft: "auto" }} title={explain("Terminkurs")}>berechnet aus Kassakursen und Zinsen · keine Börsenkurse</span>
       </div>
       <div className="panel-body" style={{ overflow: "auto" }}>
-        {view === "fx" ? <FxView /> : view === "hedge" ? <HedgeView /> : <RatesView />}
+        {view === "fx" ? <FxView ticker={ticker} /> : view === "hedge" ? <HedgeView /> : <RatesView />}
         <div className="notes">
           Terminkurse per gedeckter Zinsparität aus dem Kassakurs und den Renditen kurzlaufender Staatsanleihen (Näherung an die Geldmarktzinsen; am
-          Markt kommt ein kleiner Cross-Currency-Basis hinzu). Börsen-Futures (Index, Rohstoffe, Zinsen) liefert EODHD nicht – sie sind mit der
-          IBKR-Anbindung geplant (docs/PLAN-FUTURES.md).
+          Markt kommt ein kleiner Cross-Currency-Basis hinzu). Laufzeiten vereinfacht in Jahren (3 Monate = 0,25), ohne Valutatage. Forward-Zinsen aus
+          Nullkuponsätzen, die aus den Anleiherenditen hergeleitet sind. Börsen-Futures (Index, Rohstoffe, Zinsen) sind in den Daten nicht enthalten.
         </div>
       </div>
     </>

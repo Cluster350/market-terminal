@@ -18,7 +18,7 @@ import {
 import { ErrorState, Loading, Seg } from "../components/ui";
 import { VolumeProfilePrimitive } from "../components/volumeProfile";
 import { volumeProfile } from "../lib/profile";
-import { alertStatus, alertsApi, useAlerts, useAlertsRefresh, type Alert } from "../lib/alerts";
+import { alertStatus, alertsApi, conditionLabel, useAlerts, useAlertsRefresh, type Alert } from "../lib/alerts";
 import { api, ApiError, IS_STATIC } from "../lib/api";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
 import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
@@ -177,6 +177,7 @@ export function earningsMarkers(items: EarningsItem[], bars: Bar[]) {
   const out: { time: Time; position: "aboveBar"; color: string; shape: "circle"; text: string }[] = [];
   for (const e of items) {
     if (!e.reportDate || !isNum(e.epsActual)) continue;
+    if (times.length && e.reportDate < times[0]) continue; // Berichte vor dem Zeitraum stapelten sich am ersten Balken
     const after = e.timing === "AfterMarket";
     const idx = times.findIndex((t) => (after ? t > e.reportDate! : t >= e.reportDate!));
     if (idx < 0) continue;
@@ -334,15 +335,24 @@ export default function GP({ ticker }: ScreenProps) {
 
   const view = useMemo(() => {
     type Line = { time: Time; value: number };
-    const empty = { bars: [] as Bar[], maLines: [] as { n: number; color: string; data: Line[] }[], base: null as number | null, bands: null as null | { upper: Line[]; lower: Line[] }, rsi: [] as (Line | { time: Time })[], start: "" };
+    const empty = { bars: [] as Bar[], maLines: [] as { n: number; color: string; data: Line[] }[], base: null as number | null, prevDay: null as number | null, bands: null as null | { upper: Line[]; lower: Line[] }, rsi: [] as (Line | { time: Time })[], start: "" };
     if (intradayRange) {
       const d = intra.data;
       if (!d || !d.t.length) return empty;
       const bars = intradayBars(d);
       const firstDay = new Date(d.t[0] * 1000).toISOString().slice(0, 10);
+      const lastDay = new Date(d.t[d.t.length - 1] * 1000).toISOString().slice(0, 10);
       const closes = bars.map((b) => b.close);
       const r = rsiSeries(closes);
-      return { ...empty, bars, base: closeBefore(hist.data, firstDay) ?? bars[0]?.open ?? null, rsi: bars.map((b, i) => (r[i] === null ? { time: b.time } : { time: b.time, value: r[i]! })) };
+      // base: Bezug der Veränderung über den Zeitraum (Schluss vor dem ersten Tag);
+      // prevDay: Linie „Vortag“ = Schluss vor dem letzten Tag (im 5T-Chart früher der Schluss vor dem Fenster)
+      return {
+        ...empty,
+        bars,
+        base: closeBefore(hist.data, firstDay) ?? bars[0]?.open ?? null,
+        prevDay: closeBefore(hist.data, lastDay),
+        rsi: bars.map((b, i) => (r[i] === null ? { time: b.time } : { time: b.time, value: r[i]! })),
+      };
     }
     const h = hist.data;
     if (!h || !h.t.length) return empty;
@@ -369,10 +379,10 @@ export default function GP({ ticker }: ScreenProps) {
     }
     const r = rsiSeries(closes);
     const rsi = all.slice(from).map((b, k) => (r[from + k] === null ? { time: b.time } : { time: b.time, value: r[from + k]! }));
-    return { bars: all.slice(from), maLines: lines, base: periodBase(all, from), bands, rsi, start };
+    return { bars: all.slice(from), maLines: lines, base: periodBase(all, from), prevDay: null, bands, rsi, start };
   }, [hist.data, intra.data, range, mas, intradayRange, boll]);
 
-  const { bars, maLines, base, bands, rsi } = view;
+  const { bars, maLines, base, prevDay, bands, rsi } = view;
 
   // Vergleich: Wertentwicklung in % ab Periodenbeginn, je Serie auf ihren Schluss vor dem Start normiert
   const compareLines = useMemo(() => {
@@ -565,8 +575,8 @@ export default function GP({ ticker }: ScreenProps) {
       // Vortagesschluss als Linie im Intraday-Chart; Earnings-Marker im Tageschart
       if (prevLineRef.current) s.main.removePriceLine(prevLineRef.current);
       prevLineRef.current =
-        intradayRange && isNum(base)
-          ? s.main.createPriceLine({ price: base, color: "#777", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Vortag" })
+        intradayRange && isNum(prevDay)
+          ? s.main.createPriceLine({ price: prevDay, color: "#777", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Vortag" })
           : null;
       s.main.setMarkers(!intradayRange && earn.data ? earningsMarkers(earn.data.history, bars) : []);
     }
@@ -582,7 +592,7 @@ export default function GP({ ticker }: ScreenProps) {
       rsiChartRef.current?.timeScale().fitContent();
       fitKey.current = key;
     }
-  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, intradayRange, earn.data, isYield]);
+  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, prevDay, intradayRange, earn.data, isYield]);
 
   // Volumenprofil des gezeigten Zeitraums (1T/5T aus 5-Minuten-Kerzen, sonst aus Tageskerzen geschätzt)
   const vp = useMemo(
@@ -890,16 +900,19 @@ export default function GP({ ticker }: ScreenProps) {
                 <div className="chart-host" ref={rsiRef} />
               </div>
             )}
-            {!comparing && (marks.length > 0 || markMsg) && (
+            {/* Leiste schon beim Setzen zeigen: Erscheint sie erst nach dem ersten Klick, skaliert der Chart neu
+                und der zweite Klick landete auf einem anderen Kurs */}
+            {!comparing && (marks.length > 0 || markMsg || placing) && (
               <div className="chart-marks" aria-label="Kursmarken">
                 <span className="muted">Marken</span>
+                {!marks.length && <span className="muted">noch keine</span>}
                 {marks
                   .slice()
                   .sort((a, b) => b.level - a.level)
                   .map((m) => {
                     const st = alertStatus(m);
                     return (
-                      <span key={m.id} className={`mark-chip ${st === "armed" ? "armed" : ""}`} title={m.note || undefined}>
+                      <span key={m.id} className={`mark-chip ${st === "armed" ? "armed" : ""}`} title={`${conditionLabel(m)}${m.note ? ` · ${m.note}` : ""}`}>
                         <button
                           type="button"
                           title={m.alarm ? "Alarm aus (Marke bleibt)" : "Alarm einschalten"}
@@ -907,7 +920,9 @@ export default function GP({ ticker }: ScreenProps) {
                         >
                           {st === "armed" ? "🔔" : st === "fired" ? "✓" : st === "mark" ? "🔕" : "○"}
                         </button>
+                        {m.alarm ? (m.direction === "above" ? "↑ " : "↓ ") : ""}
                         {fmtPrice(m.level, ticker)}
+                        {m.note ? <span className="muted"> {m.note.slice(0, 18)}</span> : null}
                         {(st === "fired" || st === "off") && (
                           <button type="button" title="Wieder scharf schalten" onClick={() => markAction(() => alertsApi.update(m.id, { active: true }))}>
                             ↻
