@@ -59,6 +59,7 @@ class ExpirySummary(Model):
     iv_put25: Optional[float] = None
     iv_call25: Optional[float] = None
     skew25: Optional[float] = None  # Volatilitätspunkte: Put 25Δ − Call 25Δ
+    earnings: bool = False  # erster Verfall nach den nächsten Quartalszahlen
 
 
 class StrikeOI(Model):
@@ -93,6 +94,8 @@ class ActiveContract(Model):
 class OptionsOverview(Model):
     ticker: str
     spot: Optional[float] = None
+    earnings_date: Optional[str] = None  # nächste Quartalszahlen
+    earnings_timing: Optional[str] = None  # BeforeMarket / AfterMarket
     iv30: Optional[float] = None
     hv30: Optional[float] = None
     hv1y: Optional[float] = None
@@ -251,7 +254,8 @@ def _active(c: OptionContract) -> ActiveContract:
     )
 
 
-def overview(ticker: str, contracts: Sequence[OptionContract], spot: Optional[float], closes: Sequence[float], today: dt.date, focus_exp: Optional[str] = None) -> OptionsOverview:
+def overview(ticker: str, contracts: Sequence[OptionContract], spot: Optional[float], closes: Sequence[float], today: dt.date, focus_exp: Optional[str] = None,
+             earnings: Optional[tuple[str, Optional[str]]] = None) -> OptionsOverview:
     by_exp: dict[str, list[OptionContract]] = defaultdict(list)
     for c in contracts:
         if c.exp >= today.isoformat():
@@ -259,6 +263,13 @@ def overview(ticker: str, contracts: Sequence[OptionContract], spot: Optional[fl
     exps = sorted(by_exp)
     summaries = [summarize_expiry(e, by_exp[e], spot, today) for e in exps]
     out = OptionsOverview(ticker=ticker, spot=spot, expirations=summaries, contracts=sum(len(v) for v in by_exp.values()))
+    if earnings and earnings[0]:
+        day, timing = earnings[0][:10], earnings[1]
+        out.earnings_date, out.earnings_timing = day, timing
+        # nachbörslich am Verfallstag zählt erst der nächste Verfall
+        first = next((s for s in summaries if s.exp > day or (s.exp == day and timing == "BeforeMarket")), None)
+        if first:
+            first.earnings = True
     out.iv30 = constant_maturity_iv(summaries)
     out.hv30, out.hv1y = realized_vol(closes, 21), realized_vol(closes, 252)
     out.iv_hv = out.iv30 / out.hv30 if out.iv30 and out.hv30 else None

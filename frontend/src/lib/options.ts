@@ -50,6 +50,8 @@ export interface ExpirySummary {
   ivPut25: number | null;
   ivCall25: number | null;
   skew25: number | null;
+  /** erster Verfall nach den nächsten Quartalszahlen */
+  earnings?: boolean;
 }
 
 export interface StrikeOI {
@@ -76,6 +78,8 @@ export interface ActiveContract {
 export interface OptionsOverview {
   ticker: string;
   spot: number | null;
+  earningsDate?: string | null;
+  earningsTiming?: string | null;
   iv30: number | null;
   hv30: number | null;
   hv1y: number | null;

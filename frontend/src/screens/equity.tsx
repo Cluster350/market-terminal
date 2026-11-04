@@ -357,10 +357,15 @@ export function FA({ ticker }: ScreenProps) {
                     const prev = r.values[1];
                     // Vorzeichenwechsel (Verlust -> Gewinn) ergibt keine sinnvolle Prozentveränderung
                     const signFlip = isNum(latest) && isNum(prev) && latest * prev < 0;
+                    // Abflüsse (beide Jahre negativ, z. B. Investitionen, Dividenden): Veränderung des Betrags,
+                    // ohne gut/schlecht-Farbe – „−4.416 -> −4.725“ ist +7 % mehr, nicht „−7 %“
+                    const outflow = r.kind !== "ratio" && isNum(latest) && isNum(prev) && latest < 0 && prev < 0;
                     const delta =
                       r.kind === "ratio"
                         ? isNum(latest) && isNum(prev) ? (latest - prev) * 100 : null
-                        : isNum(latest) && isNum(prev) && prev !== 0 && !signFlip ? ((latest - prev) / Math.abs(prev)) * 100 : null;
+                        : isNum(latest) && isNum(prev) && prev !== 0 && !signFlip
+                          ? outflow ? ((Math.abs(latest) - Math.abs(prev)) / Math.abs(prev)) * 100 : ((latest - prev) / Math.abs(prev)) * 100
+                          : null;
                     return (
                       <tr key={r.key} className={r.emphasis ? "em" : ""}>
                         <td className={r.kind === "ratio" ? "muted" : ""}>{r.label}</td>
@@ -372,7 +377,7 @@ export function FA({ ticker }: ScreenProps) {
                         <td className="num">
                           <Spark data={r.values.slice().reverse().filter(isNum)} width={64} height={14} color="var(--label)" />
                         </td>
-                        <td className={`num ${tone(delta)}`}>
+                        <td className={`num ${outflow ? "" : tone(delta)}`} title={outflow ? "Veränderung des Betrags (Abfluss)" : undefined}>
                           {signFlip && r.kind !== "ratio" ? <span className="muted" title="Vorzeichenwechsel – Veränderung nicht aussagekräftig">n. a.</span> : delta === null ? DASH : r.kind === "ratio" ? `${delta > 0 ? "+" : ""}${fmt(delta, 1)} Pp` : fmtPct(delta, 1)}
                         </td>
                       </tr>

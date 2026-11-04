@@ -237,7 +237,8 @@ export function GC(_: ScreenProps) {
                           return (
                             <td key={c.country} className="num">
                               {p && isNum(p.y) ? fmt(p.y, 3) : DASH}
-                              {compare !== "none" && <span className={`xs ${tone(d)}`} style={{ display: "inline-block", minWidth: "7ch" }}> {d === null ? "" : fmtBp(d)}</span>}
+                              {/* steigende Rendite = fallende Anleihekurse: rot, wie in WMAP */}
+                              {compare !== "none" && <span className={`xs ${tone(d === null ? null : -d)}`} style={{ display: "inline-block", minWidth: "7ch" }}> {d === null ? "" : fmtBp(d)}</span>}
                             </td>
                           );
                         })}

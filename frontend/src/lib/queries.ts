@@ -36,7 +36,8 @@ export const useIntraday = (t: string | null, days: number, enabled = true) =>
     queryKey: ["intraday", t, days],
     queryFn: () => api.intraday(t!, days),
     enabled: !!t && enabled,
-    refetchInterval: poll(60_000),
+    // so oft wie die Kurse in der Kopfzeile, damit Chart und Kopfzeile nicht auseinanderlaufen
+    refetchInterval: poll(days <= 1 ? 15_000 : 60_000),
   });
 
 export const useCompany = (t: string | null) =>

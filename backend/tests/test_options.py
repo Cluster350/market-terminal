@@ -234,3 +234,14 @@ def test_eodhd_option_paging_counts_raw_rows():
     client = EODHDClient("KEY", "https://example.test/api", transport=httpx.MockTransport(handler), backoff_base=0.0)
     out = asyncio_run(EODHDProvider(Settings(eodhd_api_key="KEY"), client=client).options("AAPL.US"))
     assert calls == [0, 1000] and len(out) == 1009
+
+
+def test_overview_marks_first_expiry_after_earnings():
+    p = DemoProvider(now_fn=lambda: NOW)
+    cs = asyncio_run(p.options("NWND.US"))
+    spot = asyncio_run(p.quotes(["NWND.US"]))[0].last
+    exps = sorted({c.exp for c in cs})
+    o = opt.overview("NWND.US", cs, spot, [], TODAY, None, (exps[1], "AfterMarket"))
+    assert [e.exp for e in o.expirations if e.earnings] == [exps[2]]  # nachbörslich am Verfallstag -> nächster Verfall
+    o = opt.overview("NWND.US", cs, spot, [], TODAY, None, (exps[1], "BeforeMarket"))
+    assert [e.exp for e in o.expirations if e.earnings] == [exps[1]] and o.earnings_date == exps[1]

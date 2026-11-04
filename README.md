@@ -113,7 +113,13 @@ Für US-Aktien und -ETFs, z. B. `AAPL US OMON` (Demo: `NWND OMON`). Tagesenddate
 - **Daten:** Bei EODHD sind Optionen ein **Zusatzprodukt** im Marketplace („US Stock Options
   Data API“, Anbieter Unicorn Bay), nur US-Werte, Tagesendstand; ein Abruf kostet 10 API-Calls
   je 1000 Kontrakte. `EODHD-pruefen-Windows.bat` zeigt, ob das Abo aktiv ist. Im Demo-Modus
-  sind die Ketten mit Black-Scholes berechnet (mit Skew und höherer IV vor Quartalszahlen).
+  sind die Ketten berechnet – amerikanisch bewertet (Barone-Adesi/Whaley: kein Put unter seinem
+  inneren Wert), mit Skew und höherer IV vor Quartalszahlen; Verfälle an US-Feiertagen am
+  Handelstag davor.
+- **Quartalszahlen:** Kachel mit dem nächsten Termin; der erste Verfall danach trägt ein **E**
+  (Verfallsliste, Tabelle, Laufzeitkurve) – seine erwartete Bewegung enthält die Ereignisprämie.
+- Gewählter Verfall bleibt je Wert gemerkt; Klick auf einen aktiven oder auffälligen Kontrakt
+  öffnet dessen Kette, die Kette springt zur Zeile am Geld.
 - Der KI-Assistent kann den Optionsmarkt einer Aktie lesen („Was preisen die Optionen für NWND
   ein?“).
 
@@ -192,7 +198,9 @@ Einrichten (einmalig):
 4. Terminal starten. Unten rechts steht dann **„KI: LM Studio · Modellname“**.
 
 Ohne LM Studio übernimmt im Demo-Modus eine **regelbasierte Demo-KI** (Anzeige „KI: Demo“): Sie
-zeigt, wie alles aussieht, versteht aber nur einfache Fragen. Mit echten EODHD-Daten und ohne
+zeigt, wie alles aussieht, versteht aber nur einfache Fragen – zu einem Wert, Optionen, größten
+Bewegungen, Zinskurven, Devisenterminen, Terminen, Depot und Alarmen. Begriffsfragen („Was ist
+eine Put-Option?“) beantwortet das Glossar. Mit echten EODHD-Daten und ohne
 LM Studio steht „KI: offline“, die übrigen Funktionen laufen normal weiter.
 
 Einstellungen in der `.env` (alle optional): `LLM_MODE` (`auto` Standard, `lmstudio`, `demo`,

@@ -23,7 +23,7 @@ const ratio = (x: number | null | undefined) => fmt(x, 2);
 
 function expLabel(e: ExpirySummary): string {
   const [y, m, d] = e.exp.split("-");
-  return `${d}.${m}.${y.slice(2)} · ${e.dte} T${e.monthly ? " · M" : ""}`;
+  return `${d}.${m}.${y.slice(2)} · ${e.dte} T${e.monthly ? " · M" : ""}${e.earnings ? " · E" : ""}`;
 }
 
 function Chart({ option, height = 220 }: { option: EOption; height?: number }) {
@@ -57,6 +57,19 @@ function Kpis({ o }: { o: OptionsOverview }) {
           <div className="kpi-s">±{fmtPrice(f.straddle)} bis {fmtDate(f.exp)}</div>
         </div>
       )}
+      {o.earningsDate && (() => {
+        const ee = o.expirations.find((x) => x.earnings);
+        return (
+          <div className="kpi" title="Nächste Quartalszahlen und der erste Verfall danach: Dessen erwartete Bewegung enthält die Ereignisprämie.">
+            <div className="kpi-l">Quartalszahlen</div>
+            <div className="kpi-v">{fmtDate(o.earningsDate)}</div>
+            <div className="kpi-s">
+              {o.earningsTiming === "BeforeMarket" ? "vor Eröffnung" : o.earningsTiming === "AfterMarket" ? "nach Schluss" : ""}
+              {ee ? ` · bis ${fmtDate(ee.exp).slice(0, 6)} ±${fmt(ee.movePct, 1)} %` : ""}
+            </div>
+          </div>
+        );
+      })()}
       <div className="kpi" title={explain("Put/Call-Verhältnis")}>
         <div className="kpi-l">Put/Call</div>
         <div className="kpi-v">{ratio(o.pcVolume)}</div>
@@ -162,9 +175,17 @@ function OverviewView({ o, onOpen }: { o: OptionsOverview; onOpen: (c: ActiveCon
     legend: { top: 0, right: 6, textStyle: { color: "#8f8f8f", fontSize: 10 }, itemHeight: 2 },
     tooltip: { ...TIP, trigger: "axis", valueFormatter: (v: number) => `${fmt(v, 1)} %` },
     xAxis: { type: "value", name: "Tage", nameTextStyle: { color: "#8f8f8f", fontSize: 10 }, ...AXIS, min: 0 },
-    yAxis: { type: "value", scale: true, ...AXIS },
+    // Luft nach oben, damit die E-Markierung am Earnings-Verfall nicht abgeschnitten wird
+    yAxis: { type: "value", scale: true, ...AXIS, max: (v: { max: number }) => Math.ceil(v.max * 1.12) },
     series: [
-      { name: "ATM-IV", type: "line", data: o.expirations.filter((e) => e.atmIv).map((e) => [e.dte, e.atmIv! * 100]), symbolSize: 5, lineStyle: { color: "#66b8ff", width: 1.6 }, itemStyle: { color: "#66b8ff" } },
+      {
+        name: "ATM-IV", type: "line", data: o.expirations.filter((e) => e.atmIv).map((e) => [e.dte, e.atmIv! * 100]), symbolSize: 5, lineStyle: { color: "#66b8ff", width: 1.6 }, itemStyle: { color: "#66b8ff" },
+        // Verfall nach den Quartalszahlen markieren (Ereignisprämie in der Laufzeitstruktur)
+        markPoint: (() => {
+          const e = o.expirations.find((x) => x.earnings && x.atmIv);
+          return e ? { symbol: "pin", symbolSize: 26, itemStyle: { color: "#ffa028" }, label: { formatter: "E", color: "#000", fontSize: 10 }, data: [{ coord: [e.dte, e.atmIv! * 100] }] } : undefined;
+        })(),
+      },
       ...(o.hv30 ? [{ name: "HV 30T", type: "line", data: [[0, o.hv30 * 100], [Math.max(...o.expirations.map((e) => e.dte)), o.hv30 * 100]], symbol: "none", lineStyle: { color: "#8f8f8f", type: "dashed", width: 1 } }] : []),
     ],
   };
@@ -342,7 +363,11 @@ function VolView({ o, onPick }: { o: OptionsOverview; onPick: (exp: string) => v
           <tbody>
             {o.expirations.map((e) => (
               <tr key={e.exp} className={`clickable ${e.exp === f.exp ? "selected" : ""}`} onClick={() => onPick(e.exp)}>
-                <td>{fmtDate(e.exp)}{e.monthly ? <span className="dim"> M</span> : ""}</td>
+                <td>
+                  {fmtDate(e.exp)}
+                  {e.monthly ? <span className="dim"> M</span> : ""}
+                  {e.earnings ? <span className="lbl" title={`Erster Verfall nach den Quartalszahlen am ${fmtDate(o.earningsDate)} – enthält die Ereignisprämie`}> E</span> : ""}
+                </td>
                 <td className="num">{e.dte}</td>
                 <td className="num">{ivPct(e.atmIv)}</td>
                 <td className="num">{e.movePct === null ? "–" : `±${fmt(e.movePct, 1)} %`}</td>

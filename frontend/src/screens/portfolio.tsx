@@ -639,7 +639,7 @@ export function RISK(_: ScreenProps) {
             <div className="kpis">
               <Kpi label="Schwankung p. a." value={fmtPct(r.vol, 1, false)} sub={`${bench} ${fmtPct(r.benchVol, 1, false)}`} title={explain("Schwankung (Volatilität)")} />
               <Kpi label={`Beta zum ${bench}`} value={fmt(r.beta, 2)} sub={isNum(r.beta) ? (r.beta > 1.1 ? "stärker als Index" : r.beta < 0.9 ? "ruhiger als Index" : "wie der Index") : undefined} title={explain("Beta")} />
-              <Kpi label="Größter Rückgang" value={fmtPct(r.maxDrawdown, 1)} cls="down" sub={r.drawdownPeak ? `${fmtShortDate(r.drawdownPeak)} – ${fmtShortDate(r.drawdownTrough)}` : undefined} title={explain("Max. Drawdown")} />
+              <Kpi label="Größter Rückgang" value={fmtPct(r.maxDrawdown, 1)} cls="down" sub={r.drawdownPeak ? `${fmtDate(r.drawdownPeak)} – ${fmtDate(r.drawdownTrough)}` : undefined} title={explain("Max. Drawdown")} />
               <Kpi label="VaR 95 % · 1 Tag" value={`${money(r.var95)} ${a.base}`} sub={`${fmtPct(r.var95Pct, 2, false)} des Depots`} title={explain("Value at Risk")} />
               <Kpi label="Expected Shortfall" value={`${money(r.es95)} ${a.base}`} sub="Ø schlechteste 5 % Tage" title={explain("Expected Shortfall")} />
               <Kpi label="Rendite 1 Jahr" value={fmtPct(r.return1y, 1)} cls={tone(r.return1y, 1)} sub={`${bench} ${fmtPct(r.benchReturn1y, 1)}`} />

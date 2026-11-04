@@ -415,9 +415,21 @@ class DemoProvider:
             _, _, base, drift, vol = _COMMODITY[ticker]
             s = vol / math.sqrt(252)
             x = 0.0
+            # Brent folgt WTI mit einem schwankenden Aufschlag von etwa 3–6 % (vorher zwei unabhängige
+            # Pfade: Brent lag zeitweise unter WTI)
+            linked = ticker == "BRENT.COMM"
+            path_rng = _rng("series", "WTI.COMM") if linked else rng  # gleicher Pfad wie WTI
+            if linked:
+                _, _, base, drift, vol = _COMMODITY["WTI.COMM"]
+                s = vol / math.sqrt(252)
+            spread = 0.0
             for k, m in enumerate(mkt):
-                x = 0.997 * x + 0.4 * (m - 0.00045) + s * rng.gauss(0, 1)
-                closes.append(base * math.exp(drift * k / 252 + x))
+                x = 0.997 * x + 0.4 * (m - 0.00045) + s * path_rng.gauss(0, 1)
+                level = base * math.exp(drift * k / 252 + x)
+                if linked:
+                    spread = 0.98 * spread + 0.004 * rng.gauss(0, 1)
+                    level *= 1.045 + max(-0.03, min(0.03, spread))
+                closes.append(level)
             day_sigma = s
         elif ticker in _BOND:
             cc, tenor, years = _BOND[ticker]

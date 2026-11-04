@@ -100,7 +100,7 @@ def main(target: str) -> None:
                 h[k] = h[k][start:]
             for k in ("o", "h", "l", "c"):
                 h[k] = compact(h[k], kind)
-            intra = get(f"/api/intraday/{t}?days=5")
+            intra = get(f"/api/intraday/{t}?days=10")  # TPO zeigt bis zu 10 Sitzungen
             for k in ("o", "h", "l", "c"):
                 intra[k] = compact(intra[k], kind)
             write(f"series/{safe(t)}.json", {"history": h, "intraday": intra})
