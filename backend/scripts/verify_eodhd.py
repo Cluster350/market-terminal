@@ -20,6 +20,7 @@ from app.errors import TerminalError
 from app.providers.base import WORLD, ScreenFilter
 from app.services.forwards import CCY_COUNTRY, MONEY_TENORS
 from app.providers.eodhd import EODHDProvider
+from app.realtime.eodhd_ws import WS_BASE, parse
 
 OK = "\033[32mOK\033[0m"
 FAIL = "\033[31mFEHLER\033[0m"
@@ -41,6 +42,44 @@ async def check(name: str, coro, describe) -> None:
         print(f"[{FAIL}] {name}: Mapping-Prüfung fehlgeschlagen: {exc}")
         return
     print(f"[{WARN if warn else OK}] {name}: {text}")
+
+
+async def ws_probe(key: str, endpoint: str, symbol: str, wait: float = 8.0):
+    """Echtzeit-WebSocket: verbinden, abonnieren, auf Status und ersten Kurs warten."""
+    import json
+
+    import websockets
+
+    loop = asyncio.get_running_loop()
+    status, tick = None, None
+    async with websockets.connect(f"{WS_BASE}{endpoint}?api_token={key}", open_timeout=15) as ws:
+        await ws.send(json.dumps({"action": "subscribe", "symbols": symbol}))
+        end = loop.time() + wait
+        while loop.time() < end:
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=max(0.1, end - loop.time()))
+            except asyncio.TimeoutError:
+                break
+            msg = json.loads(raw)
+            if isinstance(msg, dict) and "status_code" in msg:
+                status = msg
+                if int(msg.get("status_code") or 0) != 200:
+                    break
+                continue
+            tick = parse(endpoint, msg)
+            if tick:
+                break
+    return status, tick
+
+
+def describe_ws(res) -> tuple[str, bool]:
+    status, tick = res
+    code = int((status or {}).get("status_code") or 0)
+    if status and code != 200:
+        return f"nicht freigeschaltet ({code}: {status.get('message')}) – Echtzeit braucht das Paket All-In-One", True
+    if tick:
+        return f"freigeschaltet, erster Kurs {tick.ticker} {tick.price}", False
+    return "verbunden, aber noch kein Kurs (außerhalb der Handelszeit normal)", status is None
 
 
 async def main(ticker: str) -> None:
@@ -122,6 +161,18 @@ async def main(ticker: str) -> None:
             p.screener([ScreenFilter("exchange", "eq", "US"), ScreenFilter("market_cap", "gt", 1e10)], "market_cap", True, 100),
             screen,
         )
+        # Minutenkerzen und Echtzeit (Paket All-In-One bzw. EOD+Intraday All World Extended)
+        await check(
+            f"Intraday 1 Minute {ticker}",
+            p.intraday(ticker, 1, "1m"),
+            lambda d: (
+                f"{len(d.t)} Kerzen, letzte {dt.datetime.fromtimestamp(d.t[-1], tz=dt.timezone.utc):%d.%m. %H:%M} UTC" if d.t else "keine Kerzen",
+                not d.t,
+            ),
+        )
+        await check("Echtzeit-WebSocket US-Aktien (AAPL)", ws_probe(cfg.eodhd_api_key, "us", "AAPL"), describe_ws)
+        await check("Echtzeit-WebSocket Devisen (EURUSD)", ws_probe(cfg.eodhd_api_key, "forex", "EURUSD"), describe_ws)
+
         # Optionen (OMON): Zusatzprodukt im EODHD-Marketplace; ein Abruf kostet 10 Calls je Seite
         await check(
             "Optionen AAPL (Marketplace)",

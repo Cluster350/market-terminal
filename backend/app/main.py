@@ -25,11 +25,15 @@ from .api.forward_routes import router as forward_router
 from .api.option_routes import router as option_router
 from .api.portfolio_routes import current_portfolio, router as portfolio_router
 from .api.routes import router
+from .api.stream_routes import router as stream_router
 from .cache import TTLCache
 from .config import Settings, settings
 from .errors import TerminalError
 from .portfolio.store import PortfolioStore
 from .providers.base import Provider
+from .realtime.demo import DemoSource
+from .realtime.eodhd_ws import EodhdSource
+from .realtime.hub import RealtimeHub
 from .services.terminal import Terminal, request_flags
 
 log = logging.getLogger("terminal")
@@ -68,9 +72,48 @@ def make_provider(cfg: Settings) -> Provider:
     return DemoProvider()
 
 
+class _GZipExceptStream(GZipMiddleware):
+    """GZip für alle Antworten außer dem Echtzeit-Strom: Komprimierung würde die Ereignisse puffern."""
+
+    async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        if scope.get("type") == "http" and str(scope.get("path", "")).startswith("/api/stream"):
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+
+
+def make_realtime(app: FastAPI, prov: Provider, cfg: Settings, enabled: bool) -> RealtimeHub:
+    """Echtzeit-Verteiler: Demo-Strom bzw. EODHD-WebSocket; verzögerte Kurse für alle übrigen Werte."""
+    source = None
+    if enabled and cfg.realtime != "off":
+        if prov.mode == "demo" and hasattr(prov, "live_price"):
+            source = DemoSource(prov)
+        elif prov.mode == "eodhd" and cfg.eodhd_api_key:
+            source = EodhdSource(cfg.eodhd_api_key)
+
+    async def server_tickers() -> list[str]:
+        tickers = [a.ticker for a in app.state.alerts.load().alerts if a.alarm and a.active]
+        try:
+            tickers += [p.ticker for p in (await current_portfolio(app)).positions]
+        except Exception:  # noqa: BLE001 – ohne Depot nur die Alarme
+            pass
+        return list(dict.fromkeys(tickers))
+
+    return RealtimeHub(
+        source,
+        delayed_quotes=(lambda ts: app.state.terminal.quotes(ts)) if enabled else None,
+        server_tickers=server_tickers if enabled else None,
+    )
+
+
 def create_app(
-    provider: Provider | None = None, cfg: Settings = settings, llm_transport: Optional[httpx.AsyncBaseTransport] = None
+    provider: Provider | None = None, cfg: Settings = settings, llm_transport: Optional[httpx.AsyncBaseTransport] = None,
+    realtime: Optional[bool] = None,
 ) -> FastAPI:
+    # Echtzeit läuft im Betrieb; Tests übergeben einen eigenen Provider mit fester Uhr und schalten
+    # sie bei Bedarf ausdrücklich ein (sonst würden Hintergrund-Ticks erwartete Kurse verändern)
+    live = realtime if realtime is not None else provider is None
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         prov = provider or make_provider(cfg)
@@ -82,14 +125,18 @@ def create_app(
         app.state.terminal.alerts_source = app.state.alerts.view
         app.state.alerts.start()
         app.state.ai.start()
+        app.state.realtime = make_realtime(app, prov, cfg, live)
+        app.state.terminal.realtime = app.state.realtime if live else None
+        app.state.realtime.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
         yield
+        await app.state.realtime.close()
         await app.state.alerts.close()
         await app.state.ai.close()
         await prov.close()
 
     app = FastAPI(title="Market Terminal API", version="1.0.0", lifespan=lifespan, default_response_class=SafeJSONResponse)
-    app.add_middleware(GZipMiddleware, minimum_size=2048)
+    app.add_middleware(_GZipExceptStream, minimum_size=2048)
 
     @app.middleware("http")
     async def flags(request: Request, call_next):
@@ -132,6 +179,7 @@ def create_app(
     app.include_router(alert_router)
     app.include_router(forward_router)
     app.include_router(option_router)
+    app.include_router(stream_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

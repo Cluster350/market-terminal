@@ -46,6 +46,7 @@ from ..models import (
 )
 from ..providers.base import MACRO_INDICATORS, WORLD, Instrument, Provider, ScreenFilter
 from . import metrics
+from .intraday import INTERVALS, NATIVE, aggregate, merge_minutes
 from .tickers import display
 from .util import pct
 
@@ -121,6 +122,7 @@ class Terminal:
         # Liefert das aktuelle Depot (wird beim Start gesetzt; für das KI-Werkzeug „depot“)
         self.portfolio_source: Optional[Callable[[], Awaitable[Any]]] = None
         self.alerts_source: Optional[Callable[[], Awaitable[Any]]] = None  # für das KI-Werkzeug „alarme“
+        self.realtime: Any = None  # RealtimeHub (Echtzeit-Kurse), von main.py gesetzt
 
     # --- Infrastruktur ----------------------------------------------------------
 
@@ -164,7 +166,11 @@ class Terminal:
         key = "quotes:" + ",".join(sorted(tickers))
         result: list[Quote] = await self._cached(key, "quote", lambda: self.p.quotes(tickers))
         by = {q.ticker: q for q in result}
-        return [by.get(t, Quote(ticker=t)) for t in tickers]
+        out = [by.get(t, Quote(ticker=t)) for t in tickers]
+        if self.realtime is not None:
+            # jüngere Echtzeit-Kurse einsetzen: Kopfzeilen, Watchlist, Depot und Alarme laufen live
+            out = [self.realtime.overlay(q) for q in out]
+        return out
 
     async def history(self, ticker: str) -> History:
         return await self._cached(f"hist:{ticker}", "history", lambda: self.p.history(ticker))
@@ -172,9 +178,21 @@ class Terminal:
     async def options(self, ticker: str) -> list[OptionContract]:
         return await self._cached(f"options:{ticker}", "options", lambda: self.p.options(ticker))
 
-    async def intraday(self, ticker: str, days: int) -> Intraday:
+    async def intraday(self, ticker: str, days: int, interval: str = "5m") -> Intraday:
+        """Intraday-Kerzen in 1m, 5m, 15m (aus 5m gebildet) oder 1h, ergänzt um die Minutenkerzen
+        des Echtzeit-Stroms für den laufenden Tag."""
         days = max(1, min(days, 10))
-        return await self._cached(f"intra:{ticker}:{days}", "intraday", lambda: self.p.intraday(ticker, days))
+        if interval not in INTERVALS:
+            raise BadRequest(f"Intervall muss eines von {', '.join(INTERVALS)} sein.")
+        native = NATIVE[interval]
+        data = await self._cached(f"intra:{ticker}:{days}:{native}", "intraday", lambda: self.p.intraday(ticker, days, native))
+        if interval != native:
+            data = aggregate(data, interval)
+        if self.realtime is not None:
+            minutes = self.realtime.minute_bars(ticker)
+            if minutes:
+                data = merge_minutes(data, minutes)
+        return data
 
     # --- Unternehmen ----------------------------------------------------------------
 

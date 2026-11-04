@@ -1,6 +1,7 @@
 // React-Query-Hooks mit Aktualisierungsintervallen je Datentyp.
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import type { Interval } from "./intervals";
 import { api, ApiError, IS_STATIC, type CalendarParams, type NewsParams, type ScreenBody } from "./api";
 
 const poll = (ms: number) => (IS_STATIC ? false : ms);
@@ -31,10 +32,10 @@ export const useQuotes = (tickers: string[]) =>
 export const useHistory = (t: string | null) =>
   useQuery({ queryKey: ["history", t], queryFn: () => api.history(t!), enabled: !!t, staleTime: 60_000, refetchInterval: poll(120_000) });
 
-export const useIntraday = (t: string | null, days: number, enabled = true) =>
+export const useIntraday = (t: string | null, days: number, enabled = true, interval: Interval = "5m") =>
   useQuery({
-    queryKey: ["intraday", t, days],
-    queryFn: () => api.intraday(t!, days),
+    queryKey: ["intraday", t, days, interval],
+    queryFn: () => api.intraday(t!, days, interval),
     enabled: !!t && enabled,
     // so oft wie die Kurse in der Kopfzeile, damit Chart und Kopfzeile nicht auseinanderlaufen
     refetchInterval: poll(days <= 1 ? 15_000 : 60_000),

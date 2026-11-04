@@ -23,7 +23,9 @@ import { api, ApiError, IS_STATIC } from "../lib/api";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
 import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
 import { isBool, isNumberList, isOneOf, usePersistentState } from "../lib/persist";
+import { INTERVAL_LABEL, INTERVAL_SECONDS, INTERVALS, type Interval } from "../lib/intervals";
 import { retry, useEarnings, useHistory, useIntraday } from "../lib/queries";
+import { live, useLiveStatus } from "../lib/realtime";
 import type { EarningsItem, History, Intraday } from "../lib/types";
 import type { ScreenProps } from "./types";
 
@@ -314,7 +316,10 @@ export default function GP({ ticker }: ScreenProps) {
   const [compareErr, setCompareErr] = useState<string | null>(null);
   const intradayRange = range === "1T" || range === "5T";
   const hist = useHistory(ticker);
-  const intra = useIntraday(ticker, range === "1T" ? 1 : 5, intradayRange);
+  const [interval, setInterval_] = usePersistentState<Interval>("gp.interval", "5m", isOneOf(INTERVALS));
+  const intra = useIntraday(ticker, range === "1T" ? 1 : 5, intradayRange, interval);
+  const liveStatus = useLiveStatus();
+  const isLive = !!ticker && !!liveStatus?.live.includes(ticker);
   const isYield = ticker?.endsWith(".GBOND") ?? false;
   const comparing = compare.length > 0 && !intradayRange;
 
@@ -594,6 +599,56 @@ export default function GP({ ticker }: ScreenProps) {
     }
   }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, prevDay, intradayRange, earn.data, isYield]);
 
+  // Laufende Kerze: Ticks des Echtzeit-Stroms (US-Werte, Devisen, Krypto) bzw. verzögerte Kurse
+  // (übrige Börsen) schreiben die letzte Kerze fort, ohne den ganzen Chart neu zu zeichnen
+  const liveBar = useRef<Bar | null>(null);
+  useEffect(() => {
+    liveBar.current = bars.length ? { ...bars[bars.length - 1] } : null;
+  }, [bars]);
+  useEffect(() => {
+    if (!ticker || comparing || IS_STATIC) return;
+    const release = live.want([ticker]);
+    const step = INTERVAL_SECONDS[interval];
+    const off = live.onTicks((ticks) => {
+      const s = seriesRef.current;
+      for (const tk of ticks) {
+        const cur = liveBar.current;
+        if (tk.t !== ticker || !s?.main || !cur) continue;
+        let time: Time;
+        if (intradayRange) {
+          const sec = Math.floor(tk.ts / 1000);
+          time = toLocal(sec - (sec % step));
+        } else {
+          // Tageskerze: nur den laufenden Tag fortschreiben (ein neuer Tag kommt mit der Kursreihe)
+          if (new Date(tk.ts).toISOString().slice(0, 10) !== String(cur.time)) continue;
+          time = cur.time;
+        }
+        let bar: Bar;
+        if (time === cur.time) {
+          bar = { ...cur, high: Math.max(cur.high, tk.p), low: Math.min(cur.low, tk.p), close: tk.p, volume: tk.v ? (cur.volume ?? 0) + tk.v : cur.volume };
+        } else if ((time as number) > (cur.time as number)) {
+          bar = { time, open: tk.p, high: tk.p, low: tk.p, close: tk.p, volume: tk.v ?? null };
+        } else {
+          continue; // älter als die letzte Kerze
+        }
+        liveBar.current = bar;
+        try {
+          if (kind === "candle") (s.main as ISeriesApi<"Candlestick">).update({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close });
+          else (s.main as ISeriesApi<"Line">).update({ time: bar.time, value: bar.close });
+          if (s.vol && isNum(bar.volume)) {
+            s.vol.update({ time: bar.time, value: bar.volume, color: bar.close >= bar.open ? "rgba(41,209,125,0.35)" : "rgba(255,82,82,0.35)" });
+          }
+        } catch {
+          /* Chart wurde gerade neu aufgebaut */
+        }
+      }
+    });
+    return () => {
+      off();
+      release();
+    };
+  }, [ticker, interval, intradayRange, kind, comparing, chartGen]);
+
   // Volumenprofil des gezeigten Zeitraums (1T/5T aus 5-Minuten-Kerzen, sonst aus Tageskerzen geschätzt)
   const vp = useMemo(
     () => (showVp && !comparing && !isYield ? volumeProfile(bars.map((b, i) => ({ t: i, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume })), { rows: 48 }) : null),
@@ -731,6 +786,28 @@ export default function GP({ ticker }: ScreenProps) {
     <>
       <div className="toolbar">
         <Seg label="Zeitraum" value={range} options={RANGES} onChange={setRange} />
+        {intradayRange && (
+          <Seg
+            label="Intervall"
+            value={interval}
+            options={INTERVALS.map((v) => ({ value: v, label: INTERVAL_LABEL[v] }))}
+            onChange={setInterval_}
+          />
+        )}
+        {ticker && liveStatus && liveStatus.mode !== "aus" && (
+          <span
+            className={`live-badge ${isLive ? "on" : ""}`}
+            title={
+              isLive
+                ? "Echtzeit-Kurse: die letzte Kerze läuft mit jedem Abschluss mit"
+                : liveStatus.mode === "demo"
+                  ? "Für diesen Wert kein Echtzeit-Strom (wie bei EODHD nur US-Werte, Devisen und Krypto); die letzte Kerze folgt den Kursen mit Verzögerung"
+                  : "Für diesen Wert liefert EODHD keine Echtzeit (nur US-Aktien, Devisen, Krypto): Kurse 15–20 Minuten verzögert"
+            }
+          >
+            {isLive ? "● Echtzeit" : "verzögert"}
+          </span>
+        )}
         <span className="sep" />
         {!comparing && (
           <Seg
@@ -774,7 +851,7 @@ export default function GP({ ticker }: ScreenProps) {
             style={{ color: showVp ? "#ff8000" : undefined }}
             title={
               intradayRange
-                ? "Volumenprofil: Umsatz je Preisstufe aus 5-Minuten-Kerzen, mit POC und Value Area (70 %)"
+                ? "Volumenprofil: Umsatz je Preisstufe aus den Intraday-Kerzen, mit POC und Value Area (70 %)"
                 : "Volumenprofil: Umsatz je Preisstufe im Zeitraum, aus Tageskerzen geschätzt (Volumen gleichmäßig über Tageshoch bis -tief verteilt), mit POC und Value Area (70 %)"
             }
           >

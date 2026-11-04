@@ -75,8 +75,8 @@ async def history(
 
 
 @router.get("/intraday/{ticker}", response_model=Intraday)
-async def intraday(request: Request, ticker: str, days: int = Query(1, ge=1, le=10)):
-    return await T(request).intraday(normalize(ticker), days)
+async def intraday(request: Request, ticker: str, days: int = Query(1, ge=1, le=10), interval: str = Query("5m", pattern="^(1m|5m|15m|1h)$")):
+    return await T(request).intraday(normalize(ticker), days, interval)
 
 
 @router.get("/company/{ticker}", response_model=Company)

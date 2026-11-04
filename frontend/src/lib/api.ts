@@ -2,6 +2,7 @@
 // Aufrufe aus vorab exportierten JSON-Dateien bedient.
 
 import { normalizeTicker } from "./commands";
+import { aggregateIntraday, type Interval } from "./intervals";
 import { runScreen } from "./screen";
 import type {
   Company,
@@ -216,8 +217,10 @@ const staticApi = {
     return tickers.map((t) => all[normalizeStatic(t)] || emptyQuote(t));
   },
   history: async (t: string) => (await series(t)).history,
-  async intraday(t: string, days: number): Promise<Intraday> {
-    const d = (await series(t)).intraday;
+  async intraday(t: string, days: number, interval: Interval = "5m"): Promise<Intraday> {
+    const all = (await series(t)).intraday;
+    // Die statische Demo enthält 5-Minuten-Kerzen; 15 Min und 1 Std daraus, 1 Min gibt es nur mit Server
+    const d = interval === "15m" || interval === "1h" ? aggregateIntraday(all, interval) : all;
     if (!d.t.length) return d;
     // Nach Kalendertagen schneiden: die letzten `days` Sitzungen
     const dayKey = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 10);
@@ -355,7 +358,7 @@ const liveApi = {
   search: (q: string) => request<SearchHit[]>(`/search${qs({ q, limit: 12 })}`),
   quotes: (tickers: string[]) => request<Quote[]>(`/quotes${qs({ tickers: tickers.join(",") })}`),
   history: (t: string) => request<History>(`/history/${enc(t)}`),
-  intraday: (t: string, days: number) => request<Intraday>(`/intraday/${enc(t)}${qs({ days })}`),
+  intraday: (t: string, days: number, interval: Interval = "5m") => request<Intraday>(`/intraday/${enc(t)}${qs({ days, interval })}`),
   company: (t: string) => request<Company>(`/company/${enc(t)}`),
   financials: (t: string, period: string) => request<Financials>(`/financials/${enc(t)}${qs({ period })}`),
   earnings: (t: string) => request<Earnings>(`/earnings/${enc(t)}`),

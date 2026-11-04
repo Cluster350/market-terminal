@@ -6,10 +6,12 @@ import { LAYOUTS, PAGES, useWorkspace } from "./state/workspace";
 import { Boot, shouldBoot } from "./shell/Boot";
 import { isTextEntry } from "./lib/keys";
 import { AlertCenter } from "./shell/AlertCenter";
+import { useLiveQuotesBridge } from "./lib/realtime";
 
 export default function App() {
   const ws = useWorkspace();
   const status = useStatus();
+  useLiveQuotesBridge(); // Echtzeit-Kurse in alle Kursanzeigen dieses Fensters
   const [booting, setBooting] = useState(shouldBoot);
 
   // Standard-Watchlist und Wertpapier passend zum Datenmodus setzen

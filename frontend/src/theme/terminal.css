@@ -721,3 +721,7 @@ table.opt-chain .opt-strike, table.opt-chain .opt-strike-h { text-align: center;
 table.opt-chain td.opt-itm { background: rgba(102, 184, 255, 0.13); }
 .opt-kpiline { padding: 4px 8px; color: var(--muted); border-bottom: 1px solid var(--rule); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-bottom: 1px solid var(--label); }
+
+/* Echtzeit-Kennzeichnung im Kurschart */
+.live-badge { font-size: var(--fs-xs); color: var(--muted); border: 1px solid var(--rule); padding: 1px 6px; white-space: nowrap; letter-spacing: 0.03em; }
+.live-badge.on { color: var(--up); border-color: #1f4d36; }

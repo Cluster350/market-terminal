@@ -608,6 +608,51 @@ class DemoProvider:
         self._bars_cache[key] = bars
         return bars
 
+    def _minute_bars(self, ticker: str, day_index: int) -> list[tuple[int, float, float, float, float, float]]:
+        """1-Minuten-Balken: jede 5-Minuten-Kerze in fünf Minuten zerlegt. Eröffnung, Schluss, Hoch,
+        Tief und Umsatz der 5-Minuten-Kerze bleiben erhalten, damit alle Intervalle zusammenpassen."""
+        day = self._daily(ticker)["days"][day_index]
+        key = ("1m", ticker, day)
+        if key in self._bars_cache:
+            return self._bars_cache[key]  # type: ignore[return-value]
+        out: list[tuple[int, float, float, float, float, float]] = []
+        for ts, o, h, l, c, v in self._bars(ticker, day_index):
+            rng = _rng("min", ticker, ts)
+            span = h - l
+            pts = [o] + [max(l, min(h, o + (c - o) * k / 5 + span * 0.3 * rng.gauss(0, 1))) for k in range(1, 5)] + [c]
+            ih = rng.randrange(5)
+            il = (ih + 1 + rng.randrange(4)) % 5
+            w = [rng.uniform(0.6, 1.4) for _ in range(5)]
+            ws = sum(w)
+            for k in range(5):
+                mo, mc = pts[k], pts[k + 1]
+                mh = max(mo, mc, h) if k == ih else max(mo, mc)
+                ml = min(mo, mc, l) if k == il else min(mo, mc)
+                out.append((ts + 60 * k, mo, mh, ml, mc, v * w[k] / ws))
+        if len(self._bars_cache) > 2000:
+            self._bars_cache.clear()
+        self._bars_cache[key] = out  # type: ignore[assignment]
+        return out
+
+    def live_price(self, ticker: str) -> Optional[tuple[float, int]]:
+        """Kurs „jetzt“ innerhalb der laufenden Minute (für den simulierten Echtzeit-Strom):
+        gleitet von der Eröffnung zum Schluss der Minutenkerze, mit kleinem Rauschen."""
+        try:
+            series = self._daily(ticker)
+        except NotFound:
+            return None
+        now = self.now()
+        ts_now = now.timestamp()
+        for idx in (len(series["days"]) - 1, len(series["days"]) - 2):
+            if idx < 0:
+                continue
+            for ts, o, h, l, c, _v in self._minute_bars(ticker, idx):
+                if ts <= ts_now < ts + 60:
+                    frac = (ts_now - ts) / 60
+                    noise = _rng("tick", ticker, int(ts_now)).gauss(0, 1) * (h - l) * 0.15
+                    return max(l, min(h, o + (c - o) * frac + noise)), int(ts_now * 1000)
+        return None
+
     def _visible_bars(self, ticker: str, day_index: int) -> list[tuple[int, float, float, float, float, float]]:
         bars = self._bars(ticker, day_index)
         cutoff = self.now().timestamp()
@@ -760,11 +805,13 @@ class DemoProvider:
             v=[None if x is None else round(x) for x in e["v"]],
         )
 
-    async def intraday(self, ticker: str, days: int) -> Intraday:
+    async def intraday(self, ticker: str, days: int, interval: str = "5m") -> Intraday:
         self._require(ticker)
         series = self._daily(ticker)
         n = len(series["days"])
-        out = Intraday(ticker=ticker, interval="5m", t=[], o=[], h=[], l=[], c=[], v=[])
+        minute = interval == "1m"
+        out = Intraday(ticker=ticker, interval="1m" if minute else "5m", t=[], o=[], h=[], l=[], c=[], v=[])
+        cutoff = self.now().timestamp()
         # Die letzten `days` Sitzungen mit Daten (vor Handelsbeginn zählt der Vortag)
         sessions: list[int] = []
         i = n - 1
@@ -773,13 +820,18 @@ class DemoProvider:
                 sessions.append(i)
             i -= 1
         for i in reversed(sessions):
-            for ts, bo, bh, bl, bc, bv in self._visible_bars(ticker, i):
+            bars = [b for b in self._minute_bars(ticker, i) if b[0] + 60 <= cutoff] if minute else self._visible_bars(ticker, i)
+            for ts, bo, bh, bl, bc, bv in bars:
                 out.t.append(ts)
                 out.o.append(round(bo, 5))
                 out.h.append(round(bh, 5))
                 out.l.append(round(bl, 5))
                 out.c.append(round(bc, 5))
                 out.v.append(round(bv) if series["v"][i] is not None else None)
+        if interval == "1h":
+            from ..services.intraday import aggregate
+
+            return aggregate(out, "1h")
         return out
 
     # --- Optionen ---------------------------------------------------------------------

@@ -67,6 +67,10 @@ class Settings:
         default_factory=lambda: os.environ.get("PORTFOLIO_DIR", "").strip() or str(Path.home() / ".market-terminal")
     )
 
+    # Echtzeit-Kurse: "auto" = EODHD-WebSocket (US, Devisen, Krypto; Paket All-In-One) bzw. Demo-Strom,
+    # "off" = nur verzögerte Kurse
+    realtime: str = field(default_factory=lambda: os.environ.get("REALTIME", "auto").strip().lower() or "auto")
+
     # Kursalarme: Prüfabstand in Sekunden (0 = automatisch: Demo 15 s, EODHD 60 s)
     alert_interval: int = field(default_factory=lambda: max(0, _int("ALERT_INTERVAL_SECONDS", 0)))
 

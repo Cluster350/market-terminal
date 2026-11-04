@@ -175,9 +175,9 @@ class EODHDProvider:
             raise NotFound(f"Keine Kursdaten für {ticker}.")
         return hist
 
-    async def intraday(self, ticker: str, days: int) -> Intraday:
-        # 5 Minuten auch für 10 Sitzungen: Market Profile (TPO) braucht 30-Minuten-Abschnitte
-        interval = "5m"
+    async def intraday(self, ticker: str, days: int, interval: str = "5m") -> Intraday:
+        # EODHD liefert 1m, 5m und 1h; Standard 5 Minuten (TPO braucht 30-Minuten-Abschnitte)
+        interval = interval if interval in ("1m", "5m", "1h") else "5m"
         now = dt.datetime.now(dt.timezone.utc)
         start = now - dt.timedelta(days=days * 7 // 5 + 4)  # Wochenenden und Feiertage überbrücken
         data = await self.client.get(

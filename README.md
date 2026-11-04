@@ -138,13 +138,31 @@ sich sauber aus Kassakursen und Zinskurven ableiten lässt, und kennzeichnet es 
 Als Zinsen dienen die Renditen kurzlaufender Staatsanleihen (3 Monate bis 2 Jahre). Echte
 Futures (Index, Rohstoffe, Zinsen) sind mit der IBKR-Anbindung geplant: `docs/PLAN-FUTURES.md`.
 
+## Echtzeit-Kurse und Intervalle
+
+- **Intervalle:** In 1T und 5T wählt der Kurschart (GP) **1 Min, 5 Min, 15 Min oder 1 Std**
+  (15 Minuten aus 5-Minuten-Kerzen gebildet). Die Einstellung bleibt gespeichert.
+- **Echtzeit (Paket All-In-One):** Über den EODHD-WebSocket laufen **US-Aktien** (mit Vor- und
+  Nachbörse), **Devisen** und **Krypto** in Echtzeit. Kopfzeilen, Watchlist, Depot, Alarme und
+  die **laufende Kerze** im Chart folgen jedem Abschluss; im Chart steht „● Echtzeit“.
+  Standardmäßig höchstens 50 Werte gleichzeitig: zuerst die geöffneten Panels, dann Alarme und
+  Depot.
+- **Übrige Börsen (z. B. Xetra):** EODHD bietet dort keine Echtzeit. Das Terminal fragt die
+  verzögerten Kurse minütlich ab, die laufende Kerze hat dann 15–20 Minuten Rückstand („verzögert“).
+- **Minutenkerzen des laufenden Tages** liefert EODHD erst Stunden nach Börsenschluss; was der
+  Strom seit dem Start des Terminals gesehen hat, füllt diese Lücke.
+- **Demo:** ein simulierter Strom (jede Sekunde ein Kurs) mit denselben Regeln: US-Werte, Devisen
+  und Krypto live, europäische Werte verzögert.
+- `EODHD-pruefen-Windows.bat` zeigt, ob Minutendaten und der WebSocket mit dem eigenen Schlüssel
+  freigeschaltet sind. `REALTIME=off` in der `.env` schaltet den Strom ab.
+
 ## Volumenprofil und Market Profile
 
 - **VP im Kurschart (GP):** Häkchen „VP“ zeigt am rechten Rand, wie viel Umsatz auf jeder
   Preisstufe im gewählten Zeitraum lief (grün aus steigenden, rot aus fallenden Kerzen). Orange
   ist der **POC** (Preis mit dem meisten Umsatz), kräftig die **Value Area** mit 70 % des
   Volumens; POC, VAH und VAL stehen zusätzlich als Linien an der Preisachse. In 1T und 5T aus
-  5-Minuten-Kerzen, in längeren Zeiträumen aus Tageskerzen geschätzt.
+  den Intraday-Kerzen des gewählten Intervalls, in längeren Zeiträumen aus Tageskerzen geschätzt.
 - **TPO (Market Profile)**, z. B. `SAP GR TPO` oder `MP`: je Handelstag ein Profil aus
   30-Minuten-Buchstaben (A = erste halbe Stunde). Blau die erste Stunde (Initial Balance),
   hinterlegt die Value Area, orange der POC, ◆ der Schlusskurs, grüne Kante die Eröffnung.
