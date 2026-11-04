@@ -46,6 +46,7 @@ from .base import (
     MACRO_INDICATORS,
     Catalog,
     Instrument,
+    CURVE_TENORS,
     WORLD,
     ScreenFilter,
     curve_catalog,
@@ -202,9 +203,9 @@ _FX_NAMES = {i.ticker: i for i in FX}
 _COMMODITY = {c[0]: c for c in D.COMMODITIES}
 _CURVES = curve_catalog()
 _BOND = {t: (cc, tenor, years) for cc, (_, pts) in _CURVES.items() for tenor, years, t in pts}
-# Zehnjährige Anleihen weiterer Länder (nur für die Weltkarte, keine ganze Zinskurve)
+# Anleihen weiterer Länder: zehnjährige für die Weltkarte, kurze Laufzeiten für Terminkurse (FWD)
 _WORLD_BOND_NAMES = {cc: name for _, name, cc, _, _ in WORLD if cc and cc not in _CURVES}
-_BOND.update({f"{cc}10Y.GBOND": (cc, "10Y", 10.0) for cc in _WORLD_BOND_NAMES})
+_BOND.update({f"{cc}{tenor}.GBOND": (cc, tenor, years) for cc in _WORLD_BOND_NAMES for tenor, years in CURVE_TENORS})
 
 TIMING_ORDER = {"BeforeMarket": 0, "AfterMarket": 2}  # vorbörslich zuerst
 

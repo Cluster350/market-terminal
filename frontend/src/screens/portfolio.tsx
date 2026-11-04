@@ -24,6 +24,7 @@ import {
   type Position,
   type PositionRow,
 } from "../lib/portfolio";
+import { useHedge } from "../lib/forwards";
 import type { ScreenProps } from "./types";
 
 const EChart = lazy(() => import("../components/EChart"));
@@ -214,6 +215,45 @@ function Bars({ title, slices, label }: { title: string; slices: { key: string; 
           <span className="alloc-v">{fmtPct(s.weight, 1, false)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Was die Absicherung der Fremdwährungen pro Jahr kosten (−) oder bringen (+) würde (aus FWD). */
+export function hedgeImpact(slices: { key: string; weight: number }[], base: string, hedge: Record<string, number | null>): number | null {
+  let sum = 0;
+  let any = false;
+  for (const s of slices) {
+    if (s.key === base) continue;
+    const h = hedge[s.key];
+    if (h === null || h === undefined) continue;
+    sum += (s.weight / 100) * h;
+    any = true;
+  }
+  return any ? sum : null;
+}
+
+function HedgeBox({ base, slices }: { base: string; slices: { key: string; weight: number; value: number }[] }) {
+  const foreign = slices.filter((s) => s.key !== base && /^[A-Z]{3}$/.test(s.key) && s.weight > 0.5);
+  const q = useHedge(base, foreign.map((s) => s.key), foreign.length > 0);
+  if (!foreign.length || !q.data?.rows.length) return null;
+  const by = Object.fromEntries(q.data.rows.map((r) => [r.currency, r.hedge1yPa]));
+  const total = hedgeImpact(foreign, base, by);
+  return (
+    <div style={{ padding: "0 10px 8px" }}>
+      <div className="section-title" title={explain("Absicherungskosten")}>Währungsabsicherung (Devisentermin, 1 Jahr)</div>
+      <div className="hedge-chips">
+        {foreign.map((s) => (
+          <span key={s.key} className="hedge-chip" title={`${fmtPct(s.weight, 1, false)} des Depots in ${s.key}`}>
+            {s.key} <span className={tone(by[s.key], 2)}>{fmtPct(by[s.key], 2)} p. a.</span>
+          </span>
+        ))}
+        {total !== null && (
+          <span className="small muted">
+            Alles absichern: <span className={tone(total, 2)}>{fmtPct(total, 2)}</span> des Depots pro Jahr · Details in FWD
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -413,6 +453,7 @@ export function PORT(_: ScreenProps) {
             <Bars title="Währungen" slices={a.allocation.currency ?? []} />
           </div>
         )}
+        {a && a.rows.length > 0 && <HedgeBox base={p.base} slices={a.allocation.currency ?? []} />}
         {a && a.notes.length > 0 && (
           <div className="notes">
             {a.notes.map((n) => (

@@ -13,7 +13,7 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 
 Jedes Panel kann über sein Auswahlfeld oder die Befehlszeile jede Funktion zeigen; das Layout
 jeder Seite ist umschaltbar (1, 2, 3 oder 4 Panels). Weitere Funktionen: HP (Kurshistorie),
-ERN (Earnings), DVD (Dividenden), ANR (Analysten), RV (Peer-Vergleich), TPO (Market Profile), EVTS (Earnings-Kalender),
+ERN (Earnings), DVD (Dividenden), ANR (Analysten), RV (Peer-Vergleich), TPO (Market Profile), FWD (Terminkurse), EVTS (Earnings-Kalender),
 CMDT (Rohstoffe), SPRD (Zinsspreads), ECST (Länderdaten), W (Watchlist), HELP.
 
 **Mehrere Monitore:** „⧉ FENSTER“ öffnet die aktuelle Seite, „⧉“ im Panelkopf eine einzelne
@@ -96,6 +96,21 @@ Die Weltkarte färbt rund 35 Länder nach einer Kennzahl ein; daneben steht die 
   Index bzw. Anleihe, ein Klick öffnet den Index- bzw. Renditechart (Konjunktur: ECST).
 - Mit EODHD zeigt `EODHD-pruefen-Windows.bat`, ob alle Länderindizes und Anleihen im Plan
   enthalten sind; fehlende Länder bleiben auf der Karte grau.
+
+## Terminkurse (FWD) und Futures
+
+EODHD liefert keine Börsen-Futures und keine Devisen-Terminkurse. FWD **berechnet** deshalb, was
+sich sauber aus Kassakursen und Zinskurven ableiten lässt, und kennzeichnet es so:
+- **Devisen:** Terminkurse 1 Woche bis 2 Jahre, Swap-Punkte und Auf-/Abschlag pro Jahr nach der
+  Zinsparität (die Währung mit dem niedrigeren Zins notiert per Termin teurer), mit Terminkurve.
+- **Absicherung:** Was es pro Jahr kostet (−) oder bringt (+), Fremdwährungsanlagen gegen die
+  Heimatwährung (EUR, USD, CHF oder GBP) abzusichern. Das Depot (PORT) zeigt dasselbe für seine
+  Fremdwährungen und den Effekt einer vollständigen Absicherung.
+- **Zinsen:** Vom Anleihemarkt eingepreiste künftige Zinsen (1Y1Y, 5Y5Y, 10Y10Y und die
+  Einjahreszinsen der nächsten 15 Jahre) mit Veränderung zum Vormonat.
+
+Als Zinsen dienen die Renditen kurzlaufender Staatsanleihen (3 Monate bis 2 Jahre). Echte
+Futures (Index, Rohstoffe, Zinsen) sind mit der IBKR-Anbindung geplant: `docs/PLAN-FUTURES.md`.
 
 ## Volumenprofil und Market Profile
 

@@ -18,6 +18,7 @@ import sys
 from app.config import Settings
 from app.errors import TerminalError
 from app.providers.base import WORLD, ScreenFilter
+from app.services.forwards import CCY_COUNTRY, MONEY_TENORS
 from app.providers.eodhd import EODHDProvider
 
 OK = "\033[32mOK\033[0m"
@@ -131,6 +132,22 @@ async def main(ticker: str) -> None:
                         missing.append(f"{ticker} ({name})")
                 except TerminalError:
                     missing.append(f"{ticker} ({name})")
+        # Terminkurse (FWD): kurze Zinsen 3M–2J je Währung
+        fwd_missing: list[str] = []
+        for ccy, cc in sorted({k: v for k, v in CCY_COUNTRY.items() if k != "CNY"}.items()):
+            have = []
+            for tenor, _ in MONEY_TENORS:
+                try:
+                    if (await p.history(f"{cc}{tenor}.GBOND")).c:
+                        have.append(tenor)
+                except TerminalError:
+                    pass
+            if not have:
+                fwd_missing.append(ccy)
+        if fwd_missing:
+            print(f"[{WARN}] Terminkurse (FWD): keine kurzen Zinsen (3M–2J) für {', '.join(fwd_missing)} – diese Währungen fehlen in FWD")
+        else:
+            print(f"[{OK}] Terminkurse (FWD): kurze Zinsen für alle Währungen vorhanden")
         total = sum(1 for _, _, cc, idx, _ in WORLD for t in (idx, cc) if t)
         if missing:
             print(f"[{WARN}] Weltkarte: {total - len(missing)} von {total} Reihen da, fehlen: {', '.join(missing)}")

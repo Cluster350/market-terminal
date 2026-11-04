@@ -695,3 +695,14 @@ table.corr td { width: 42px; height: 20px; text-align: center; color: var(--valu
 .wmap-row { display: grid; grid-template-columns: 2.5ch minmax(0, 1fr) auto; gap: 6px; width: 100%; padding: 2px 8px; background: transparent; border: 0; border-bottom: 1px solid #141414; text-align: left; font-size: var(--fs-s); color: var(--value); }
 .wmap-row:hover { background: var(--hover); }
 .wmap-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- Terminkurse (FWD) ------------------------------------------------------------------ */
+.fwd-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 4px 14px; padding: 4px 8px; }
+@container (max-width: 820px) { .fwd-grid { grid-template-columns: minmax(0, 1fr); } }
+.hedge-bar { position: relative; display: block; height: 8px; background: #121212; }
+.hedge-bar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--rule-strong); }
+.hedge-bar > span { position: absolute; top: 0; height: 100%; }
+.hedge-bar > span.pos { background: var(--up); }
+.hedge-bar > span.neg { background: var(--down); }
+.hedge-chips { display: flex; gap: 6px 12px; flex-wrap: wrap; align-items: center; font-size: var(--fs-s); }
+.hedge-chip { border: 1px solid var(--rule-strong); padding: 1px 6px; }

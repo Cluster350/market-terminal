@@ -177,6 +177,14 @@ def main(target: str) -> None:
         for group in ("equity", "rates", "macro"):
             write(f"macro/worldmap-{group}.json", get(f"/api/macro/worldmap?group={group}"))
 
+        # Terminkurse: Devisenpaare, Absicherung je Heimatwährung, Forward-Zinsen je Land
+        for pair in ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "EURGBP", "EURCHF", "EURJPY", "AUDUSD", "USDCAD", "NZDUSD", "USDCNH"):
+            write(f"forwards/fx-{pair}.json", get(f"/api/forwards/fx?pair={pair}"))
+        for home in ("EUR", "USD", "CHF", "GBP"):
+            write(f"forwards/hedge-{home}.json", get(f"/api/forwards/hedge?home={home}"))
+        for cc in curve_catalog():
+            write(f"forwards/rates-{cc}.json", get(f"/api/forwards/rates?country={cc}"))
+
         # Depot: Muster-Depot und seine Kennzahlen (im statischen Build nur lesbar)
         write("portfolio/portfolio.json", get("/api/portfolio"))
         write("portfolio/analytics.json", get("/api/portfolio/analytics"))
