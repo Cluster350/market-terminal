@@ -143,18 +143,20 @@ Futures (Index, Rohstoffe, Zinsen) sind mit der IBKR-Anbindung geplant: `docs/PL
 - **Intervalle:** In 1T und 5T wählt der Kurschart (GP) **1 Min, 5 Min, 15 Min oder 1 Std**
   (15 Minuten aus 5-Minuten-Kerzen gebildet). Die Einstellung bleibt gespeichert.
 - **Echtzeit (Paket All-In-One):** Über den EODHD-WebSocket laufen **US-Aktien** (mit Vor- und
-  Nachbörse), **Devisen** und **Krypto** in Echtzeit. Kopfzeilen, Watchlist, Depot, Alarme und
-  die **laufende Kerze** im Chart folgen jedem Abschluss; im Chart steht „● Echtzeit“.
+  Nachbörse), **europäische Aktien** (Cboe Europe: 18 Börsen, z. B. Xetra, London, Paris,
+  Amsterdam, Schweiz), **Devisen** und **Krypto** in Echtzeit. Kopfzeilen, Watchlist, Depot,
+  Alarme und die **laufende Kerze** im Chart folgen jedem Abschluss; im Chart steht „● Echtzeit“.
   Standardmäßig höchstens 50 Werte gleichzeitig: zuerst die geöffneten Panels, dann Alarme und
   Depot.
-- **Übrige Börsen (z. B. Xetra):** EODHD bietet dort keine Echtzeit. Das Terminal fragt die
-  verzögerten Kurse minütlich ab, die laufende Kerze hat dann 15–20 Minuten Rückstand („verzögert“).
+- **Ohne Strom (Indizes, Anleihen, Rohstoffe, Werte über der Grenze):** Das Terminal fragt die
+  verzögerten Kurse minütlich ab, die laufende Kerze folgt mit Rückstand („verzögert“). Ist der
+  Europa-Strom im Paket nicht enthalten, laufen europäische Werte automatisch verzögert weiter.
 - **Minutenkerzen des laufenden Tages** liefert EODHD erst Stunden nach Börsenschluss; was der
   Strom seit dem Start des Terminals gesehen hat, füllt diese Lücke.
-- **Demo:** ein simulierter Strom (jede Sekunde ein Kurs) mit denselben Regeln: US-Werte, Devisen
-  und Krypto live, europäische Werte verzögert.
+- **Demo:** ein simulierter Strom (jede Sekunde ein Kurs) mit denselben Regeln: Aktien, Devisen
+  und Krypto live, Indizes verzögert.
 - `EODHD-pruefen-Windows.bat` zeigt, ob Minutendaten und der WebSocket mit dem eigenen Schlüssel
-  freigeschaltet sind. `REALTIME=off` in der `.env` schaltet den Strom ab.
+  freigeschaltet sind (US, Europa, Devisen). `REALTIME=off` in der `.env` schaltet den Strom ab.
 
 ## Volumenprofil und Market Profile
 

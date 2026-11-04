@@ -800,9 +800,7 @@ export default function GP({ ticker }: ScreenProps) {
             title={
               isLive
                 ? "Echtzeit-Kurse: die letzte Kerze läuft mit jedem Abschluss mit"
-                : liveStatus.mode === "demo"
-                  ? "Für diesen Wert kein Echtzeit-Strom (wie bei EODHD nur US-Werte, Devisen und Krypto); die letzte Kerze folgt den Kursen mit Verzögerung"
-                  : "Für diesen Wert liefert EODHD keine Echtzeit (nur US-Aktien, Devisen, Krypto): Kurse 15–20 Minuten verzögert"
+                : "Für diesen Wert gibt es keinen Echtzeit-Strom (Indizes, Anleihen, Rohstoffe, einzelne Börsen) oder er ist nicht freigeschaltet bzw. über der Grenze von 50 Werten: Kurse verzögert"
             }
           >
             {isLive ? "● Echtzeit" : "verzögert"}

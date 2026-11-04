@@ -171,6 +171,7 @@ async def main(ticker: str) -> None:
             ),
         )
         await check("Echtzeit-WebSocket US-Aktien (AAPL)", ws_probe(cfg.eodhd_api_key, "us", "AAPL"), describe_ws)
+        await check("Echtzeit-WebSocket Europa (SAP.XETRA)", ws_probe(cfg.eodhd_api_key, "eu", "SAP.XETRA"), describe_ws)
         await check("Echtzeit-WebSocket Devisen (EURUSD)", ws_probe(cfg.eodhd_api_key, "forex", "EURUSD"), describe_ws)
 
         # Optionen (OMON): Zusatzprodukt im EODHD-Marketplace; ein Abruf kostet 10 Calls je Seite

@@ -82,9 +82,9 @@ def test_hub_ticks_bars_overlay_and_subscriptions():
 
     src = FakeSource()
     hub = RealtimeHub(src, limit=2, now_ms=lambda: 1_762_268_500_000)
-    lst = hub.listen(["NWND.US", "ELBT.XETRA", "EURUSD.FOREX", "BTC-USD.CC"])
-    assert src.symbols == ["NWND.US", "EURUSD.FOREX"]  # nur echtzeitfähige, höchstens limit
-    assert hub.delayed_wanted() == ["ELBT.XETRA"]
+    lst = hub.listen(["NWND.US", "GDAXI.INDX", "ELBT.XETRA", "BTC-USD.CC"])
+    assert src.symbols == ["NWND.US", "ELBT.XETRA"]  # nur echtzeitfähige (auch Xetra), höchstens limit
+    assert hub.delayed_wanted() == ["GDAXI.INDX"]  # Indizes kommen verzögert
     hub.on_tick(Tick("NWND.US", 100.0, 1_762_268_460_000, 10))
     hub.on_tick(Tick("NWND.US", 101.0, 1_762_268_470_000, 5))
     hub.on_tick(Tick("NWND.US", 99.0, 1_762_268_400_000))  # verspätet: ignoriert
@@ -94,11 +94,11 @@ def test_hub_ticks_bars_overlay_and_subscriptions():
     q = Quote(ticker="NWND.US", last=98.0, prev_close=97.0, high=99.0, low=96.0, timestamp="2025-11-04T14:00:00Z")
     o = hub.overlay(q)
     assert o.last == 101.0 and o.high == 101.0 and o.change_pct == pytest.approx((101 / 97 - 1) * 100) and not o.delayed
-    hub.on_tick(Tick("ELBT.XETRA", 50.0, 1_762_268_470_000, delayed=True))
-    assert hub.overlay(Quote(ticker="ELBT.XETRA", last=49.0, prev_close=48.0)).last == 49.0  # verzögerte Ticks ersetzen keine Kurse
+    hub.on_tick(Tick("GDAXI.INDX", 50.0, 1_762_268_470_000, delayed=True))
+    assert hub.overlay(Quote(ticker="GDAXI.INDX", last=49.0, prev_close=48.0)).last == 49.0  # verzögerte Ticks ersetzen keine Kurse
     hub.unlisten(lst)
     assert src.symbols == []
-    assert realtime_capable("AAPL.US") and not realtime_capable("SAP.XETRA")
+    assert realtime_capable("AAPL.US") and realtime_capable("SAP.XETRA") and not realtime_capable("GDAXI.INDX")
 
 
 def test_eodhd_message_parsing():
@@ -111,7 +111,22 @@ def test_eodhd_message_parsing():
     assert parse("us", {"status_code": 200, "message": "Authorized"}) is None
     assert parse("us", {"s": "AAPL", "p": 0}) is None
     assert parse("us", {"s": "AAPL", "p": 1.0, "dp": True}) is None
-    assert ws_symbol("BTC-USD.CC") == ("crypto", "BTC-USD") and ws_symbol("SAP.XETRA")[0] is None
+    assert ws_symbol("BTC-USD.CC") == ("crypto", "BTC-USD") and ws_symbol("SAP.XETRA") == ("eu", "SAP.XETRA")
+    e = parse("eu", {"s": "SAP.XETRA", "p": 182.5, "v": 30, "t": 1726000000500})
+    assert (e.ticker, e.price) == ("SAP.XETRA", 182.5)
+    assert ws_symbol("GDAXI.INDX")[0] is None
+
+
+def test_eodhd_source_disables_missing_stream():
+    from app.realtime.eodhd_ws import EodhdSource
+
+    src = EodhdSource("KEY")
+    hub = RealtimeHub(src)
+    hub.listen(["SAP.XETRA", "AAPL.US"])
+    assert src.desired == {"eu": {"SAP.XETRA"}, "us": {"AAPL"}}
+    src.disabled.add("eu")  # Paket ohne Europa-Strom
+    hub.refresh()
+    assert hub.symbols == ["AAPL.US"] and hub.delayed_wanted() == ["SAP.XETRA"]
 
 
 def test_demo_source_feeds_hub():
@@ -134,9 +149,12 @@ def test_intervals_and_stream_endpoints():
         assert r["interval"] == "15m" and all(t % 900 == 0 for t in r["t"])
         assert c.get("/api/intraday/NWND US", params={"interval": "2m"}).status_code == 422
         s = c.get("/api/realtime/status", params={"tickers": "NWND US,ELBT GR"}).json()
-        assert s["mode"] == "demo" and "ELBT.XETRA" in s["delayed"]  # NWND kann als Depotwert schon im Strom sein
+        assert s["mode"] == "demo"
+        with c.stream("GET", "/api/stream", params={"tickers": "DAX Index", "once": "1"}) as resp:
+            body = "".join(resp.iter_text())
+        assert '"delayed": ["GDAXI.INDX"]' in body  # Indizes nicht im Echtzeit-Strom
         with c.stream("GET", "/api/stream", params={"tickers": "NWND US,ELBT GR", "once": "1"}) as resp:
             assert resp.headers["content-type"].startswith("text/event-stream")
             body = "".join(resp.iter_text())
         status = json.loads(body.split("event: status\ndata: ")[1].split("\n")[0])
-        assert status["live"] == ["NWND.US"] and status["delayed"] == ["ELBT.XETRA"]
+        assert status["live"] == ["NWND.US", "ELBT.XETRA"] and status["delayed"] == []

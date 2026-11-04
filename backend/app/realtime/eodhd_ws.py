@@ -1,8 +1,9 @@
-"""EODHD-Echtzeit über WebSocket: US-Aktien (Abschlüsse, mit Vor- und Nachbörse), Devisen, Krypto.
+"""EODHD-Echtzeit über WebSocket: US- und europäische Aktien (Abschlüsse), Devisen, Krypto.
 
-Endpunkte wss://ws.eodhistoricaldata.com/ws/{us|forex|crypto}?api_token=…; nach dem Verbinden
-{"action": "subscribe", "symbols": "AAPL,TSLA"}. Nachrichten (tolerant gelesen):
-- us:     {"s": "AAPL", "p": 227.3, "v": 100, "t": 1726…(ms)}
+Endpunkte wss://ws.eodhistoricaldata.com/ws/{us|eu|forex|crypto}?api_token=…; nach dem Verbinden
+{"action": "subscribe", "symbols": "AAPL,TSLA"} bzw. für Europa "SAP.XETRA,SHEL.LSE".
+Nachrichten (tolerant gelesen):
+- us, eu: {"s": "AAPL" bzw. "SAP.XETRA", "p": 227.3, "v": 100, "t": 1726…(ms)}
 - forex:  {"s": "EURUSD", "a": 1.0937, "b": 1.0936, "t": …}
 - crypto: {"s": "BTC-USD", "p": "64000.1", "q": "0.01", "t": …}
 Status: {"status_code": 200, "message": "Authorized"}; Fehler mit status_code 4xx.
@@ -17,19 +18,21 @@ import logging
 import time
 from typing import Any, Optional
 
-from .hub import RealtimeHub, Tick
+from .hub import EU_SUFFIXES, RealtimeHub, Tick
 
 log = logging.getLogger("terminal.realtime")
 
 WS_BASE = "wss://ws.eodhistoricaldata.com/ws/"
-ENDPOINT = {"US": "us", "FOREX": "forex", "CC": "crypto"}
-SUFFIX = {v: k for k, v in ENDPOINT.items()}
+ENDPOINT = {"US": "us", "FOREX": "forex", "CC": "crypto", **{ex: "eu" for ex in EU_SUFFIXES}}
+SUFFIX = {"us": "US", "forex": "FOREX", "crypto": "CC"}
 
 
 def ws_symbol(ticker: str) -> tuple[Optional[str], str]:
-    """Terminal-Ticker -> (Endpunkt, Kürzel im Strom): AAPL.US -> (us, AAPL), BTC-USD.CC -> (crypto, BTC-USD)."""
+    """Terminal-Ticker -> (Endpunkt, Kürzel im Strom): AAPL.US -> (us, AAPL), SAP.XETRA -> (eu, SAP.XETRA),
+    BTC-USD.CC -> (crypto, BTC-USD)."""
     code, _, ex = ticker.rpartition(".")
-    return ENDPOINT.get(ex), code
+    ep = ENDPOINT.get(ex)
+    return ep, (ticker if ep == "eu" else code)
 
 
 def _num(x: Any) -> Optional[float]:
@@ -45,6 +48,8 @@ def parse(endpoint: str, msg: Any) -> Optional[Tick]:
     if not isinstance(msg, dict) or not msg.get("s"):
         return None
     sym = str(msg["s"])
+    if endpoint == "eu" and "." not in sym:
+        return None  # europäische Kürzel kommen mit Börse (SAP.XETRA)
     ts = _num(msg.get("t"))
     ts_ms = int(ts) if ts else int(time.time() * 1000)
     if ts_ms < 10_000_000_000:  # Sekunden statt Millisekunden
@@ -61,7 +66,7 @@ def parse(endpoint: str, msg: Any) -> Optional[Tick]:
             return None
     if not price or price <= 0:
         return None
-    return Tick(f"{sym}.{SUFFIX[endpoint]}", price, ts_ms, volume)
+    return Tick(sym if endpoint == "eu" else f"{sym}.{SUFFIX[endpoint]}", price, ts_ms, volume)
 
 
 class EodhdSource:
@@ -72,8 +77,13 @@ class EodhdSource:
         self.base = base
         self.desired: dict[str, set[str]] = {}
         self.version = 0
+        self.disabled: set[str] = set()  # Endpunkte, die der Schlüssel nicht freigibt (z. B. eu)
         self._tasks: dict[str, asyncio.Task] = {}
         self._changed = asyncio.Event()
+
+    def capable(self, ticker: str) -> bool:
+        ep, _ = ws_symbol(ticker)
+        return ep is not None and ep not in self.disabled
 
     def set_symbols(self, symbols: list[str]) -> None:
         desired: dict[str, set[str]] = {}
@@ -138,8 +148,11 @@ class EodhdSource:
                                 text = str(msg.get("message") or "")[:200]
                                 hub.message = f"EODHD-Echtzeit ({ep}): {text or code}"
                                 log.warning("EODHD-WebSocket %s: %s %s", ep, code, text)
-                                if code in (401, 403):
-                                    hub.connected = False
+                                # Schlüssel/Paket ohne diesen Strom (beim Europa-Strom jeder 4xx außer
+                                # „nur begrenzte Symbole“): Endpunkt abschalten, Werte laufen verzögert
+                                if code in (401, 402, 403) or (ep == "eu" and 400 <= code < 500 and code != 422):
+                                    if ep != "eu":
+                                        hub.connected = False
                                     raise PermissionError(text)
                             continue
                         tick = parse(ep, msg)
@@ -148,11 +161,26 @@ class EodhdSource:
             except asyncio.CancelledError:
                 raise
             except PermissionError:
-                # Schlüssel/Paket ohne WebSocket: selten neu versuchen, verzögerte Kurse laufen weiter
-                hub.message = hub.message or "Echtzeit nicht freigeschaltet (Paket ohne WebSocket?)."
-                await asyncio.sleep(600)
+                await self._disable(ep, hub)
             except Exception as exc:  # noqa: BLE001 – Netz weg, Server neu gestartet …
-                hub.connected = False
+                # Handshake mit 4xx (Endpunkt im Paket nicht enthalten): wie fehlende Freischaltung
+                status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
+                if isinstance(status, int) and 400 <= status < 500:
+                    hub.message = f"EODHD-Echtzeit ({ep}): HTTP {status}"
+                    await self._disable(ep, hub)
+                    continue
+                if ep != "eu":
+                    hub.connected = False
                 log.info("EODHD-WebSocket %s getrennt (%s), neuer Versuch in %.0f s", ep, exc, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60.0)
+
+    async def _disable(self, ep: str, hub: RealtimeHub) -> None:
+        """Schlüssel/Paket ohne diesen Strom: Werte laufen über die verzögerten Kurse weiter,
+        nach 10 Minuten ein neuer Versuch."""
+        hub.message = hub.message or "Echtzeit nicht freigeschaltet (Paket ohne WebSocket?)."
+        self.disabled.add(ep)
+        hub.refresh()
+        await asyncio.sleep(600)
+        self.disabled.discard(ep)
+        hub.refresh()

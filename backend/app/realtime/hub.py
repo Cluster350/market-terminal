@@ -1,11 +1,12 @@
 """Echtzeit-Kurse: Abos verwalten, Ticks sammeln, Minutenkerzen bilden und an die Browser verteilen.
 
 Quellen:
-- EODHD-WebSocket (Paket All-In-One bzw. EOD+Intraday All World Extended): US-Aktien mit Vor- und
-  Nachbörse, Devisen und Krypto in Echtzeit, standardmäßig höchstens 50 Werte gleichzeitig.
+- EODHD-WebSocket (Paket All-In-One bzw. EOD+Intraday): US-Aktien mit Vor- und Nachbörse, europäische
+  Aktien (Cboe Europe, 18 Börsen, z. B. Xetra, London, Paris), Devisen und Krypto in Echtzeit,
+  standardmäßig höchstens 50 Werte gleichzeitig.
 - Demo: simulierter Strom aus den Demo-Kursen.
-Für alle übrigen Werte (z. B. Xetra) fragt der Verteiler die verzögerten Kurse regelmäßig ab und
-kennzeichnet sie als verzögert – daraus entsteht die laufende Kerze mit 15–20 Minuten Rückstand.
+Für alle übrigen Werte (Indizes, Anleihen, Rohstoffe, Börsen ohne Strom) fragt der Verteiler die
+verzögerten Kurse regelmäßig ab und kennzeichnet sie als verzögert.
 """
 
 from __future__ import annotations
@@ -25,11 +26,13 @@ log = logging.getLogger("terminal.realtime")
 MAX_SYMBOLS = 50  # EODHD-Standard je API-Schlüssel (über alle Verbindungen)
 MAX_DELAYED = 20  # verzögert abgefragte Werte (je Abfrage 1 API-Call pro Wert)
 DELAYED_EVERY = 60.0  # Sekunden; EODHD aktualisiert verzögerte Kurse etwa minütlich
-REALTIME_SUFFIXES = ("US", "FOREX", "CC")
+# Europäische Börsen im EODHD-Echtzeitstrom (Cboe Europe): Kürzel wie SAP.XETRA, SHEL.LSE, ASML.AS
+EU_SUFFIXES = ("XETRA", "LSE", "PA", "AS", "BR", "SW", "MI", "MC", "ST", "CO", "OL", "HE", "VI", "LS", "IR")
+REALTIME_SUFFIXES = ("US", "FOREX", "CC", *EU_SUFFIXES)
 
 
 def realtime_capable(ticker: str) -> bool:
-    """Gibt es für diesen Wert einen Echtzeit-Strom? (US-Aktien/ETFs, Devisen, Krypto)"""
+    """Gibt es für diesen Wert einen Echtzeit-Strom? (US- und europäische Aktien/ETFs, Devisen, Krypto)"""
     return ticker.rpartition(".")[2] in REALTIME_SUFFIXES
 
 
@@ -110,7 +113,14 @@ class RealtimeHub:
         return self.source.name if self.source else "aus"
 
     def capable(self, ticker: str) -> bool:
-        return self.source is not None and realtime_capable(ticker)
+        if self.source is None:
+            return False
+        check = getattr(self.source, "capable", None)
+        return check(ticker) if callable(check) else realtime_capable(ticker)
+
+    def refresh(self) -> None:
+        """Nach einer Änderung der Quelle (z. B. Europa-Strom nicht freigeschaltet) neu verteilen."""
+        self._resubscribe()
 
     def listen(self, tickers: list[str]) -> Listener:
         lst = Listener(tickers)
