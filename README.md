@@ -44,6 +44,12 @@ Starten:
    auf „Weitere Informationen“ → „Trotzdem ausführen“ klicken.
 5. Zum Beenden das schwarze Fenster schließen.
 
+Ohne schwarzes Fenster: **`Start-Windows-Hintergrund.vbs`** doppelklicken. Das Terminal läuft
+dann unsichtbar im Hintergrund (Kursalarme werden weiter geprüft), der Browser öffnet sich.
+Ein zweiter Doppelklick öffnet nur den Browser. Beim ersten Start und nach einem Update erscheint
+zur Einrichtung kurz das normale Fenster. Beenden mit **`Stop-Windows.bat`**. Bei einem Fehler
+öffnet sich das Protokoll `market-terminal.log` im Editor.
+
 Echte Daten statt Demo:
 6. Die Datei **`.env`** im Ordner mit dem Editor öffnen (Rechtsklick → „Öffnen mit“ → Editor),
    hinter `EODHD_API_KEY=` den Schlüssel von eodhd.com eintragen, speichern.
@@ -178,6 +184,11 @@ Futures (Index, Rohstoffe, Zinsen) sind mit der IBKR-Anbindung geplant: `docs/PL
 
 ## Kursmarken und Alarme (ALRT)
 
+Im Kurschart: **„＋ Marke“** setzt eine Marke mit Alarm, **„＋ Linie“** (oder Umschalt+Klick) nur
+eine Linie ohne Alarm. Marken lassen sich mit der Maus **verschieben** (Linie greifen, Zeiger ↕).
+Liegen Beschriftungen an der Preisachse zu dicht, bleibt nur die Linie; der Wert steht in der
+Markenleiste unter dem Chart.
+
 - **Im Chart (GP):** „＋ Marke“ drücken und in den Chart auf die gewünschte Höhe klicken. Die
   Linie erscheint sofort, mit Alarm (🔔). Liegt die Marke über dem Kurs, meldet sie sich beim
   Steigen darüber, sonst beim Fallen darunter. Unter dem Chart stehen alle Marken des Werts:
@@ -264,6 +275,15 @@ Kursfunktionen; Panels ohne Planabdeckung zeigen eine klare Meldung.
   Firmennamen („northwind“) und deutsche Wörter („watchlist“, „kurschart“, „dividende“) gehen
   ebenfalls. Unbekannte Ticker werden mit Vorschlägen abgewiesen, Tippfehler bei Funktionen
   erkannt (`HLEP` → HELP), ↑ holt frühere Befehle zurück.
+- **Länder im Befehl:** `IT GC` (oder `GC IT`), `FWD DE`, `ECO US`, `ECST DE`, `WMAP JP` – die
+  Funktion zeigt gleich dieses Land. Ein Klick auf ein Land in der Weltkarte stellt es in GC
+  (Zinsen) bzw. ECST (Konjunktur) ein.
+- **Seite DEPOT:** Das Depot-Panel bleibt stehen; eine dort eingetippte Funktion öffnet im
+  Nachbarpanel.
+- **Screener (EQS):** Der zuletzt ausgeführte Screen bleibt nach dem Neuladen erhalten;
+  „→ Watchlist“ übernimmt die ersten 20 Treffer.
+- **Demo-ETFs:** `XDAX GR` (DAX), `XSX5 GR` (Euro Stoxx 50), `XSPX US` (S&P 500), `XNDX US`
+  (Nasdaq 100), `XFTS LN` (FTSE 100) – fiktive Indexfonds, die sich ins Depot legen lassen.
 - **Gespeichert wird automatisch** (im Browser): Watchlist, Layouts, Panels, Chart- und
   Filtereinstellungen bleiben nach dem Schließen erhalten. **⟲ STANDARD** oben setzt wahlweise
   die aktuelle Seite, die ganze Ansicht (Watchlist bleibt) oder alles auf den Auslieferungszustand

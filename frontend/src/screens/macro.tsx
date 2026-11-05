@@ -1,6 +1,7 @@
 // Makro-Funktionen: WEI, FX, CMDT, GC, SPRD, ECO, ECST
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CURVE_COUNTRIES, ISO3, useIntent } from "../lib/intents";
 import EChart, { AXIS, TOOLTIP, type EOption } from "../components/EChart";
 import { Change, Empty, Flash, Q, Seg, Spark, Table, useNow } from "../components/ui";
 import { DASH, fmt, fmtBig, fmtBp, fmtDate, fmtInt, fmtPct, fmtPrice, fmtStamp, fmtTime, fmtWeekday, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
@@ -135,6 +136,11 @@ export function GC(_: ScreenProps) {
   const available = status.data?.defaults.curveCountries ?? ["US", "DE", "UK", "FR", "IT", "JP"];
   // Auswahl bleibt über Seitenwechsel und Neuladen erhalten
   const [countries, setCountries] = usePersistentState<string[]>("gc.countries", ["US", "DE"], isStringList(["US", "DE", "UK", "FR", "IT", "JP"], 6));
+  // „IT GC“ oder Klick in der Weltkarte: Land vorne einreihen
+  useIntent("GC", (v) => {
+    const c = v.country;
+    if (c && (CURVE_COUNTRIES as readonly string[]).includes(c)) setCountries((x) => [c, ...x.filter((y) => y !== c)].slice(0, 6));
+  });
   const [compare, setCompare] = usePersistentState<"none" | "1m" | "1y">("gc.compare", "1y", isOneOf(["none", "1m", "1y"] as const));
   const q = useCurves(countries);
 
@@ -374,6 +380,9 @@ export function ECO(_: ScreenProps) {
   // Am Wochenende ist die laufende Woche vorbei: dann die kommende zeigen
   const [week, setWeek] = useState<"prev" | "this" | "next">(() => ([0, 6].includes(new Date().getDay()) ? "next" : "this"));
   const [country, setCountry] = usePersistentState<string>("eco.country", "", (x): x is string => typeof x === "string" && x.length <= 3);
+  useIntent("ECO", (v) => {
+    if (v.country) setCountry(v.country === "UK" ? "GB" : v.country);
+  });
   const [importance, setImportance] = usePersistentState<"1" | "2" | "3">("eco.importance", "1", isOneOf(["1", "2", "3"] as const));
   const range = weekRange(week === "prev" ? -1 : week === "next" ? 1 : 0);
   const q = useCalendar({ ...range, country: country || undefined, importance: Number(importance) });
@@ -501,6 +510,20 @@ const ALL_INDICATORS = [
 export function ECST(_: ScreenProps) {
   const [chosen, setChosen] = useState<string[]>(ALL_INDICATORS.slice(0, 4).map((i) => i.key));
   const [focusRaw, setFocus] = useState<string>("inflation_consumer_prices_annual");
+  // Klick in der Weltkarte oder „ECST DE“: Land markieren, Kennzahl auswählen
+  const [mark, setMark] = useState<string | null>(null);
+  const markRow = useRef<HTMLTableRowElement | null>(null);
+  useIntent("ECST", (v) => {
+    if (v.country) setMark(v.country.length === 3 ? v.country : ISO3[v.country] ?? v.country);
+    const ind = v.indicator;
+    if (ind && ALL_INDICATORS.some((i) => i.key === ind)) {
+      setChosen((x) => (x.includes(ind) ? x : [...x, ind]));
+      setFocus(ind);
+    }
+  });
+  useEffect(() => {
+    markRow.current?.scrollIntoView({ block: "nearest" });
+  }, [mark]);
   const focus = chosen.includes(focusRaw) ? focusRaw : chosen[0];
   const q = useCountries(chosen);
 
@@ -574,7 +597,7 @@ export function ECST(_: ScreenProps) {
                   </thead>
                   <tbody>
                     {t.rows.slice().sort((a, b) => (b.values[focus]?.value ?? -Infinity) - (a.values[focus]?.value ?? -Infinity)).map((r) => (
-                      <tr key={r.country}>
+                      <tr key={r.country} ref={r.country === mark ? markRow : undefined} className={r.country === mark ? "selected" : ""}>
                         <td>{r.name}</td>
                         {t.indicators.map((ind) => {
                           const v = r.values[ind.key];

@@ -192,10 +192,12 @@ def test_tool_calls_from_text_and_display_tickers():
 
 
 def test_agent_loop_with_tools_and_number_check():
+    q = run(terminal().quotes(["NWND.US"]))[0]  # Kurs zum Testzeitpunkt (hängt von den Demo-Daten ab)
+    price, chg = f"{q.last:.2f}".replace(".", ","), f"{q.change_pct:+.2f}".replace(".", ",")
     fake = FakeLMStudio(script=[
         call("kurs", {"ticker": "Northwind"}),
         call("gibtsnicht", {}, 1),
-        answer("<think>…</think>Northwind steht bei 148,07 USD (+0,29 %), Kursziel 999,99 USD."),
+        answer(f"<think>…</think>Northwind steht bei {price} USD ({chg} %), Kursziel 999,99 USD."),
     ])
     client = LLMClient("http://lmstudio.test/v1", transport=httpx.MockTransport(fake))
     res = run(run_agent(client, terminal(), AskRequest(question="Wie steht Northwind?", ticker="SAP.XETRA")))

@@ -306,7 +306,8 @@ export default function GP({ ticker }: ScreenProps) {
   const [showVwap, setShowVwap] = usePersistentState("gp.vwap", true, isBool);
   const [showVp, setShowVp] = usePersistentState("gp.vp", false, isBool);
   const [compare, setCompare] = useState<string[]>([]);
-  const [placing, setPlacing] = useState(false);
+  // Setzen einer Marke: "alarm" = Kursmarke mit Alarm, "line" = nur Linie (ohne Alarm)
+  const [placing, setPlacing] = useState<false | "alarm" | "line">(false);
   const [markMsg, setMarkMsg] = useState<string | null>(null);
   const [chartGen, setChartGen] = useState(0);
   const alertsQ = useAlerts();
@@ -427,6 +428,8 @@ export default function GP({ ticker }: ScreenProps) {
   const vpRef = useRef<VolumeProfilePrimitive | null>(null);
   const vpLines = useRef<IPriceLine[]>([]);
   const markLines = useRef<IPriceLine[]>([]);
+  const marksRef = useRef<Alert[]>([]); // Marken in derselben Reihenfolge wie markLines
+  const placingRef = useRef<false | "alarm" | "line">(false);
   const fitKey = useRef("");
   const [hover, setHover] = useState<Bar | null>(null);
   const hasData = bars.length > 0;
@@ -686,12 +689,132 @@ export default function GP({ ticker }: ScreenProps) {
     }
     markLines.current = [];
     if (!main || comparing) return;
+    marksRef.current = marks;
     markLines.current = marks.map((m) => {
       const st = markStyle(m);
       return main.createPriceLine({ price: m.level, color: st.color, lineWidth: 1, lineStyle: st.style, axisLabelVisible: true, title: st.title });
     });
+    requestAnimationFrame(() => declutterRef.current());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marksKey, chartGen, comparing]);
+
+  // Beschriftungen an der Preisachse entzerren: Liegt eine Marke weniger als 13 Pixel neben dem
+  // aktuellen Kurs, einer VP-Linie oder einer anderen Marke, bleibt nur die Linie (Wert steht in
+  // der Markenleiste unter dem Chart)
+  const declutterRef = useRef<() => void>(() => {});
+  declutterRef.current = () => {
+    const main = seriesRef.current?.main;
+    if (!main) return;
+    const taken: number[] = [];
+    const lastClose = liveBar.current?.close;
+    if (isNum(lastClose)) {
+      const c = main.priceToCoordinate(lastClose);
+      if (c !== null) taken.push(c);
+    }
+    for (const l of vpLines.current) {
+      const c = main.priceToCoordinate(l.options().price);
+      if (c !== null) taken.push(c);
+    }
+    marksRef.current
+      .map((m, i) => ({ i, c: main.priceToCoordinate(m.level), armed: m.alarm && m.active }))
+      .sort((a, b) => Number(b.armed) - Number(a.armed)) // scharfe Alarme zuerst beschriften
+      .forEach(({ i, c }) => {
+        const show = c !== null && taken.every((t) => Math.abs(t - c) > 13);
+        try {
+          markLines.current[i]?.applyOptions({ axisLabelVisible: show });
+        } catch {
+          /* Linie gehörte zum vorigen Chart */
+        }
+        if (show && c !== null) taken.push(c);
+      });
+  };
+
+  // Marken mit der Maus verschieben: Linie greifen (Mauszeiger ↕), ziehen, loslassen
+  useEffect(() => {
+    const host = hostRef.current;
+    const chart = chartRef.current;
+    const main = seriesRef.current?.main;
+    if (!host || !chart || !main || comparing || IS_STATIC) return;
+    let drag: { idx: number; id: string; startY: number; moved: boolean } | null = null;
+    const yOf = (e: MouseEvent) => e.clientY - host.getBoundingClientRect().top;
+    const near = (y: number) => {
+      let best = -1;
+      let dist = 6;
+      marksRef.current.forEach((m, i) => {
+        const c = main.priceToCoordinate(m.level);
+        if (c !== null && Math.abs(c - y) <= dist) {
+          best = i;
+          dist = Math.abs(c - y);
+        }
+      });
+      return best;
+    };
+    const down = (e: PointerEvent) => {
+      if (placingRef.current || e.button !== 0) return;
+      const i = near(yOf(e));
+      if (i < 0) return;
+      e.preventDefault();
+      e.stopPropagation(); // der Chart soll dabei nicht verschoben werden
+      drag = { idx: i, id: marksRef.current[i].id, startY: yOf(e), moved: false };
+      chart.applyOptions({ handleScroll: false, handleScale: false });
+      try {
+        host.setPointerCapture(e.pointerId);
+      } catch {
+        /* ältere Browser */
+      }
+    };
+    const block = (e: MouseEvent) => {
+      if (drag) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const move = (e: PointerEvent) => {
+      const y = yOf(e);
+      if (!drag) {
+        host.style.cursor = !placingRef.current && near(y) >= 0 ? "ns-resize" : "";
+        return;
+      }
+      if (Math.abs(y - drag.startY) > 2) drag.moved = true;
+      const price = main.coordinateToPrice(y);
+      if (price !== null && isNum(price) && price > 0) markLines.current[drag.idx]?.applyOptions({ price });
+    };
+    const up = (e: PointerEvent) => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      chart.applyOptions({ handleScroll: true, handleScale: true });
+      try {
+        host.releasePointerCapture(e.pointerId);
+      } catch {
+        /* schon freigegeben */
+      }
+      if (!d.moved || !ticker) return;
+      const raw = main.coordinateToPrice(yOf(e));
+      if (raw === null || !isNum(raw) || raw <= 0) return;
+      const level = Number(raw.toFixed(isYield ? 3 : priceDigits(raw, ticker)));
+      void markAction(() => alertsApi.update(d.id, { level }));
+    };
+    const onRange = () => declutterRef.current();
+    host.addEventListener("pointerdown", down, true);
+    host.addEventListener("mousedown", block, true);
+    host.addEventListener("pointermove", move);
+    host.addEventListener("pointerup", up);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+    return () => {
+      host.removeEventListener("pointerdown", down, true);
+      host.removeEventListener("mousedown", block, true);
+      host.removeEventListener("pointermove", move);
+      host.removeEventListener("pointerup", up);
+      try {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
+      } catch {
+        /* Chart schon entfernt */
+      }
+      host.style.cursor = "";
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartGen, comparing, ticker, isYield]);
 
   // „＋ Marke“: nächster Klick in den Chart setzt eine Kursmarke mit Alarm
   useEffect(() => {
@@ -704,9 +827,12 @@ export default function GP({ ticker }: ScreenProps) {
       if (raw === null || !isNum(raw) || raw <= 0) return;
       const digits = isYield ? 3 : priceDigits(raw, ticker);
       const level = Number(raw.toFixed(digits));
+      // Umschalt-Taste beim Klick: nur Linie, auch wenn „＋ Marke“ gewählt ist
+      const shift = (p.sourceEvent as { shiftKey?: boolean } | undefined)?.shiftKey ?? false;
+      const alarm = placing === "alarm" && !shift;
       setPlacing(false);
       alertsApi
-        .create({ ticker, kind: "price", level, direction: null, alarm: true })
+        .create({ ticker, kind: "price", level, direction: null, alarm })
         .then(() => setMarkMsg(null))
         .catch((e: unknown) => setMarkMsg(e instanceof Error ? e.message : String(e)))
         .finally(() => refreshAlerts());
@@ -729,6 +855,7 @@ export default function GP({ ticker }: ScreenProps) {
     setPlacing(false);
     setMarkMsg(null);
   }, [ticker]);
+  placingRef.current = placing;
 
   async function markAction(fn: () => Promise<unknown>) {
     try {
@@ -903,12 +1030,21 @@ export default function GP({ ticker }: ScreenProps) {
             <span className="sep" />
             <button
               type="button"
-              className={`btn ${placing ? "primary" : ""}`}
-              aria-pressed={placing}
-              title="Kursmarke mit Alarm setzen: danach in den Chart auf die gewünschte Höhe klicken (Esc bricht ab)"
-              onClick={() => setPlacing((p) => !p)}
+              className={`btn ${placing === "alarm" ? "primary" : ""}`}
+              aria-pressed={placing === "alarm"}
+              title="Kursmarke mit Alarm setzen: danach in den Chart auf die gewünschte Höhe klicken (Umschalt+Klick: nur Linie, Esc bricht ab). Marken lassen sich mit der Maus verschieben."
+              onClick={() => setPlacing((p) => (p === "alarm" ? false : "alarm"))}
             >
               ＋ Marke
+            </button>
+            <button
+              type="button"
+              className={`btn ${placing === "line" ? "primary" : ""}`}
+              aria-pressed={placing === "line"}
+              title="Linie ohne Alarm setzen (z. B. Unterstützung, Ziel): danach in den Chart klicken"
+              onClick={() => setPlacing((p) => (p === "line" ? false : "line"))}
+            >
+              ＋ Linie
             </button>
           </>
         )}
@@ -966,7 +1102,11 @@ export default function GP({ ticker }: ScreenProps) {
               </div>
             )}
             <div style={{ position: "relative", flex: showRsi ? "1 1 74%" : "1 1 100%", minHeight: 0 }}>
-              {placing && <div className="placing-hint">In den Chart klicken, um die Marke zu setzen · Esc bricht ab</div>}
+              {placing && (
+                <div className="placing-hint">
+                  {placing === "alarm" ? "In den Chart klicken: Marke mit Alarm · Umschalt+Klick: nur Linie" : "In den Chart klicken: Linie ohne Alarm"} · Esc bricht ab
+                </div>
+              )}
               <div className={`chart-host ${placing ? "placing" : ""}`} ref={hostRef} />
             </div>
             {showRsi && (

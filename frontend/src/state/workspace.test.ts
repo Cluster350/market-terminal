@@ -167,3 +167,14 @@ describe("Einzelfunktions-Fenster: gespeicherter Zustand", () => {
     expect(initial("#solo-GP").pages.equity).toEqual({ layout: "single", panels: ["HP"] });
   });
 });
+
+describe("Seite DEPOT", () => {
+  it("eine Funktion im Depot-Panel öffnet im Nachbarpanel, PORT bleibt", () => {
+    let s = reducer(base(), { type: "page", page: "depot" });
+    const portIdx = s.pages.depot.panels.indexOf("PORT");
+    s = reducer(s, { type: "active", index: portIdx });
+    s = reducer(s, { type: "fn", fn: "ALRT" });
+    expect(s.pages.depot.panels).toContain("PORT");
+    expect(s.pages.depot.panels).toContain("ALRT");
+  });
+});

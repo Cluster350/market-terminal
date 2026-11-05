@@ -17,6 +17,7 @@ import {
   useHedge,
   useRateForwards,
 } from "../lib/forwards";
+import { useIntent } from "../lib/intents";
 import { isOneOf, usePersistentState } from "../lib/persist";
 import type { ScreenProps } from "./types";
 
@@ -209,6 +210,9 @@ function HedgeView() {
 
 function RatesView() {
   const [country, setCountry] = usePersistentState<(typeof RATE_COUNTRIES)[number]>("fwd.country", "US", isOneOf(RATE_COUNTRIES));
+  useIntent("FWD", (v) => {
+    if (v.country && (RATE_COUNTRIES as readonly string[]).includes(v.country)) setCountry(v.country as (typeof RATE_COUNTRIES)[number]);
+  });
   const q = useRateForwards(country);
   const d = q.data;
   return (
@@ -299,6 +303,10 @@ export function FWD({ ticker }: ScreenProps) {
   useEffect(() => {
     if (loadedPair) setView("fx");
   }, [loadedPair, setView]);
+  // „FWD DE“: Land -> Ansicht Zinsen
+  useIntent("FWD", (v) => {
+    if (v.country) setView("rates");
+  });
   return (
     <>
       <div className="toolbar">

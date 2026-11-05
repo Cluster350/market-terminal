@@ -4,6 +4,10 @@ rem Beim ersten Start werden Python-Pakete und die Oberflaeche eingerichtet (ein
 setlocal
 cd /d "%~dp0"
 title Market Terminal
+rem Im Hintergrund gestartet (Start-Windows-Hintergrund.vbs): nicht auf Tastendruck warten,
+rem sondern bei Fehlern das Protokoll im Editor zeigen
+set "PAUSE=pause"
+if defined MT_HIDDEN set "PAUSE=rem"
 
 rem --- Python suchen: py-Starter, python im PATH und uebliche Installationsordner ---
 set "PY="
@@ -32,7 +36,7 @@ if not defined PY (
   echo  3. Danach diese Datei erneut doppelklicken.
   echo  Steht oben 3.11 oder neuer, bitte ein Foto dieses Fensters schicken.
   echo.
-  pause
+  %PAUSE%
   exit /b 1
 )
 echo  ^> Python gefunden: %PY%
@@ -59,7 +63,7 @@ if defined NEEDBUILD (
       echo  1. https://nodejs.org/ oeffnen und die LTS-Version installieren.
       echo  2. Danach diese Datei erneut doppelklicken.
       echo.
-      pause
+      %PAUSE%
       exit /b 1
     )
   )
@@ -106,11 +110,13 @@ echo.
 start "" cmd /c "timeout /t 4 /nobreak >nul & start http://127.0.0.1:8000"
 cd backend
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+if errorlevel 1 if defined MT_HIDDEN start "" notepad "%~dp0market-terminal.log"
 goto :eof
 
 :fehler
 echo.
 echo  Beim Einrichten ist ein Fehler aufgetreten (siehe Meldungen oben).
 echo  Internetverbindung pruefen und die Datei erneut starten.
-pause
+if defined MT_HIDDEN start "" notepad "%~dp0market-terminal.log"
+%PAUSE%
 exit /b 1

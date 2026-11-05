@@ -1,6 +1,7 @@
 // WMAP – Weltkarte: Länder eingefärbt nach Aktienmarkt, Zinsen oder Konjunktur.
 
 import { useMemo } from "react";
+import { CURVE_COUNTRIES, ISO3, sendIntent, useIntent } from "../lib/intents";
 import EChart, { registerMap, TOOLTIP } from "../components/EChart";
 import { Empty, ErrorState, Loading, Seg } from "../components/ui";
 import { explain } from "../lib/glossary";
@@ -72,10 +73,25 @@ export function WMAP(_: ScreenProps) {
   const inView = useMemo(() => (members ? rows.filter((r) => members.includes(r.c.iso3)) : rows), [rows, members]);
 
   function open(c: WorldCountry) {
-    if (metric.group === "equity" && c.index) ws.setSecurity(c.index.ticker, { open: "GP", stay: true });
-    else if (metric.group === "rates" && c.bond) ws.setSecurity(c.bond.ticker, { open: "GP", stay: true });
-    else if (metric.group === "macro") ws.openFn("ECST");
+    if (metric.group === "equity" && c.index) {
+      ws.setSecurity(c.index.ticker, { open: "GP", stay: true });
+    } else if (metric.group === "rates" && c.bond) {
+      // Zinskurve des Landes in GC einreihen (falls GC die Kurve kennt), dazu der Renditechart
+      const cc = c.bond.ticker.replace(/10Y\.GBOND$/, "");
+      if ((CURVE_COUNTRIES as readonly string[]).includes(cc)) sendIntent("GC", { country: cc });
+      ws.setSecurity(c.bond.ticker, { open: "GP", stay: true });
+    } else if (metric.group === "macro") {
+      // ECST mit diesem Land markiert und der gewählten Kennzahl
+      sendIntent("ECST", { country: c.iso3, indicator: metric.macroKey });
+      ws.openFn("ECST");
+    }
   }
+  // „WMAP DE“: passender Ausschnitt
+  useIntent("WMAP", (v) => {
+    const iso = v.country ? (v.country.length === 3 ? v.country : ISO3[v.country]) : null;
+    const region = iso ? VIEW_KEYS.find((k) => VIEWS[k].members?.includes(iso)) : null;
+    if (region) setView(region);
+  });
 
   const option = useMemo(() => {
     const range = colorRange(inView.map((r) => r.v), metric.scale, metric.domain);

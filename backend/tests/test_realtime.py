@@ -158,3 +158,31 @@ def test_intervals_and_stream_endpoints():
             body = "".join(resp.iter_text())
         status = json.loads(body.split("event: status\ndata: ")[1].split("\n")[0])
         assert status["live"] == ["NWND.US", "ELBT.XETRA"] and status["delayed"] == []
+
+
+def test_demo_etfs_follow_their_index_and_fit_the_depot():
+    p = DemoProvider(now_fn=lambda: NOW)
+    q, i = run(p.quotes(["XDAX.XETRA"]))[0], run(p.quotes(["GDAXI.INDX"]))[0]
+    assert q.name == "Nordlicht DAX UCITS ETF" and q.currency == "EUR"
+    assert abs(q.change_pct - i.change_pct) < 0.6  # folgt dem Index (kleine Abweichung)
+    assert "XDAX.XETRA" in [h.ticker for h in run(p.search("DAX ETF", 10))] or run(p.resolve("XDAX.XETRA")) is not None
+    with pytest.raises(Exception, match="ETF auf den DAX"):
+        run(p.company("XDAX.XETRA"))
+
+
+def test_demo_fx_and_euro_bonds_are_consistent():
+    import math
+
+    p = DemoProvider(now_fn=lambda: NOW)
+
+    def vol(t):
+        c = p._daily(t)["c"][-253:]
+        r = [math.log(b / a) for a, b in zip(c, c[1:])]
+        m = sum(r) / len(r)
+        return (sum((x - m) ** 2 for x in r) / (len(r) - 1) * 252) ** 0.5
+
+    assert vol("EURCHF.FOREX") < vol("EURUSD.FOREX")  # Kreuzkurs ruhiger als die Dollar-Paare
+    de, fi, it = (p._daily(f"{cc}10Y.GBOND")["c"][-1] for cc in ("DE", "FI", "IT"))
+    assert 0 < fi - de < 0.5 and it > fi  # Finnland knapp über dem Bund, Italien darüber
+    assert p._daily("IT3M.GBOND")["c"][-1] >= p._daily("DE3M.GBOND")["c"][-1] - 0.05
+    assert p._daily("BRENT.COMM")["c"][-1] > p._daily("WTI.COMM")["c"][-1]

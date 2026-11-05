@@ -161,11 +161,48 @@ export function toCsv(rows: ScreenRow[]): string {
   return [cols.map(([h]) => h).join(";"), ...rows.map((r) => cols.map(([, get]) => esc(get(r))).join(";"))].join("\n");
 }
 
+const LAST_KEY = "mt.screen.last";
+
+/** Zuletzt ausgeführter Screen (bleibt nach dem Neuladen erhalten; früher wieder „Große Werte“). */
+function loadLast(): Saved | null {
+  try {
+    return parseSaved(JSON.stringify([JSON.parse(localStorage.getItem(LAST_KEY) || "null")]))[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function EQS(_: ScreenProps) {
+  const ws = useWorkspace();
   const fieldsQ = useScreenFields();
   const fields = useMemo(() => new Map((fieldsQ.data ?? []).map((f) => [f.key, f])), [fieldsQ.data]);
-  const [drafts, setDrafts] = useState<Draft[]>(PRESETS[0].filters);
-  const [applied, setApplied] = useState<{ filters: Draft[]; sort: string; desc: boolean }>({ filters: PRESETS[0].filters(), sort: "market_cap", desc: true });
+  const [last] = useState(loadLast);
+  const [drafts, setDrafts] = useState<Draft[]>(() => last?.filters ?? PRESETS[0].filters());
+  const [applied, setApplied] = useState<{ filters: Draft[]; sort: string; desc: boolean }>(() =>
+    last ? { filters: last.filters, sort: last.sort, desc: last.desc } : { filters: PRESETS[0].filters(), sort: "market_cap", desc: true },
+  );
+  const [added, setAdded] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAST_KEY, JSON.stringify({ name: "zuletzt", ...applied }));
+    } catch {
+      /* ohne Speicher gilt der Screen nur bis zum Neuladen */
+    }
+  }, [applied]);
+
+  function toWatchlist() {
+    const rows = q.data?.rows ?? [];
+    const fresh = rows.map((r) => r.ticker).filter((t) => !ws.state.watchlist.includes(t));
+    const room = Math.max(0, 60 - ws.state.watchlist.length);
+    const take = fresh.slice(0, Math.min(20, room));
+    for (const t of take) ws.watchAdd(t);
+    setAdded(
+      take.length
+        ? `${take.length} Treffer in die Watchlist übernommen${fresh.length > take.length ? ` (höchstens 20 auf einmal, Watchlist max. 60)` : ""}.`
+        : fresh.length ? "Die Watchlist ist voll (60 Werte)." : "Alle Treffer stehen schon in der Watchlist.",
+    );
+    setTimeout(() => setAdded(null), 4000);
+  }
   const [saved, setSaved] = useState(loadSaved);
   const [saveName, setSaveName] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -364,7 +401,11 @@ export function EQS(_: ScreenProps) {
               CSV speichern
             </button>
           )}
+          <button type="button" className="btn" onClick={toWatchlist} disabled={!q.data?.rows.length} title="Die ersten 20 Treffer (in der aktuellen Sortierung) in die Watchlist übernehmen">
+            → Watchlist
+          </button>
           {copied && <span className="small lbl">{copied}</span>}
+          {added && <span className="small lbl">{added}</span>}
         </div>
       </form>
       <div className="panel-body">

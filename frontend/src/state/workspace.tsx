@@ -287,10 +287,15 @@ export function reducer(s: WorkspaceState, a: Action): WorkspaceState {
       return { ...s, pins: { ...s.pins, [s.page]: pins } };
     }
     case "fn": {
-      const idx = a.panel ?? s.active[s.page];
+      let idx = a.panel ?? s.active[s.page];
       const page = s.pages[s.page];
       const panels = page.panels.slice();
       if (idx < 0 || idx >= panels.length) return s;
+      // Seite DEPOT: Das Depot-Panel bleibt stehen; eine dort eingetippte Funktion öffnet im
+      // Nachbarpanel (früher verschwand PORT, und „5 DEPOT“ zeigte kein Depot mehr)
+      if (s.page === "depot" && panels[idx] === "PORT" && a.fn !== "PORT" && panels.length > 1 && panels.filter((f) => f === "PORT").length === 1) {
+        idx = panels.indexOf(a.fn) >= 0 ? panels.indexOf(a.fn) : (idx + 1) % panels.length;
+      }
       const back = fit(s.back[s.page], panels.length, () => [] as FnCode[]).map((x) => x.slice());
       if (panels[idx] !== a.fn) back[idx] = [...back[idx], panels[idx]].slice(-10);
       panels[idx] = a.fn;

@@ -6,6 +6,7 @@ import { countryDe, displayTicker, typeDe } from "../lib/format";
 import { api, ApiError } from "../lib/api";
 import { useResolve, useSearch } from "../lib/queries";
 import { useWorkspace } from "../state/workspace";
+import { sendIntent } from "../lib/intents";
 
 type Suggestion =
   | { kind: "fn"; fn: FnCode; ticker: string | null; label: string; desc: string }
@@ -274,6 +275,16 @@ export function CommandLine() {
       const hits = debounced === value ? search.data ?? [] : [];
       if (hits.length === 1 && parts.tokens.length === 1) return choose({ kind: "sec", ticker: hits[0].ticker, label: "", desc: "", meta: "", fn: null });
       setError(cmd.message);
+      return;
+    }
+    if (cmd.kind === "fn" && cmd.country) {
+      // „IT GC“: Land an das Panel übergeben; steht die Funktion schon auf der Seite, dorthin wechseln
+      sendIntent(cmd.fn, { country: cmd.country });
+      remember(value);
+      const here = ws.state.pages[ws.state.page].panels.indexOf(cmd.fn);
+      if (here >= 0) ws.setActive(here);
+      else ws.runFn(cmd.fn, null);
+      close();
       return;
     }
     if (cmd.kind === "fn") return runFn(cmd.fn, cmd.ticker);

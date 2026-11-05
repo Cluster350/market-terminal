@@ -228,6 +228,8 @@ async def _info(t: Terminal, ticker: str, sem: asyncio.Semaphore) -> dict:
                 out["currency"] = out["currency"] or currency_code(c.currency)
             except TerminalError:
                 pass
+    if out["sector"] is None and out["name"] and (" ETF" in f" {out['name']} " or "UCITS" in out["name"]):
+        out["sector"] = "Indexfonds (ETF)"  # ETFs haben kein Firmenprofil
     return out
 
 

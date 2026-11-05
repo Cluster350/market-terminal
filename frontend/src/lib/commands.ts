@@ -1,6 +1,7 @@
 // Funktionskürzel und Befehlszeilen-Parser.
 
 import { displayTicker } from "./format";
+import { countryCode } from "./intents";
 
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
@@ -163,7 +164,7 @@ export function unknownSecurityMessage(input: string, ticker: string, serverMess
 }
 
 export type Command =
-  | { kind: "fn"; fn: FnCode; ticker: string | null }
+  | { kind: "fn"; fn: FnCode; ticker: string | null; country?: string }
   | { kind: "ticker"; ticker: string }
   | { kind: "error"; message: string };
 
@@ -171,6 +172,9 @@ export type Command =
  * Akzeptiert: "GP", "NWND GP", "NWND US GP", "ELBT GR DES", "NWND.US", "ELBT GR".
  * Ein Ticker allein wechselt das aktive Wertpapier.
  */
+/** Funktionen, die ein Land als Argument verstehen */
+export const COUNTRY_FNS: FnCode[] = ["GC", "FWD", "ECO", "ECST", "WMAP"];
+
 export function parseCommand(input: string): Command | null {
   // "<GO>" bzw. ein abschließendes, eigenständiges "GO" entfernen – nicht das Ende eines
   // Tickers wie WGO oder AGO (sonst würde daraus W bzw. A)
@@ -178,6 +182,14 @@ export function parseCommand(input: string): Command | null {
   if (!raw) return null;
   const tokens = raw.split(/\s+/);
   const last = tokens[tokens.length - 1];
+  // Länderfunktionen mit Land: „IT GC“, „GC IT“, „FWD DE“, „ECO US“, „ECST DE“
+  if (tokens.length === 2) {
+    for (const [f, c] of [[tokens[1], tokens[0]], [tokens[0], tokens[1]]]) {
+      const code = resolveFn(f);
+      const country = countryCode(c);
+      if (code && country && COUNTRY_FNS.includes(code)) return { kind: "fn", fn: code, ticker: null, country };
+    }
+  }
   const fn = resolveFn(last);
   if (fn) {
     const rest = tokens.slice(0, -1).join(" ");

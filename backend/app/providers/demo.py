@@ -210,6 +210,18 @@ _BOND.update({f"{cc}{tenor}.GBOND": (cc, tenor, years) for cc in _WORLD_BOND_NAM
 
 TIMING_ORDER = {"BeforeMarket": 0, "AfterMarket": 2}  # vorbörslich zuerst
 
+# Fiktive ETFs auf die Demo-Indizes, damit auch Indexanleger ihr Depot abbilden können:
+# Ticker -> (Name, Index, Kursfaktor, laufende Kosten p. a.)
+_ETF: dict[str, tuple[str, str, float, float]] = {
+    "XDAX.XETRA": ("Nordlicht DAX UCITS ETF", "GDAXI.INDX", 0.01, 0.0009),
+    "XSX5.XETRA": ("Nordlicht Euro Stoxx 50 UCITS ETF", "STOXX50E.INDX", 0.01, 0.0010),
+    "XSPX.US": ("Summit S&P 500 ETF", "GSPC.INDX", 0.1, 0.0009),
+    "XNDX.US": ("Summit Nasdaq 100 ETF", "NDX.INDX", 0.02, 0.0020),
+    "XFTS.LSE": ("Thames FTSE 100 UCITS ETF", "FTSE.INDX", 0.1, 0.0007),
+}
+
+EURO_AREA = {"DE", "FR", "IT", "ES", "NL", "BE", "AT", "FI", "PT", "GR", "IE"}
+
 CROSSES = {
     "EURGBP.FOREX": ("EURUSD.FOREX", "GBPUSD.FOREX"),  # EUR/USD ÷ GBP/USD
     "EURCHF.FOREX": ("EURUSD.FOREX", "USDCHF.FOREX"),  # EUR/USD × USD/CHF
@@ -282,6 +294,7 @@ class DemoProvider:
             or ticker in _FX_NAMES
             or ticker in _COMMODITY
             or ticker in _BOND
+            or ticker in _ETF
             or ticker == "VIX.INDX"
         )
 
@@ -298,6 +311,8 @@ class DemoProvider:
             return _FX_NAMES[ticker].name
         if ticker in _COMMODITY:
             return _COMMODITY[ticker][1]
+        if ticker in _ETF:
+            return _ETF[ticker][0]
         if ticker in _BOND:
             cc, tenor, _ = _BOND[ticker]
             return f"{_CURVES[cc][0] if cc in _CURVES else _WORLD_BOND_NAMES.get(cc, cc)} Staatsanleihe {tenor}"
@@ -306,6 +321,8 @@ class DemoProvider:
     def currency(self, ticker: str) -> Optional[str]:
         if ticker in _COMPANY:
             return D.EXCHANGE_INFO[_COMPANY[ticker][2]][0]
+        if ticker in _ETF:
+            return D.EXCHANGE_INFO[ticker.rpartition(".")[2]][0]
         if ticker in _FX_NAMES:
             return ticker[3:6] if ticker.endswith(".FOREX") else "USD"
         if ticker in _COMMODITY:
@@ -317,6 +334,8 @@ class DemoProvider:
     def session_group(self, ticker: str) -> str:
         if ticker in _COMPANY:
             return D.EXCHANGE_INFO[_COMPANY[ticker][2]][2]
+        if ticker in _ETF:
+            return D.EXCHANGE_INFO[ticker.rpartition(".")[2]][2]
         if ticker in D.INDEX_PARAMS:
             return D.INDEX_PARAMS[ticker][2]
         if ticker == "VIX.INDX" or ticker in _COMMODITY:
@@ -363,6 +382,18 @@ class DemoProvider:
             closes = [ca / cb if ticker == "EURGBP.FOREX" else ca * cb for _, ca, cb in pairs]
             day_sigma = 0.006
             mkt = []
+        elif ticker in _ETF:
+            # Index mal Kursfaktor, abzüglich laufender Kosten, mit kleiner Abweichung (Tracking)
+            _, index, factor, ter = _ETF[ticker]
+            u = self._daily(index)
+            mu = dict(zip(u["days"], u["c"]))
+            level = None
+            te = 0.0
+            for k, d in enumerate(days):
+                level = mu.get(d, level)
+                te = 0.9 * te + 0.0004 * rng.gauss(0, 1)
+                closes.append((level or u["c"][0]) * factor * math.exp(-ter * k / 252 + te))
+            day_sigma = 0.011
         elif ticker in _COMPANY:
             _, _, _, sector, _, _ = _COMPANY[ticker]
             sp = D.SECTORS[sector]
@@ -399,16 +430,21 @@ class DemoProvider:
             phi = 0.995 if ticker.startswith("BTC") else 0.997
             s = vol / math.sqrt(252)
             x = 0.0  # log-Abweichung vom Trend (mean reverting)
+            # Gemeinsamer Dollar-Faktor: Kreuzkurse wie EUR/CHF schwanken dadurch weniger als die
+            # Dollar-Paare (vorher EUR/CHF 10,8 % gegen EUR/USD 7,6 %)
+            usd_sign = -1.0 if ticker.endswith("USD.FOREX") else 1.0 if ticker.startswith("USD") else 0.0
+            w = 0.5 if ticker == "USDCNH.FOREX" else 0.9 if usd_sign else 0.0
+            usd_rng = _rng("usd-factor-b") if w else None  # Zufallsfolge mit plausiblen Kursniveaus
+            # Reaktion auf den Aktienmarkt: Rohstoffwährungen stark, Franken als sicherer Hafen gegenläufig
+            beta = {"AUDUSD.FOREX": 0.3, "NZDUSD.FOREX": 0.3, "USDCAD.FOREX": -0.2, "USDCNH.FOREX": -0.2,
+                    "USDCHF.FOREX": -0.05}.get(ticker, 0.15)
             for k, m in enumerate(mkt):
                 if ticker in CROSSES:
                     continue
-                if ticker.startswith("BTC"):
-                    shock = 1.5 * m
-                elif ticker in ("USDCAD.FOREX", "USDCNH.FOREX"):
-                    shock = -0.2 * m
-                else:
-                    shock = 0.25 * m
-                x = phi * x + shock + s * rng.gauss(0, 1)
+                shock = 1.5 * m if ticker.startswith("BTC") else beta * m
+                own = rng.gauss(0, 1)
+                noise = w * usd_sign * usd_rng.gauss(0, 1) + math.sqrt(1 - w * w) * own if usd_rng else own
+                x = phi * x + shock + s * noise
                 closes.append(base * math.exp(drift * k / 252 + x))
             day_sigma = s
         elif ticker in _COMMODITY:
@@ -434,13 +470,20 @@ class DemoProvider:
         elif ticker in _BOND:
             cc, tenor, years = _BOND[ticker]
             kind = "yield"
-            noise_rng = _rng("curve-noise", cc)  # gemeinsames Rauschen je Land
-            level = slope = 0.0
+            # Euroraum: gemeinsames Rauschen der Bund-Kurve plus kleiner eigener Spread – vorher lief
+            # jedes Land unabhängig (Finnland 105 bp über dem Bund, Italien 3M unter Deutschland)
+            euro = cc in EURO_AREA and cc != "DE"
+            noise_rng = _rng("curve-noise", "DE" if euro else cc)
+            own_rng = _rng("curve-noise", cc) if euro else None
+            level = slope = own_level = 0.0
             for d in days:
                 short, long = _interp(D.CURVE_KNOTS[cc], d)
                 level = 0.985 * level + 0.045 * noise_rng.gauss(0, 1)
                 slope = 0.99 * slope + 0.02 * noise_rng.gauss(0, 1)
-                y = _ns_yield(short + slope, long + level, years) + 0.01 * rng.gauss(0, 1)
+                if own_rng is not None:
+                    own_level = 0.985 * own_level + 0.012 * own_rng.gauss(0, 1)
+                # Laufzeiten nur wenig unabhängig (glattere Kurve, ruhigere Forwards)
+                y = _ns_yield(short + slope + 0.3 * own_level, long + level + own_level, years) + 0.004 * rng.gauss(0, 1)
                 closes.append(y)
             day_sigma = 0.04
         else:
@@ -489,6 +532,8 @@ class DemoProvider:
                 vols.append(round(shares * 0.004 * math.exp(rng.gauss(0, 0.35)) * (1 + 25 * r) * (2.5 if shock else 1.0)))
             elif ticker in D.INDEX_PARAMS:
                 vols.append(round(2.5e9 * math.exp(rng.gauss(0, 0.25))))
+            elif ticker in _ETF:
+                vols.append(round(4e5 * math.exp(rng.gauss(0, 0.35))))
             else:
                 vols.append(None)
             prev = c
@@ -544,6 +589,19 @@ class DemoProvider:
         key = (ticker, day)
         if key in self._bars_cache:
             return self._bars_cache[key]
+        if ticker in _ETF:
+            # ETF folgt seinem Index auch im Tagesverlauf (Kursfaktor des Tages, Umsatz anteilig)
+            index = _ETF[ticker][1]
+            iu = self._daily(index)
+            if day in iu["days"]:
+                j = iu["days"].index(day)
+                ub = self._bars(index, j)
+                ratio = series["c"][day_index] / iu["c"][j] if iu["c"][j] else 1.0
+                total = sum(b[5] for b in ub) or 1.0
+                dv = series["v"][day_index] or 0.0
+                bars = [(ts, o_ * ratio, h_ * ratio, l_ * ratio, c_ * ratio, dv * v_ / total) for ts, o_, h_, l_, c_, v_ in ub]
+                self._bars_cache[key] = bars
+                return bars
         if ticker in CROSSES:
             # Intraday ebenfalls aus den USD-Paaren, damit Live-Kurse arbitragefrei bleiben
             a, b = CROSSES[ticker]
@@ -565,9 +623,15 @@ class DemoProvider:
         start, end = self._session_bounds(ticker, day)
         n = max(int((end - start).total_seconds() // 300), 1)
         rng = _rng("bars", ticker, day.isoformat())
+        # Gemeinsamer Marktpfad des Tages: Indizes (und schwächer Aktien) laufen im Tagesverlauf
+        # gemeinsam (vorher unabhängig: S&P 500 +1,8 %, Nasdaq 100 zur selben Zeit ±0)
+        rho = 0.95 if ticker.endswith(".INDX") else 0.5 if ticker in _COMPANY else 0.0
+        mrng = _rng("bars-mkt", day.isoformat()) if rho else None
         walk = [0.0]
         for _ in range(n):
-            walk.append(walk[-1] + rng.gauss(0, 1))
+            own = rng.gauss(0, 1)
+            step = rho * mrng.gauss(0, 1) + math.sqrt(1 - rho * rho) * own if mrng else own
+            walk.append(walk[-1] + step)
         bridge = [w - walk[-1] * k / n for k, w in enumerate(walk)]
         lin = [o + (c - o) * k / n for k in range(n + 1)]
         scale = float("inf")
@@ -746,6 +810,9 @@ class DemoProvider:
             consider(inst.ticker, inst.name, "Currency", inst.ticker.split(".")[1], None, None)
         for t, c in _COMMODITY.items():
             consider(t, c[1], "Commodity", "COMM", None, "USD")
+        for t, e in _ETF.items():
+            ex = t.rpartition(".")[2]
+            consider(t, e[0], "ETF", ex, D.EXCHANGE_INFO[ex][1], D.EXCHANGE_INFO[ex][0])
         for t in _BOND:
             consider(t, self.name(t), "Bond", "GBOND", None, None)
         hits.sort(key=lambda x: (x[0], x[1].ticker))
@@ -1067,6 +1134,9 @@ class DemoProvider:
     def _fundamentals_raw(self, ticker: str) -> dict:
         self._require(ticker)
         if ticker not in _COMPANY:
+            if ticker in _ETF:
+                index = self.name(_ETF[ticker][1])
+                raise NotFound(f"{self.name(ticker)} ist ein ETF auf den {index}: Unternehmensdaten gibt es nur für Aktien. Kursverlauf in GP, Vergleich mit dem Index über „Index“ im Chart.")
             raise NotFound(f"Für {self.name(ticker)} gibt es keine Unternehmensdaten.")
         years, quarters = self._fiscal(ticker)
         # Neuester veröffentlichter Quartalsbericht im Schlüssel: Am Berichtstag ändern sich die
