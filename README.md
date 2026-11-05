@@ -206,6 +206,30 @@ Markenleiste unter dem Chart.
   Jede Prüfung kostet bei EODHD je Wert mit scharfem Alarm einen API-Call; die Kurse sind meist
   15–20 Minuten verzögert.
 
+## Signal bei wichtigen Nachrichten
+
+Wichtige Meldungen melden sich mit **eigenem Ton** (anders als der Kursalarm) und einem Hinweis
+unten rechts – auch wenn TOP gerade nicht offen ist. **„Lesen“** im Hinweis öffnet TOP mit der
+Meldung in der Leseansicht. Eingestellt wird das in **TOP** in der Werkzeugleiste unter „🔔 Signal“:
+
+| Einstellung | Bedeutung |
+|---|---|
+| **aus** | kein Signal |
+| **Eilmeldungen** (Standard) | Meldungen mit EIL-Kennzeichen: drei schnelle, helle Töne, roter Hinweis ⚡ |
+| **Eil + kursrelevant (KI)** | zusätzlich Meldungen, die die KI als kursrelevant einstuft (Relevanz ab 2 von 3): weicher Gong, Hinweis 📰. Braucht die KI-Einordnung (LM Studio oder Demo-KI) |
+| **Watchlist + Depot** (Standard) / **alle Meldungen** | nur Meldungen zu eigenen Werten oder alle |
+| **Ton** | Ton an oder aus (der Hinweis kommt trotzdem); ▶ spielt den Ton zur Probe |
+
+- Gemeldet werden nur frische Meldungen (höchstens 30 Minuten alt), jede nur einmal. Beim
+  allerersten Start gelten alle vorhandenen Meldungen als bekannt – es gibt keine Flut alter Hinweise.
+- Bei mehreren Terminal-Fenstern (Multimonitor) klingelt nur eines.
+- Liegt das Terminal im Hintergrund, kommt zusätzlich eine Windows-Benachrichtigung, sofern
+  Desktop-Hinweise erlaubt sind (Schaltfläche „Desktop-Hinweise erlauben“ in ALRT).
+- Das Terminal fragt jede Minute nach. Mit EODHD holt der Server neue Meldungen höchstens alle
+  10 Minuten (EODHD liefert News je Wert, jeder Abruf kostet API-Calls). Ein Signal kann also bis
+  zu 10 Minuten nach der Veröffentlichung kommen. News werden je Wert zwischengespeichert: TOP,
+  CN, das Signal und weitere Fenster teilen sich dieselben Abrufe.
+
 ## KI-Helfer mit LM Studio
 
 Das Terminal kann ein Sprachmodell nutzen, das auf dem eigenen Rechner in

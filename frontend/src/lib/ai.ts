@@ -168,7 +168,7 @@ export const useAiStatus = () =>
  * Einordnungen für Meldungen. Solange das Modell noch arbeitet (pending), wird nachgefragt;
  * die Liste fragt seltener nach als die gerade gelesene Meldung (priority "high").
  */
-export function useNewsInsights(items: NewsItem[], priority: "high" | "normal", status: AiStatus | undefined) {
+export function useNewsInsights(items: NewsItem[], priority: "high" | "normal", status: AiStatus | undefined, background = false) {
   const on = aiAvailable(status);
   const ids = items.map((n) => n.id).join(",");
   return useQuery({
@@ -176,6 +176,7 @@ export function useNewsInsights(items: NewsItem[], priority: "high" | "normal", 
     queryFn: () => aiApi.news(items, priority),
     enabled: on && items.length > 0,
     refetchInterval: (q) => (q.state.data?.pending.length ? (priority === "high" ? 1500 : 4000) : false),
+    refetchIntervalInBackground: background, // Nachrichten-Signal: auch im Hintergrund-Tab weiter fragen
     placeholderData: keepPreviousData,
     staleTime: 60_000,
     retry: false,

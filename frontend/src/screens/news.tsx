@@ -4,7 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorState, Loading, Seg, TickerLink, useSize } from "../components/ui";
 import { displayTicker, fmtAge, fmtDate, fmtTime, isNum, isToday, safeUrl } from "../lib/format";
 import { aiAvailable, engineLabel, EVENT_LABEL, RELEVANCE_LABEL, useAiStatus, useNewsInsights, type NewsInsight } from "../lib/ai";
+import { IS_STATIC } from "../lib/api";
+import { useIntent } from "../lib/intents";
+import { DEFAULT_SIGNAL, isSignalSettings, SIGNAL_EVENT, type SignalSettings } from "../lib/newsSignal";
+import { usePersistentState } from "../lib/persist";
 import { useNews } from "../lib/queries";
+import { newsTone } from "../lib/sound";
 import type { NewsItem } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
@@ -228,7 +233,7 @@ function Reader({ n, onBack, related, onOpen, ai }: {
   );
 }
 
-export function NewsTerminal({ tickers, compact, active }: { tickers?: string[]; compact?: boolean; active: boolean }) {
+export function NewsTerminal({ tickers, compact, active, signal }: { tickers?: string[]; compact?: boolean; active: boolean; signal?: boolean }) {
   const ws = useWorkspace();
   const [topic, setTopic] = useState<string>("all");
   const [scope, setScope] = useState<"all" | "watch">("all");
@@ -238,6 +243,25 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [read, setRead] = useState<Set<string>>(loadRead);
   const [paused, setPaused] = useState(false);
+  const [pinned, setPinned] = useState<NewsItem | null>(null);
+  // Hinweis „Lesen“ einer wichtigen Meldung: Filter zurücksetzen und die Meldung öffnen
+  useIntent("TOP", (v) => {
+    if (!signal || !v.newsId) return;
+    setTopic("all");
+    setScope("all");
+    setSearch("");
+    setUrgentOnly(false);
+    setRelevantOnly(false);
+    setPaused(false);
+    setPinned(v.news ?? null);
+    setSelectedId(v.newsId);
+    if (!read.has(v.newsId)) {
+      const next = new Set(read);
+      next.add(v.newsId);
+      setRead(next);
+      saveRead(next);
+    }
+  });
   const [debounced, setDebounced] = useState("");
   useEffect(() => {
     const id = setTimeout(() => setDebounced(search.trim()), 250);
@@ -267,7 +291,7 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
   const ai = aiAvailable(aiStatus.data);
   const top = useMemo(() => unfiltered.slice(0, AI_LIST_MAX), [unfiltered]);
   const listAi = useNewsInsights(top, "normal", aiStatus.data);
-  const selectedItem = unfiltered.find((n) => n.id === selectedId) ?? null;
+  const selectedItem = unfiltered.find((n) => n.id === selectedId) ?? (pinned && pinned.id === selectedId ? pinned : null);
   const selectedAi = useNewsInsights(selectedItem ? [selectedItem] : [], "high", aiStatus.data);
   const insightOf = (id: string): NewsInsight | undefined => selectedAi.data?.insights[id] ?? listAi.data?.insights[id];
   const pendingIds = new Set([...(listAi.data?.pending ?? []), ...(selectedAi.data?.pending ?? [])]);
@@ -354,6 +378,7 @@ export function NewsTerminal({ tickers, compact, active }: { tickers?: string[];
             KI: kursrelevant
           </label>
         )}
+        {signal && !IS_STATIC && <SignalControl />}
         <button className="btn" onClick={() => setPaused((p) => !p)} title={paused ? "Live-Aktualisierung fortsetzen" : "Liste anhalten, um in Ruhe zu lesen"}>
           {paused ? "▶ Fortsetzen" : "❚❚ Anhalten"}
         </button>
@@ -415,7 +440,43 @@ const WATCH_NEWS_MAX = 30;
 const AI_LIST_MAX = 40;
 
 export function TOP({ active }: ScreenProps) {
-  return <NewsTerminal active={active} />;
+  return <NewsTerminal active={active} signal />;
+}
+
+/** Einstellungen des Nachrichten-Signals (Ton und Hinweis bei wichtigen Meldungen). */
+function SignalControl() {
+  const [s, setS] = usePersistentState<SignalSettings>("news.signal", DEFAULT_SIGNAL, isSignalSettings);
+  const update = (patch: Partial<SignalSettings>) => {
+    const next = { ...s, ...patch };
+    setS(next);
+    // der Signalgeber in diesem Fenster übernimmt die Einstellung sofort
+    window.dispatchEvent(new CustomEvent<SignalSettings>(SIGNAL_EVENT, { detail: next }));
+  };
+  return (
+    <span className="signal-ctl" title="Ton und Hinweis unten rechts bei wichtigen Meldungen – auch wenn TOP nicht offen ist">
+      <span className="small muted">🔔 Signal</span>
+      <select className="field" aria-label="Signal bei Meldungen" value={s.mode} onChange={(e) => update({ mode: e.target.value as SignalSettings["mode"] })}>
+        <option value="off">aus</option>
+        <option value="urgent">Eilmeldungen</option>
+        <option value="important">Eil + kursrelevant (KI)</option>
+      </select>
+      {s.mode !== "off" && (
+        <>
+          <select className="field" aria-label="Signal für" value={s.scope} onChange={(e) => update({ scope: e.target.value as SignalSettings["scope"] })}>
+            <option value="mine">Watchlist + Depot</option>
+            <option value="all">alle Meldungen</option>
+          </select>
+          <label className="check" title="Signalton (sonst nur der Hinweis)">
+            <input type="checkbox" checked={s.sound} onChange={(e) => update({ sound: e.target.checked })} />
+            Ton
+          </label>
+          <button type="button" className="tool" title="Ton probehören" onClick={() => newsTone(s.mode === "urgent")}>
+            ▶
+          </button>
+        </>
+      )}
+    </span>
+  );
 }
 
 export function CN({ ticker, active }: ScreenProps) {

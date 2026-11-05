@@ -113,3 +113,28 @@ def test_cache_single_flight_and_stale():
             await cache.get_or_load("never", 0, failing)
 
     asyncio.run(run())
+
+
+def test_news_cached_per_ticker_shared_between_queries():
+    """TOP (Watchlist), CN (ein Wert) und das Nachrichten-Signal teilen sich die Abrufe je Wert."""
+    import datetime as dt
+
+    from app.providers.demo import DemoProvider
+    from app.services.terminal import Terminal
+
+    calls: list = []
+
+    class Counting(DemoProvider):
+        async def news(self, tickers, limit):
+            calls.append(tuple(tickers or ()))
+            return await super().news(tickers, limit)
+
+    t = Terminal(Counting(now_fn=lambda: dt.datetime(2026, 11, 4, 15, 0, tzinfo=dt.timezone.utc)))
+    a = asyncio.run(t.news(["NWND.US", "QBIT.US"]))
+    b = asyncio.run(t.news(["QBIT.US", "NWND.US", "VLTA.US"]))
+    c = asyncio.run(t.news(["NWND.US"]))
+    assert sorted(calls) == [("NWND.US",), ("QBIT.US",), ("VLTA.US",)]  # jeder Wert nur einmal abgerufen
+    assert {n.id for n in a.items} <= {n.id for n in b.items}
+    assert all("NWND.US" in n.symbols for n in c.items) and c.items
+    dates = [n.date for n in b.items]
+    assert dates == sorted(dates, reverse=True) and len({n.id for n in b.items}) == len(b.items)

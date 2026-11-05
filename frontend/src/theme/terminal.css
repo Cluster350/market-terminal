@@ -641,6 +641,11 @@ table.corr td { width: 42px; height: 20px; text-align: center; color: var(--valu
 .toast { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; background: #17120a; border: 1px solid var(--label); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6); padding: 7px 8px; animation: toast-in 0.18s ease-out; }
 .toast-bell { font-size: 16px; }
 .toast-msg { color: var(--value); font-family: var(--sans); font-size: 13px; overflow-wrap: anywhere; }
+.toast-news { border-color: #4f7fb3; background: #0c131c; }
+.toast-urgent { border-color: var(--down); background: #1c0c0c; }
+.toast-urgent .toast-msg { font-weight: 600; }
+.signal-ctl { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.signal-ctl .field { padding-top: 1px; padding-bottom: 1px; }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 .alrt-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--rule); background: #0f0f0f; }

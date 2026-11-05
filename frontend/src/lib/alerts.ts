@@ -1,6 +1,7 @@
 // Kursalarme und Kursmarken: /api/alerts, Abfrage-Hook und Hilfen für Benachrichtigungen.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { alarmTone } from "./sound";
 import { ApiError, IS_STATIC, request } from "./api";
 import { fmt, fmtPrice } from "./format";
 
@@ -157,27 +158,7 @@ export function takeNewEvents(events: AlertEvent[], seen: Set<string> | null): {
   return { fresh, seen: next };
 }
 
-/** Kurzer Signalton ohne Audiodatei. */
+/** Kurzer Signalton ohne Audiodatei (Kursalarm). */
 export function beep() {
-  try {
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctx();
-    const tone = (freq: number, start: number) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.frequency.value = freq;
-      o.type = "sine";
-      g.gain.setValueAtTime(0.0001, ctx.currentTime + start);
-      g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + start + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + 0.25);
-      o.connect(g).connect(ctx.destination);
-      o.start(ctx.currentTime + start);
-      o.stop(ctx.currentTime + start + 0.3);
-    };
-    tone(880, 0);
-    tone(1175, 0.18);
-    setTimeout(() => ctx.close(), 800);
-  } catch {
-    /* ohne Ton */
-  }
+  alarmTone();
 }

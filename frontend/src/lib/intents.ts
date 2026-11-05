@@ -3,12 +3,17 @@
 
 import { useEffect, useRef } from "react";
 import type { FnCode } from "./commands";
+import type { NewsItem } from "./types";
 
 export interface Intent {
   /** Land: Kürzel der Zinskurven (US, DE, UK, FR, IT, JP), des Kalenders (EU, GB …) oder ISO3 (DEU) */
   country?: string;
   /** Kennzahl, z. B. inflation_consumer_prices_annual (ECST) */
   indicator?: string;
+  /** Meldung, die TOP in der Leseansicht öffnen soll (Hinweis „Lesen“) */
+  newsId?: string;
+  /** die Meldung selbst – falls sie in der Liste von TOP (noch) nicht vorkommt */
+  news?: NewsItem;
 }
 
 type Entry = { id: number; at: number; value: Intent };

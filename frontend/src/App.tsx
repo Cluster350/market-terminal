@@ -6,6 +6,8 @@ import { LAYOUTS, PAGES, useWorkspace } from "./state/workspace";
 import { Boot, shouldBoot } from "./shell/Boot";
 import { isTextEntry } from "./lib/keys";
 import { AlertCenter } from "./shell/AlertCenter";
+import { NewsSignal } from "./shell/NewsSignal";
+import { ToastHost } from "./shell/Toasts";
 import { useLiveQuotesBridge } from "./lib/realtime";
 
 export default function App() {
@@ -85,6 +87,8 @@ export default function App() {
       <PanelGrid />
       <StatusBar />
       <AlertCenter />
+      <NewsSignal />
+      <ToastHost />
     </div>
   );
 }

@@ -221,8 +221,11 @@ class Terminal:
         offset: int = 0,
         since: Optional[str] = None,
     ) -> NewsPage:
-        key = "news:" + (",".join(sorted(tickers)) if tickers else "*")
-        items: list[NewsItem] = await self._cached(key, "news", lambda: self.p.news(tickers, 100))
+        items: list[NewsItem]
+        if tickers:
+            items = await self._news_per_ticker(tickers[:30])
+        else:
+            items = await self._cached("news:*", "news", lambda: self.p.news(None, 100))
         if topic and topic != "all":
             items = [n for n in items if n.topic == topic]
         if query:
@@ -236,6 +239,26 @@ class Terminal:
         if self.p.mode == "eodhd" and not tickers:
             note = "Allgemeiner Feed aus den Standard-Tickern (EODHD liefert News je Ticker)."
         return NewsPage(items=items[offset : offset + limit], sources_note=note)
+
+    async def _news_per_ticker(self, tickers: list[str]) -> list[NewsItem]:
+        """News je Wert zwischenspeichern: TOP, CN, das Nachrichten-Signal und mehrere Fenster
+        teilen sich die Abrufe (EODHD liefert News ohnehin je Ticker, jeder Abruf kostet API-Calls)."""
+
+        async def one(t: str) -> list[NewsItem]:
+            return await self._cached("news:" + t, "news", lambda: self.p.news([t], 100))
+
+        results = await asyncio.gather(*(one(t) for t in dict.fromkeys(tickers)), return_exceptions=True)
+        merged: dict[str, NewsItem] = {}
+        errors: list[BaseException] = []
+        for res in results:
+            if isinstance(res, BaseException):
+                errors.append(res)
+                continue
+            for n in res:
+                merged.setdefault(n.id, n)
+        if not merged and errors:
+            raise errors[0]
+        return sorted(merged.values(), key=lambda n: n.date, reverse=True)
 
     @staticmethod
     def _since(raw: str) -> str:
