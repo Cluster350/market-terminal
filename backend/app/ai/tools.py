@@ -380,6 +380,52 @@ async def _devisentermin(t: Terminal, a: dict) -> dict:
     return out
 
 
+_KENNZAHLEN = {
+    "inflation": "inflation_consumer_prices_annual", "bip": "gdp_growth_annual", "wachstum": "gdp_growth_annual",
+    "arbeitslosigkeit": "unemployment_total_percent", "arbeitslosenquote": "unemployment_total_percent",
+    "schulden": "debt_percent_gdp", "realzins": "real_interest_rate", "bip_pro_kopf": "gdp_per_capita_usd",
+}
+_ISO3 = {"DE": "DEU", "US": "USA", "UK": "GBR", "GB": "GBR", "FR": "FRA", "IT": "ITA", "JP": "JPN", "ES": "ESP", "CH": "CHE", "CN": "CHN"}
+
+
+async def _prognose(t: Terminal, a: dict) -> dict:
+    """Modellprognose (Chronos-2 bzw. Statistik) mit Bändern und Rückblick-Test – keine Empfehlung."""
+    from ..forecast import sources
+
+    fs = t.forecast
+    if fs is None:
+        return {"fehler": "Prognose ist nicht verfügbar."}
+    art = str(a.get("art") or "").strip().lower()
+    land = str(a.get("land") or "").strip().upper()
+    if art == "schwankung":
+        res = await sources.vol(fs, t, await resolve_ticker(t, a.get("ticker")), 3)
+    elif art == "termin":
+        name = str(a.get("termin") or "").strip()
+        if not name or len(land) != 2:
+            return {"fehler": "Für einen Konjunkturtermin Land (z. B. US, DE, EU) und Termin (wie im Kalender, z. B. 'CPI YoY') angeben."}
+        res = await sources.event(fs, t, "GB" if land == "UK" else land, name, 3)
+    else:
+        key = str(a.get("kennzahl") or "inflation").strip().lower().replace(" ", "_")
+        res = await sources.macro(fs, t, _ISO3.get(land, land or "USA"), _KENNZAHLEN.get(key, key), 3)
+    q = res.quality
+    return {
+        "reihe": res.label, "einheit": res.unit, "methode": res.engine_label,
+        "letzte_werte": [{"zeit": tt, "wert": _r(v, 3)} for tt, v in list(zip(res.history.t, res.history.v))[-5:]],
+        "prognose": [
+            {"zeit": tt, "median": _r(m, 3), "band_50_prozent": [_r(a1, 3), _r(b1, 3)], "band_80_prozent": [_r(a2, 3), _r(b2, 3)]}
+            for tt, m, a1, b1, a2, b2 in zip(res.forecast.t, res.forecast.median, res.forecast.lo50, res.forecast.hi50, res.forecast.lo80, res.forecast.hi80)
+        ],
+        "rueckblick_test": {
+            "startpunkte": q.origins, "fehler_modell": _r(q.mae, 3), "fehler_bleibt_wie_zuletzt": _r(q.mae_naive, 3),
+            "guete_prozent": None if q.skill is None else round(q.skill * 100), "treffer_80_prozent_band": None if q.cover80 is None else round(q.cover80 * 100),
+            "konsens_fehler": _r(q.consensus_mae, 3), "modell_fehler_naechster_termin": _r(q.model_mae1, 3),
+        },
+        "konsens_naechster_termin": _r(res.next_consensus, 3),
+        "urteil": res.verdict_text,
+        "hinweis": "Modellprognose aus dem bisherigen Verlauf, keine Empfehlung. " + (res.note or ""),
+    }
+
+
 def _obj(props: dict, required: tuple[str, ...] = ()) -> dict:
     return {"type": "object", "properties": props, "required": list(required)}
 
@@ -410,6 +456,12 @@ TOOLS: list[Tool] = [
          _obj({"land": {"type": "string"}}), _zinsen),
     Tool("devisentermin", "Devisen-Terminkurse (1 Woche bis 2 Jahre) eines Paars wie EURUSD und optional die Absicherungskosten für eine Heimatwährung (EUR, CHF …).",
          _obj({"paar": {"type": "string"}, "heimatwaehrung": {"type": "string"}}), _devisentermin),
+    Tool("prognose", "Modellprognose mit Unsicherheitsbändern und Rückblick-Test (wie genau die Methode früher war): "
+         "art='kennzahl' für Jahreswerte eines Landes (kennzahl: inflation, bip, arbeitslosigkeit, schulden, realzins; land: DE, US, FR …), "
+         "art='termin' für einen Konjunkturtermin aus dem Kalender (land: US, DE, EU, GB, JP; termin: Name wie im Kalender, z. B. 'CPI YoY'), "
+         "art='schwankung' für die erwartete Schwankung (Volatilität) eines Wertpapiers. Keine Kursprognose.",
+         _obj({"art": {"type": "string", "enum": ["kennzahl", "termin", "schwankung"]}, "land": {"type": "string"}, "kennzahl": {"type": "string"},
+               "termin": {"type": "string"}, "ticker": TICKER}, ("art",)), _prognose),
     Tool("alarme", "Kursalarme und Kursmarken des Nutzers mit Status, Abstand zum Kurs und zuletzt ausgelöste Alarme.", _obj({}), _alarme),
     Tool("depot", "Das eigene Depot des Nutzers: Wert, Ergebnis heute und seit Kauf, Positionen mit Gewicht und Risikoanteil, "
          "Volatilität, Beta, Drawdown, Value at Risk, Sektoren.", _obj({}), _depot),
@@ -444,7 +496,7 @@ def summarize(name: str, args: dict, result: dict) -> str:
         "kurs": "Kurs", "wertentwicklung": "Wertentwicklung", "kennzahlen": "Kennzahlen", "finanzen": "Finanzdaten",
         "earnings": "Quartalszahlen", "news": "Nachrichten", "kalender": "Wirtschaftskalender", "earnings_kalender": "Earnings-Kalender",
         "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot", "alarme": "Alarme", "optionen": "Optionen",
-        "bewegungen": "Größte Bewegungen", "zinsen": "Zinskurve", "devisentermin": "Devisentermine",
+        "bewegungen": "Größte Bewegungen", "zinsen": "Zinskurve", "devisentermin": "Devisentermine", "prognose": "Prognose",
     }.get(name, name)
     subject = result.get("ticker") or args.get("ticker") or args.get("text") or ""
     if isinstance(subject, str) and "." in subject:
@@ -454,6 +506,8 @@ def summarize(name: str, args: dict, result: dict) -> str:
         subject = str(result["land"])
     if name == "devisentermin" and result.get("paar"):
         subject = str(result["paar"])
+    if name == "prognose" and result.get("reihe"):
+        subject = str(result["reihe"])
     for key in ("meldungen", "termine", "werte", "treffer", "positionen", "alarme"):
         if isinstance(result.get(key), list):
             count = f" ({len(result[key])})"

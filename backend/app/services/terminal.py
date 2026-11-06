@@ -112,6 +112,7 @@ class Terminal:
             "fund": 24 * 3600 if live else 3600,
             "news": 600 if live else 60,
             "calendar": 3600 if live else 60,
+            "calendar_past": 7 * 24 * 3600 if live else 3600,  # abgeschlossene Zeiträume ändern sich kaum
             "macro": 7 * 24 * 3600,
             "screen": 900 if live else 60,
             "search": 24 * 3600,
@@ -123,6 +124,7 @@ class Terminal:
         self.portfolio_source: Optional[Callable[[], Awaitable[Any]]] = None
         self.alerts_source: Optional[Callable[[], Awaitable[Any]]] = None  # für das KI-Werkzeug „alarme“
         self.realtime: Any = None  # RealtimeHub (Echtzeit-Kurse), von main.py gesetzt
+        self.forecast: Any = None  # ForecastService (Prognose), von main.py gesetzt
 
     # --- Infrastruktur ----------------------------------------------------------
 
@@ -428,6 +430,34 @@ class Terminal:
         key = f"cal:{start}:{end}:{country or '*'}"
         events: list[EconEvent] = await self._cached(key, "calendar", lambda: self.p.calendar(start, end, country))
         return [e for e in events if e.importance >= min_importance]
+
+    async def calendar_history(self, country: str, years: int = 6) -> list[EconEvent]:
+        """Alle Termine eines Landes der letzten Jahre (für Prognosen aus früheren Veröffentlichungen).
+        Abgefragt in festen Zwei-Monats-Blöcken, damit vergangene Blöcke lange zwischengespeichert bleiben."""
+        today = self._today()
+        windows: list[tuple[dt.date, dt.date]] = []
+        y, m = today.year - years, 1
+        while dt.date(y, m, 1) <= today + dt.timedelta(days=45):  # auch die anstehenden Termine (Konsens)
+            start = dt.date(y, m, 1)
+            ny, nm = (y, m + 2) if m <= 10 else (y + 1, m - 10)
+            windows.append((start, dt.date(ny, nm, 1) - dt.timedelta(days=1)))
+            y, m = ny, nm
+
+        async def one(s: dt.date, e: dt.date) -> list[EconEvent]:
+            ttl = "calendar_past" if e < today - dt.timedelta(days=7) else "calendar"
+            async with self._sem:
+                try:
+                    return await self._cached(f"calh:{s}:{e}:{country}", ttl, lambda: self.p.calendar(s, e, country))
+                except TerminalError as exc:
+                    if isinstance(exc, (PlanNotIncluded,)):
+                        raise
+                    return []
+
+        out: list[EconEvent] = []
+        for chunk in await asyncio.gather(*(one(s, e) for s, e in windows)):
+            out.extend(chunk)
+        out.sort(key=lambda ev: ev.date)
+        return out
 
     async def countries(self, indicators: Optional[list[str]] = None, countries: Optional[dict[str, str]] = None) -> CountryTable:
         known = {k: (label, unit) for k, label, unit in MACRO_INDICATORS}

@@ -21,6 +21,7 @@ from .ai.service import AIService
 from .alerts.service import AlertService
 from .api.ai_routes import router as ai_router
 from .api.alert_routes import router as alert_router
+from .api.forecast_routes import router as forecast_router
 from .api.forward_routes import router as forward_router
 from .api.option_routes import router as option_router
 from .api.portfolio_routes import current_portfolio, router as portfolio_router
@@ -29,6 +30,7 @@ from .api.stream_routes import router as stream_router
 from .cache import TTLCache
 from .config import Settings, settings
 from .errors import TerminalError
+from .forecast.service import ForecastService
 from .portfolio.store import PortfolioStore
 from .providers.base import Provider
 from .realtime.demo import DemoSource
@@ -108,8 +110,10 @@ def make_realtime(app: FastAPI, prov: Provider, cfg: Settings, enabled: bool) ->
 
 def create_app(
     provider: Provider | None = None, cfg: Settings = settings, llm_transport: Optional[httpx.AsyncBaseTransport] = None,
-    realtime: Optional[bool] = None,
+    realtime: Optional[bool] = None, forecast: Optional[str] = None,
 ) -> FastAPI:
+    # Prognose: Tests (eigener Provider) rechnen ohne Chronos-2, damit nicht bei jedem Start das Modell lädt
+    forecast_mode = forecast or (cfg.forecast_mode if provider is None else "simple")
     # Echtzeit läuft im Betrieb; Tests übergeben einen eigenen Provider mit fester Uhr und schalten
     # sie bei Bedarf ausdrücklich ein (sonst würden Hintergrund-Ticks erwartete Kurse verändern)
     live = realtime if realtime is not None else provider is None
@@ -128,9 +132,13 @@ def create_app(
         app.state.realtime = make_realtime(app, prov, cfg, live)
         app.state.terminal.realtime = app.state.realtime if live else None
         app.state.realtime.start()
+        app.state.forecast = ForecastService(forecast_mode, cfg.forecast_model, cfg.forecast_device)
+        app.state.terminal.forecast = app.state.forecast
+        app.state.forecast.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
         yield
         await app.state.realtime.close()
+        await app.state.forecast.close()
         await app.state.alerts.close()
         await app.state.ai.close()
         await prov.close()
@@ -180,6 +188,7 @@ def create_app(
     app.include_router(forward_router)
     app.include_router(option_router)
     app.include_router(stream_router)
+    app.include_router(forecast_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

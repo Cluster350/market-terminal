@@ -737,3 +737,20 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 /* Echtzeit-Kennzeichnung im Kurschart */
 .live-badge { font-size: var(--fs-xs); color: var(--muted); border: 1px solid var(--rule); padding: 1px 6px; white-space: nowrap; letter-spacing: 0.03em; }
 .live-badge.on { color: var(--up); border-color: #1f4d36; }
+
+/* Prognose (Fächerdiagramm mit Rückblick-Test) */
+.fc { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fc-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 4px 10px 2px; }
+.fc-head b { color: var(--value); font-weight: 600; }
+.fc-next { margin-left: auto; }
+.fc-engine { font-size: 10px; padding: 0 5px; border: 1px solid #4f7fb3; color: #9cc3ff; text-transform: uppercase; letter-spacing: 0.04em; cursor: help; }
+.fc-verdict { font-size: 10px; padding: 0 5px; border: 1px solid currentColor; cursor: help; }
+.fc-verdict.flat { color: var(--label); }
+.fc-chart { flex: 1 1 auto; min-height: 90px; }
+.fc-foot { display: flex; flex-direction: column; gap: 1px; padding: 2px 10px 5px; flex: 0 0 auto; }
+.fc-foot > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-cmp { display: flex; gap: 14px; flex-wrap: wrap; padding: 0 10px 2px; }
+.fc-cmp b { color: var(--value); }
+.eco-fc { flex: 0 0 50%; min-height: 220px; border-top: 1px solid var(--rule); position: relative; display: flex; flex-direction: column; }
+.eco-fc-close { position: absolute; right: 6px; top: 2px; z-index: 2; }
+.eco-fc .fc-head { padding-right: 34px; }

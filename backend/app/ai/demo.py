@@ -329,6 +329,11 @@ _EARN_CAL = re.compile(r"(wer|welche).*(quartalszahlen|berichtet|earnings)|earni
 _MOVERS = re.compile(r"bewegen sich|am stärksten|größten? (gewinner|verlierer|bewegung)|top.?(gewinner|verlierer)|tagesgewinner|tagesverlierer|movers")
 _OPTIONS = re.compile(r"option|implizit|straddle|erwartete bewegung|put.?call|max pain|einpreisen.*(zahlen|bewegung)")
 _FWD = re.compile(r"absicher|hedg|terminkurs|devisentermin|forward|swap.?punkt")
+_FORECAST = re.compile(r"prognos|vorhersag|wie (geht|entwickelt) (es )?(sich )?.*(inflation|arbeitslos|wachstum|\bbip\b|schulden|realzins)|erwartete schwankung|künftige schwankung|volatilität.*(erwart|prognos|nächst)")
+_FC_COUNTRY = (("deutsch", "DE"), ("frankreich", "FR"), ("ital", "IT"), ("japan", "JP"), ("brit", "UK"), ("spanien", "ES"),
+               ("schweiz", "CH"), ("china", "CN"), ("usa", "US"), ("amerika", "US"), ("vereinigte staaten", "US"))
+_FC_IND = (("inflation", "inflation"), ("teuerung", "inflation"), ("arbeitslos", "arbeitslosigkeit"), ("wachstum", "bip"), ("bip", "bip"),
+           ("schulden", "schulden"), ("realzins", "realzins"))
 _RATES = re.compile(r"zinskurve|\bkurve|\brendite|staatsanleihe|anleihen|\bbund|treasur|1y1y|5y5y|eingepreist|preist .*(fed|ezb|notenbank|zins)|steilheit|zinsen")
 
 DEMO_HINT = (
@@ -385,7 +390,25 @@ async def ask(t: Terminal, req: AskRequest) -> AskResult:
         return res
 
     lines: list[str] = []
-    if _ALERTS.search(q):
+    if _FORECAST.search(q) and not _OPTIONS.search(q):
+        if re.search(r"schwankung|volatil", q):
+            ticker = await _find_ticker(t, req.question, req.ticker) or req.ticker  # sonst das aktive Wertpapier
+            res = await call("prognose", {"art": "schwankung", "ticker": ticker}) if ticker else {"fehler": "Für welches Wertpapier? Bitte Kürzel nennen, z. B. NWND US."}
+        else:
+            land = next((cc for word, cc in _FC_COUNTRY if word in q), "DE" if "deutschland" in q else "US")
+            kennzahl = next((k for word, k in _FC_IND if word in q), "inflation")
+            res = await call("prognose", {"art": "kennzahl", "land": land, "kennzahl": kennzahl})
+        if "fehler" in res:
+            lines.append(res["fehler"])
+        else:
+            unit = f" {res['einheit']}" if res.get("einheit") and res["einheit"] != "USD" else ""
+            lines.append(f"Modellprognose {res['reihe']} ({res['methode']}):")
+            for p in res["prognose"]:
+                lo, hi = p["band_80_prozent"]
+                lines.append(f"- {p['zeit'][:10]}: {de(p['median'], 1)}{unit} (80-%-Band {de(lo, 1)} bis {de(hi, 1)})")
+            lines.append(f"- {res['urteil']}")
+            lines.append("- Nur aus dem bisherigen Verlauf gerechnet, ohne Wissen über Politik oder Ereignisse – keine Empfehlung.")
+    elif _ALERTS.search(q):
         res = await call("alarme", {})
         rows = res.get("alarme") or []
         armed = [r for r in rows if r["status"] == "scharf"]

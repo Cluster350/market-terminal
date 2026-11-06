@@ -71,6 +71,12 @@ class Settings:
     # "off" = nur verzögerte Kurse
     realtime: str = field(default_factory=lambda: os.environ.get("REALTIME", "auto").strip().lower() or "auto")
 
+    # Prognose: "auto" = Chronos-2 (falls installiert) und Statistik, je Reihe die im Rückblick-Test
+    # bessere; "chronos", "simple" (nur Statistik) oder "off"
+    forecast_mode: str = field(default_factory=lambda: os.environ.get("FORECAST_MODE", "auto").strip().lower() or "auto")
+    forecast_model: str = field(default_factory=lambda: os.environ.get("FORECAST_MODEL", "amazon/chronos-2").strip() or "amazon/chronos-2")
+    forecast_device: str = field(default_factory=lambda: os.environ.get("FORECAST_DEVICE", "cpu").strip().lower() or "cpu")
+
     # Kursalarme: Prüfabstand in Sekunden (0 = automatisch: Demo 15 s, EODHD 60 s)
     alert_interval: int = field(default_factory=lambda: max(0, _int("ALERT_INTERVAL_SECONDS", 0)))
 

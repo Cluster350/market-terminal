@@ -9,6 +9,9 @@ import { isOneOf, isStringList, usePersistentState } from "../lib/persist";
 import { useCalendar, useCommodities, useCountries, useCurves, useFx, useIndices, useSpreads, useStatus } from "../lib/queries";
 import type { EconEvent, MarketRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
+import { ForecastPanel } from "../components/ForecastPanel";
+import { IS_STATIC } from "../lib/api";
+import { digitsFor, fcTime, fmtVal, useEventForecast, useMacroForecast, type ForecastResult } from "../lib/forecast";
 import type { ScreenProps } from "./types";
 
 function MarketTable({ rows, grouped, digits }: { rows: MarketRow[]; grouped?: boolean; digits?: number }) {
@@ -389,6 +392,9 @@ export function ECO(_: ScreenProps) {
   const now = useNow(30_000);
   const nextId = useMemo(() => q.data?.find((e) => new Date(e.date).getTime() > now)?.id ?? null, [q.data, now]);
   const countries = useMemo(() => Array.from(new Set((q.data ?? []).map((e) => e.country))).sort(), [q.data]);
+  // Ausgewählter Termin: frühere Veröffentlichungen mit Prognose und Vergleich zum Konsens
+  const [sel, setSel] = useState<{ country: string; event: string; date: string } | null>(null);
+  const fc = useEventForecast(sel?.country ?? null, sel?.event ?? null, 3);
 
   return (
     <>
@@ -425,63 +431,99 @@ export function ECO(_: ScreenProps) {
           {fmtDate(range.from)} – {fmtDate(range.to)} · Zeiten lokal
         </span>
       </div>
-      <div className="panel-body">
-        <Q q={q}>
-          {(events) =>
-            !events.length ? (
-              <Empty>Keine Termine für diese Auswahl.</Empty>
-            ) : (
-              <table className="t">
-                <thead>
-                  <tr>
-                    <th>Zeit</th>
-                    <th>Land</th>
-                    <th>Ereignis</th>
-                    <th title="Wichtigkeit">Wicht.</th>
-                    <th className="num">Ist</th>
-                    <th className="num">Prognose</th>
-                    <th className="num">Vorwert</th>
-                    <th className="num" title="Ist minus Prognose">Überr.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {events.map((e: EconEvent, i: number) => {
-                    const day = fmtWeekday(e.date);
-                    const header = i === 0 || fmtWeekday(events[i - 1].date) !== day;
-                    const past = new Date(e.date).getTime() <= now;
-                    return (
-                      <FragmentWithHeader key={e.id} header={header ? day : null}>
-                        <tr className={e.id === nextId ? "selected" : ""} style={{ opacity: !past || isNum(e.actual) ? 1 : 0.75 }}>
-                          <td className={e.id === nextId ? "lbl" : "muted"}>{fmtTime(e.date)}</td>
-                          <td title={COUNTRY_NAMES[e.country] || e.country}>{e.country}</td>
-                          <td className="wrap" style={{ whiteSpace: "normal" }}>
-                            {e.event}
-                            {e.period && <span className="muted xs"> · {e.period}</span>}
-                          </td>
-                          <td>
-                            <span className="imp" aria-label={`Wichtigkeit ${e.importance} von 3`}>
-                              {[1, 2, 3].map((k) => (
-                                <i key={k} className={k <= e.importance ? "on" : ""} />
-                              ))}
-                            </span>
-                          </td>
-                          <td className={`num ${tone(surpriseSign(e))}`} style={{ fontWeight: 600 }}>
-                            {fmtEvent(e.actual, e.unit)}
-                          </td>
-                          <td className="num">{fmtEvent(e.estimate, e.unit)}</td>
-                          <td className="num muted">{fmtEvent(e.previous, e.unit)}</td>
-                          <td className={`num ${tone(surpriseSign(e))}`}>{isNum(e.surprise) ? `${e.surprise > 0 ? "+" : ""}${fmtEvent(e.surprise, e.unit === "%" ? "Pp" : e.unit)}` : DASH}</td>
-                        </tr>
-                      </FragmentWithHeader>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )
-          }
-        </Q>
+      <div className="panel-body flush">
+        <div style={{ overflow: "auto", flex: "1 1 auto", minHeight: 0 }}>
+          <Q q={q}>
+            {(events) =>
+              !events.length ? (
+                <Empty>Keine Termine für diese Auswahl.</Empty>
+              ) : (
+                <table className="t">
+                  <thead>
+                    <tr>
+                      <th>Zeit</th>
+                      <th>Land</th>
+                      <th>Ereignis</th>
+                      <th title="Wichtigkeit">Wicht.</th>
+                      <th className="num">Ist</th>
+                      <th className="num">Prognose</th>
+                      <th className="num">Vorwert</th>
+                      <th className="num" title="Ist minus Prognose">Überr.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {events.map((e: EconEvent, i: number) => {
+                      const day = fmtWeekday(e.date);
+                      const header = i === 0 || fmtWeekday(events[i - 1].date) !== day;
+                      const past = new Date(e.date).getTime() <= now;
+                      return (
+                        <FragmentWithHeader key={e.id} header={header ? day : null}>
+                          <tr
+                            className={`${IS_STATIC ? "" : "clickable"} ${e.id === nextId || (sel && sel.event === e.event && sel.country === e.country) ? "selected" : ""}`}
+                            style={{ opacity: !past || isNum(e.actual) ? 1 : 0.75 }}
+                            title={IS_STATIC ? undefined : "Frühere Veröffentlichungen mit Prognose zeigen"}
+                            onClick={() => !IS_STATIC && setSel(sel && sel.event === e.event && sel.country === e.country ? null : { country: e.country, event: e.event, date: e.date })}
+                          >
+                            <td className={e.id === nextId ? "lbl" : "muted"}>{fmtTime(e.date)}</td>
+                            <td title={COUNTRY_NAMES[e.country] || e.country}>{e.country}</td>
+                            <td className="wrap" style={{ whiteSpace: "normal" }}>
+                              {e.event}
+                              {e.period && <span className="muted xs"> · {e.period}</span>}
+                            </td>
+                            <td>
+                              <span className="imp" aria-label={`Wichtigkeit ${e.importance} von 3`}>
+                                {[1, 2, 3].map((k) => (
+                                  <i key={k} className={k <= e.importance ? "on" : ""} />
+                                ))}
+                              </span>
+                            </td>
+                            <td className={`num ${tone(surpriseSign(e))}`} style={{ fontWeight: 600 }}>
+                              {fmtEvent(e.actual, e.unit)}
+                            </td>
+                            <td className="num">{fmtEvent(e.estimate, e.unit)}</td>
+                            <td className="num muted">{fmtEvent(e.previous, e.unit)}</td>
+                            <td className={`num ${tone(surpriseSign(e))}`}>{isNum(e.surprise) ? `${e.surprise > 0 ? "+" : ""}${fmtEvent(e.surprise, e.unit === "%" ? "Pp" : e.unit)}` : DASH}</td>
+                          </tr>
+                        </FragmentWithHeader>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )
+            }
+          </Q>
+        </div>
+        {sel && !IS_STATIC && (
+          <div className="eco-fc">
+            <button type="button" className="tool eco-fc-close" aria-label="Prognose schließen" onClick={() => setSel(null)}>
+              ×
+            </button>
+            <ForecastPanel q={fc} maxHist={30}>{(r) => <ConsensusCompare r={r} />}</ForecastPanel>
+          </div>
+        )}
       </div>
     </>
+  );
+}
+
+/** Nächste Veröffentlichung: Modell gegen Konsens, und wer bisher näher lag. */
+function ConsensusCompare({ r }: { r: ForecastResult }) {
+  const q = r.quality;
+  const d = digitsFor(r);
+  return (
+    <div className="fc-cmp small">
+      <span>
+        Nächster Termin {fcTime(r.forecast.t[0], r.freq)}: Modell <b>{fmtVal(r.forecast.median[0], r)}</b>{" "}
+        <span className="muted">(80 %: {fmt(r.forecast.lo80[0], d)} – {fmt(r.forecast.hi80[0], d)})</span> · Konsens{" "}
+        <b style={{ color: "#6fa8ff" }}>{isNum(r.nextConsensus) ? fmtVal(r.nextConsensus, r) : DASH}</b>
+      </span>
+      {q.consensusN > 0 && isNum(q.consensusMae) && isNum(q.modelMae1) && (
+        <span className="muted">
+          Bisher ({q.consensusN} Termine) mittlerer Fehler: Modell {fmt(q.modelMae1, d)} · Konsens {fmt(q.consensusMae, d)}
+          {q.consensusMae < q.modelMae1 * 0.95 ? " – der Konsens lag meist näher" : q.modelMae1 < q.consensusMae * 0.95 ? " – das Modell lag meist näher" : " – etwa gleich gut"}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -526,6 +568,10 @@ export function ECST(_: ScreenProps) {
   }, [mark]);
   const focus = chosen.includes(focusRaw) ? focusRaw : chosen[0];
   const q = useCountries(chosen);
+  // Unterer Bereich: Ländervergleich oder Verlauf mit Prognose für das markierte Land
+  const [view, setView] = usePersistentState<"compare" | "forecast">("ecst.view", "compare", isOneOf(["compare", "forecast"] as const));
+  const showForecast = view === "forecast" && !IS_STATIC;
+  const fc = useMacroForecast(showForecast ? mark : null, focus, 3);
 
   const option = useMemo<EOption | null>(() => {
     if (!q.data) return null;
@@ -597,7 +643,16 @@ export function ECST(_: ScreenProps) {
                   </thead>
                   <tbody>
                     {t.rows.slice().sort((a, b) => (b.values[focus]?.value ?? -Infinity) - (a.values[focus]?.value ?? -Infinity)).map((r) => (
-                      <tr key={r.country} ref={r.country === mark ? markRow : undefined} className={r.country === mark ? "selected" : ""}>
+                      <tr
+                        key={r.country}
+                        ref={r.country === mark ? markRow : undefined}
+                        className={`clickable ${r.country === mark ? "selected" : ""}`}
+                        onClick={() => {
+                          setMark(r.country);
+                          if (!IS_STATIC) setView("forecast");
+                        }}
+                        title={IS_STATIC ? undefined : "Verlauf und Prognose dieses Landes zeigen"}
+                      >
                         <td>{r.name}</td>
                         {t.indicators.map((ind) => {
                           const v = r.values[ind.key];
@@ -617,13 +672,33 @@ export function ECST(_: ScreenProps) {
                   </tbody>
                 </table>
               </div>
-              <div style={{ flex: "0 0 42%", minHeight: 160, borderTop: "1px solid var(--rule)", display: "flex", flexDirection: "column" }}>
-                <div className="small muted" style={{ padding: "4px 10px" }}>
-                  {t.indicators.find((i) => i.key === focus)?.label ?? "Spalte wählen"} – letzter verfügbarer Jahreswert
+              <div style={{ flex: "0 0 46%", minHeight: 200, borderTop: "1px solid var(--rule)", display: "flex", flexDirection: "column" }}>
+                <div className="small muted" style={{ padding: "4px 10px", display: "flex", gap: 10, alignItems: "center" }}>
+                  {!IS_STATIC && (
+                    <Seg
+                      label="Ansicht"
+                      value={view}
+                      options={[
+                        { value: "compare", label: "Ländervergleich" },
+                        { value: "forecast", label: "Verlauf & Prognose" },
+                      ]}
+                      onChange={setView}
+                    />
+                  )}
+                  <span>
+                    {t.indicators.find((i) => i.key === focus)?.label ?? "Spalte wählen"}
+                    {showForecast ? (mark ? "" : " – Land in der Tabelle anklicken") : " – letzter verfügbarer Jahreswert"}
+                  </span>
                 </div>
-                <div style={{ flex: 1, minHeight: 0 }}>{option && <EChart option={option} />}</div>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                  {showForecast ? (
+                    mark ? <ForecastPanel q={fc} maxHist={16} /> : <Empty>Land in der Tabelle anklicken: Verlauf der Kennzahl mit Prognose für die nächsten drei Jahre.</Empty>
+                  ) : (
+                    option && <EChart option={option} />
+                  )}
+                </div>
               </div>
-              {t.note && <div className="notes">{t.note}</div>}
+              {t.note && !showForecast && <div className="notes">{t.note}</div>}
             </>
           )}
         </Q>

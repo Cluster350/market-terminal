@@ -139,7 +139,7 @@ export async function request<T>(path: string, init?: RequestInit, opts: Request
 
 const enc = encodeURIComponent;
 
-function qs(params: Record<string, string | number | undefined | null>): string {
+export function qs(params: Record<string, string | number | undefined | null>): string {
   const parts = Object.entries(params)
     .filter(([, v]) => v !== undefined && v !== null && v !== "")
     .map(([k, v]) => `${enc(k)}=${enc(String(v))}`);
