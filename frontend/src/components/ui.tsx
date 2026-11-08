@@ -134,6 +134,9 @@ export interface Column<R> {
   sort?: (r: R) => number | string | null | undefined;
   className?: string;
   title?: string;
+  /** CSV-Export: Text statt der Anzeige; mehrere Spalten mit Tabulator getrennt (dann auch ``csvLabel``). */
+  csv?: (r: R) => string;
+  csvLabel?: string;
 }
 
 export function Table<R>({
@@ -185,6 +188,7 @@ export function Table<R>({
                 key={c.key}
                 className={`${c.num ? "num" : ""} ${c.sort ? "sortable" : ""} ${active ? "sorted" : ""} ${c.className || ""}`}
                 title={c.title}
+                data-csv={c.csvLabel}
                 aria-sort={active ? (sort!.desc ? "descending" : "ascending") : undefined}
                 onClick={c.sort ? () => setSort(active ? { key: c.key, desc: !sort!.desc } : { key: c.key, desc: !!c.num }) : undefined}
               >
@@ -208,7 +212,7 @@ export function Table<R>({
                 onClick={onRowClick ? () => onRowClick(r) : undefined}
               >
                 {columns.map((c) => (
-                  <td key={c.key} className={`${c.num ? "num" : ""} ${c.className || ""}`}>
+                  <td key={c.key} className={`${c.num ? "num" : ""} ${c.className || ""}`} data-csv={c.csv?.(r)}>
                     {c.render(r)}
                   </td>
                 ))}

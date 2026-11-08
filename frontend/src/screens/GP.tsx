@@ -21,7 +21,8 @@ import { volumeProfile } from "../lib/profile";
 import { alertStatus, alertsApi, conditionLabel, useAlerts, useAlertsRefresh, type Alert } from "../lib/alerts";
 import { api, ApiError, IS_STATIC } from "../lib/api";
 import { coneLines, useVolForecast } from "../lib/forecast";
-import { BAND_KEYS, bandTestText, bandTestVerdict, gapText, REGION_LABEL, useStockBands } from "../lib/valuation";
+import { useCsvExport, type CsvDataset } from "../lib/exporter";
+import { BAND_KEYS, bandsCsv, bandTestText, bandTestVerdict, gapText, REGION_LABEL, useStockBands } from "../lib/valuation";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
 import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
 import { isBool, isNumberList, isOneOf, usePersistentState } from "../lib/persist";
@@ -423,6 +424,60 @@ export default function GP({ ticker }: ScreenProps) {
     const others = compare.map((t, i) => norm(compareQ[i]?.data, displayTicker(t), COMPARE_COLORS[i % COMPARE_COLORS.length]));
     return [own, ...others].filter((x): x is NonNullable<typeof x> => !!x);
   }, [comparing, bars, hist.data, compare, compareQ, ticker, isYield]);
+
+  // CSV-Knopf des Panels: Kurse (OHLCV) mit gleitenden Durchschnitten, Vergleich, KGV-Band und Kegel
+  useCsvExport(() => {
+    if (!bars.length) return [];
+    const name = ticker ? displayTicker(ticker) : "";
+    const label = (t: Time) => (typeof t === "number" ? new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ") : String(t));
+    const maMaps = maLines.map((m) => new Map(m.data.map((p) => [String(p.time), p.value])));
+    const bollUp = new Map((bands?.upper ?? []).map((p) => [String(p.time), p.value]));
+    const bollLo = new Map((bands?.lower ?? []).map((p) => [String(p.time), p.value]));
+    const sets: CsvDataset[] = [
+      {
+        title: `Kursverlauf ${name} (${range})`,
+        columns: [
+          intradayRange ? "Zeit (UTC)" : "Datum",
+          "Eröffnung",
+          "Hoch",
+          "Tief",
+          "Schluss",
+          "Volumen",
+          ...maLines.map((m) => `SMA ${m.n}`),
+          ...(bands ? ["Bollinger oben", "Bollinger unten"] : []),
+        ],
+        rows: bars.map((b) => {
+          const k = String(b.time);
+          return [label(b.time), b.open, b.high, b.low, b.close, b.volume, ...maMaps.map((mm) => mm.get(k) ?? null), ...(bands ? [bollUp.get(k) ?? null, bollLo.get(k) ?? null] : [])];
+        }),
+      },
+    ];
+    if (compareLines.length) {
+      const times = compareLines[0].data.map((p) => String(p.time));
+      const maps = compareLines.map((l) => new Map(l.data.map((p) => [String(p.time), p.value])));
+      sets.push({
+        title: isYield ? "Vergleich (Veränderung in bp)" : "Vergleich (Wertentwicklung in %)",
+        columns: ["Datum", ...compareLines.map((l) => `${l.label} [${isYield ? "bp" : "%"}]`)],
+        rows: times.map((t) => [t, ...maps.map((m) => m.get(t) ?? null)]),
+      });
+    }
+    const b = bandOn ? shownBands : null;
+    if (b) {
+      const viaSector = bandBase === "sector" && !!bandSector?.bands;
+      sets.push(bandsCsv(b, `KGV-Band ${name}${viaSector ? " (über das Sektor-KGV)" : ""}`, "Kurs", String(bars[0].time)));
+    }
+    const vol = coneOn ? volFc.data?.forecast.median[0] : null;
+    if (isNum(vol) && vol > 0) {
+      const last = bars[bars.length - 1];
+      const c = coneLines(String(last.time), last.close, vol);
+      sets.push({
+        title: `Schwankungskegel 21 Handelstage (σ ${fmt(vol, 1)} % p. a.)`,
+        columns: ["Datum", "2σ unten", "1σ unten", "1σ oben", "2σ oben"],
+        rows: c.up1.map((p, i) => [p.time, c.lo2[i].value, c.lo1[i].value, p.value, c.up2[i].value]),
+      });
+    }
+    return sets;
+  });
 
   const hostRef = useRef<HTMLDivElement>(null);
   const rsiRef = useRef<HTMLDivElement>(null);

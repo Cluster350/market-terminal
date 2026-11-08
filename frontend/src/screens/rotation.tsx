@@ -7,6 +7,7 @@ import { Empty, ErrorState, Loading, Seg } from "../components/ui";
 import { IS_STATIC } from "../lib/api";
 import { fmt, fmtDate, isNum, sectorDe } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
+import { useCsvExport } from "../lib/exporter";
 import {
   axisSpan,
   clockwiseText,
@@ -48,6 +49,24 @@ export function RRG(_: ScreenProps) {
   const last = r ? r.weeks.length - 1 : 0;
   const at = end === null ? last : Math.min(end, last);
   const len = Number(tailLen);
+
+  // CSV: alle Wochenwerte (RS-Trend und RS-Momentum je Mitglied), zusätzlich zur Tabelle im Panel
+  useCsvExport(() => {
+    if (!r || !r.weeks.length) return [];
+    const rows = r.members.flatMap((m) =>
+      r.weeks.map((w, i) => {
+        const qd = quadrantOf(m.trend[i], m.momentum[i]);
+        return [w, m.label, m.ticker ?? m.key, m.trend[i], m.momentum[i], qd ? QUADRANT_LABEL[qd] : null];
+      }),
+    );
+    return [
+      {
+        title: `Relative Rotation ${r.title} – Wochenwerte gegen ${r.benchmark}`,
+        columns: ["Woche", "Name", "Kürzel", "RS-Trend", "RS-Momentum", "Feld"],
+        rows,
+      },
+    ];
+  });
 
   // Abspielen: Woche für Woche über die letzten zwei Jahre
   useEffect(() => {
@@ -281,7 +300,7 @@ function rrgOption(r: RotationResult, at: number, len: number, focus: string | n
 
 function RrgChart({ r, at, len, focus, onPick }: { r: RotationResult; at: number; len: number; focus: string | null; onPick: (key: string) => void }) {
   const option = useMemo(() => rrgOption(r, at, len, focus), [r, at, len, focus]);
-  return <EChart option={option} onClick={(p) => (p.data as { key?: string } | undefined)?.key && onPick((p.data as { key: string }).key)} />;
+  return <EChart option={option} csv={false} onClick={(p) => (p.data as { key?: string } | undefined)?.key && onPick((p.data as { key: string }).key)} />;
 }
 
 function RrgTable({ r, at, len, focus, onFocus, onOpen }: { r: RotationResult; at: number; len: number; focus: string | null; onFocus: (k: string | null) => void; onOpen: (k: string) => void }) {
@@ -296,7 +315,7 @@ function RrgTable({ r, at, len, focus, onFocus, onOpen }: { r: RotationResult; a
   const current = at === r.weeks.length - 1;
   return (
     <div className="rrg-table">
-      <table className="t">
+      <table className="t" data-export-title="Stand je Mitglied">
         <thead>
           <tr>
             <th>{r.universe === "sectors" ? "Sektor" : r.universe === "sector" ? "Firma" : r.universe === "countries" ? "Land" : "Währung"}</th>

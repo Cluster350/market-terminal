@@ -21,6 +21,7 @@ import { IS_STATIC } from "../lib/api";
 import { FN, type FnCode } from "../lib/commands";
 import { displayTicker, fmtTime } from "../lib/format";
 import { glossaryAnswer } from "../lib/glossary";
+import { useCsvExport } from "../lib/exporter";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
 
@@ -80,6 +81,13 @@ export function BRIEF(_: ScreenProps) {
   });
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<unknown>(null);
+  // CSV: Punkte des Briefings je Abschnitt mit ihren Quellen
+  useCsvExport(() => {
+    const b = q.data;
+    if (!b) return [];
+    const rows = b.sections.flatMap((s) => s.points.map((p) => [s.title, p.text, p.sources.map((id) => b.news[id] ?? id).join(" | ")]));
+    return rows.length ? [{ title: b.headline || "Morgenbriefing", columns: ["Abschnitt", "Punkt", "Quellen"], rows }] : [];
+  });
 
   async function refresh() {
     setRefreshing(true);

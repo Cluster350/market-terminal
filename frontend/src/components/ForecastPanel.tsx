@@ -6,6 +6,7 @@ import EChart, { AXIS, TOOLTIP, type EOption } from "./EChart";
 import { Empty, ErrorState, Loading } from "./ui";
 import { ApiError } from "../lib/api";
 import { fmt } from "../lib/format";
+import { useCsvExport, type CsvDataset } from "../lib/exporter";
 import {
   comparedText,
   digitsFor,
@@ -87,9 +88,25 @@ export function EngineBadge({ r }: { r: ForecastResult }) {
   );
 }
 
+/** Verlauf, Konsens und Prognose mit 50-/80-%-Band als eine Tabelle für den CSV-Export. */
+export function forecastCsv(r: ForecastResult): CsvDataset {
+  const unit = r.unit ? ` [${r.unit}]` : "";
+  const cons = new Map((r.consensus?.t ?? []).map((t, i) => [t, r.consensus!.v[i]]));
+  const rows: CsvDataset["rows"] = r.history.t.map((t, i) => [t, "Ist", r.history.v[i], cons.get(t) ?? null, null, null, null, null]);
+  r.forecast.t.forEach((t, i) =>
+    rows.push([t, "Prognose", r.forecast.median[i], cons.get(t) ?? null, r.forecast.lo80[i], r.forecast.lo50[i], r.forecast.hi50[i], r.forecast.hi80[i]]),
+  );
+  return {
+    title: `${r.label} – Prognose (${r.engineLabel})`,
+    columns: ["Zeitpunkt", "Art", `Wert${unit}`, `Konsens${unit}`, "80 % unten", "50 % unten", "50 % oben", "80 % oben"],
+    rows,
+  };
+}
+
 export function ForecastPanel({ q, children, maxHist, height }: { q: UseQueryResult<ForecastResult>; children?: (r: ForecastResult) => ReactNode; maxHist?: number; height?: number }) {
   const r = q.data;
   const option = useMemo(() => (r ? fanOption(r, maxHist) : null), [r, maxHist]);
+  useCsvExport(() => (r ? [forecastCsv(r)] : []));
   if (q.isPending) return <Loading rows={4} />;
   if (q.isError) return <FcError error={q.error} onRetry={() => q.refetch()} />;
   if (!r || !option) return null;
@@ -114,7 +131,7 @@ export function ForecastPanel({ q, children, maxHist, height }: { q: UseQueryRes
         </span>
       </div>
       <div className="fc-chart" style={height ? { height } : undefined}>
-        <EChart option={option} />
+        <EChart option={option} csv={false} />
       </div>
       {children?.(r)}
       <div className="fc-foot xs">

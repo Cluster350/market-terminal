@@ -1,6 +1,7 @@
 // Schlanker ECharts-Wrapper (nur die benötigten Module).
 
 import { useEffect, useRef } from "react";
+import { chartDatasets, useCsvExport } from "../lib/exporter";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, MapChart, ScatterChart, TreemapChart } from "echarts/charts";
 import { DataZoomComponent, GraphicComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent, VisualMapContinuousComponent } from "echarts/components";
@@ -26,8 +27,13 @@ export const TOOLTIP = {
   textStyle: { color: "#ececec", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
 };
 
-export default function EChart({ option, onClick, style }: { option: EOption; onClick?: (p: { data?: unknown; name?: string }) => void; style?: React.CSSProperties }) {
+/**
+ * ``csv``: Datenreihen dieses Diagramms beim CSV-Knopf des Panels mitliefern (Titel der Tabelle) –
+ * ``false``, wenn das Panel die Rohdaten schon selbst und vollständiger anmeldet.
+ */
+export default function EChart({ option, onClick, style, csv = "Diagramm" }: { option: EOption; onClick?: (p: { data?: unknown; name?: string }) => void; style?: React.CSSProperties; csv?: string | false }) {
   const ref = useRef<HTMLDivElement>(null);
+  useCsvExport(() => (csv === false ? [] : chartDatasets(option as Record<string, unknown>, csv)));
   const chart = useRef<echarts.ECharts | null>(null);
   const clickRef = useRef(onClick);
   clickRef.current = onClick;

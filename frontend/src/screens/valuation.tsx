@@ -8,8 +8,10 @@ import { Empty, ErrorState, Loading, Seg, TickerLink } from "../components/ui";
 import { IS_STATIC } from "../lib/api";
 import { fmt, fmtBig, fmtDate, isNum } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
+import { useCsvExport, type CsvDataset } from "../lib/exporter";
 import {
   BAND_KEYS,
+  bandsCsv,
   bandTestText,
   bandTestVerdict,
   decompositionText,
@@ -157,7 +159,7 @@ function ValTable({ o, by, selected, onSelect }: { o: ValOverview; by: Grouping;
   const groups = groupRows(o.rows, by);
   const cols = 2 + past.length + 1 + o.estYears.length + 8;
   return (
-    <table className="t bwt">
+    <table className="t bwt" data-export-title="Bewertungstrend">
       <thead>
         <tr>
           <th>{o.kind === "sector" ? "Sektor" : "Land"}</th>
@@ -218,7 +220,7 @@ function FragmentRows({ title, cols, rows, past, o, selected, onSelect }: { titl
             </td>
           ))}
           <td className="num muted">{fmtPe(r.median ?? r.avg)}</td>
-          <td className="bwt-pos" title={r.position === null ? undefined : `${Math.round(r.position * 100)} % der Monate der letzten zehn Jahre waren günstiger oder gleich (Spanne ${fmtPe(r.low)} – ${fmtPe(r.high)})`}>
+          <td className="bwt-pos" data-csv={isNum(r.position) ? `${Math.round(r.position * 100)} %` : ""} title={r.position === null ? undefined : `${Math.round(r.position * 100)} % der Monate der letzten zehn Jahre waren günstiger oder gleich (Spanne ${fmtPe(r.low)} – ${fmtPe(r.high)})`}>
             {positionBlocks(r.position)}
           </td>
           <td className={`num ${tone(r.fairGap)}`}>{pct(r.fairGap, 0)}</td>
@@ -288,7 +290,7 @@ function ValMap({ o, onSelect }: { o: ValOverview; onSelect: (key: string) => vo
   }, [o]);
   return (
     <div style={{ height: "100%", minHeight: 260 }}>
-      <EChart option={option} onClick={(p) => p.data && onSelect((p.data as { row: ValRow }).row.key)} />
+      <EChart option={option} csv={false} onClick={(p) => p.data && onSelect((p.data as { row: ValRow }).row.key)} />
     </div>
   );
 }
@@ -376,6 +378,37 @@ function Detail({ q, onClose }: { q: ReturnType<typeof useValuationDetail>; onCl
   const [view, setView] = usePersistentState<"pe" | "price">("bwt.detailView", "price", isOneOf(["pe", "price"] as const));
   const main = useMemo(() => (d ? (view === "price" && d.bands ? priceBandOption(d) : detailOption(d)) : null), [d, view]);
   const fwd = useMemo(() => (d ? forwardOption(d) : null), [d]);
+  // CSV: KGV-Verlauf je Monat, Jahres-KGVs mit Schätzungen, Schätzungsverlauf und KGV-Bänder
+  useCsvExport(() => {
+    if (!d) return [];
+    const r = d.row;
+    const sets: CsvDataset[] = [
+      { title: `${r.label} – KGV der letzten 12 Monate je Monat`, columns: ["Monat", "KGV"], rows: d.monthly.t.map((t, i) => [t, d.monthly.v[i]]) },
+      {
+        title: `${r.label} – KGV je Jahr (e = Analystenschätzung)`,
+        columns: ["Jahr", "KGV", `Firmen mit Daten (von ${r.n})`],
+        rows: d.years.map((y) => [d.estYears.includes(y) ? `${y}e` : String(y), r.peYears[String(y)] ?? null, d.coverage[String(y)] ?? null]),
+      },
+    ];
+    const fwdPts = new Map<string, number | null>();
+    d.forwardPath.t.forEach((t, i) => fwdPts.set(t, d.forwardPath.v[i]));
+    d.recorded.t.forEach((t, i) => fwdPts.set(t, d.recorded.v[i]));
+    if (fwdPts.size)
+      sets.push({
+        title: `${r.label} – KGV auf Schätzung ${d.estYears[1] ?? ""} (Verlauf)`,
+        columns: ["Tag", "KGV"],
+        rows: Array.from(fwdPts.entries()).sort(([a], [b]) => (a < b ? -1 : 1)),
+      });
+    const dec = Object.entries(d.decomposition);
+    if (dec.length)
+      sets.push({
+        title: `${r.label} – Zerlegung der KGV-Veränderung`,
+        columns: ["Zeitraum", "Kurs [%]", "Gewinn [%]", "KGV [%]"],
+        rows: dec.map(([k, v]) => [k, isNum(v.price) ? v.price * 100 : null, isNum(v.earnings) ? v.earnings * 100 : null, isNum(v.pe) ? v.pe * 100 : null]),
+      });
+    if (d.bands) sets.push(bandsCsv(d.bands, `${r.label} – KGV-Bänder`, "Kursindex (heute = 100)"));
+    return sets;
+  });
   return (
     <div className="bwt-detail">
       <button type="button" className="tool eco-fc-close" aria-label="Detail schließen" onClick={onClose}>
@@ -407,7 +440,7 @@ function Detail({ q, onClose }: { q: ReturnType<typeof useValuationDetail>; onCl
           </div>
           <div className="bwt-detail-body">
             <div className="bwt-chart">
-              <EChart option={main} />
+              <EChart option={main} csv={false} />
             </div>
             <div className="bwt-side small">
               {d.bands && (
@@ -431,7 +464,7 @@ function Detail({ q, onClose }: { q: ReturnType<typeof useValuationDetail>; onCl
               </div>
               {fwd ? (
                 <div style={{ height: 70, flex: "0 0 auto" }}>
-                  <EChart option={fwd} style={{ minHeight: 0 }} />
+                  <EChart option={fwd} csv={false} style={{ minHeight: 0 }} />
                 </div>
               ) : null}
               <div className="xs dim">
@@ -452,7 +485,7 @@ function Members({ d }: { d: ValDetail }) {
   const past = d.years.filter((y) => !d.estYears.includes(y));
   return (
     <div className="bwt-members">
-      <table className="t">
+      <table className="t" data-export-title="Firmen">
         <thead>
           <tr>
             <th>Firma</th>

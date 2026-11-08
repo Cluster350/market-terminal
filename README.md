@@ -300,6 +300,37 @@ geglättet); Trend = deren Abstand zu den letzten 20 Wochen, Schwung = Abstand d
 Wochen (je als z-Wert um 100). Grenzen: nur relativ – „führend“ kann auch heißen „fällt weniger als der Markt“.
 Länder ohne Devisenkurs (in Euro) werden genannt und weggelassen. Sektoren brauchen die tägliche Berechnung von BWT.
 
+## CSV-Export (für Excel)
+
+Jedes Fenster hat oben rechts den Knopf **CSV**. Ein Klick speichert alles, was das Fenster gerade zeigt, als
+Datei (z. B. `GP-QBIT.US-2026-11-08.csv`); **Umschalt + Klick** legt es stattdessen in die Zwischenablage
+(zum Einfügen in Excel oder eine Mail).
+
+- **Format für deutsches Excel:** Semikolon als Trenner, Komma als Dezimalzeichen, UTF-8 (Umlaute bleiben).
+  Doppelklick auf die Datei öffnet sie in Excel richtig aufgeteilt.
+- **Zahlen bleiben Zahlen:** „1,05 Bio. USD“ wird 1050000000000, „+5,4 %“ wird 5,4 – die Einheit steht in der
+  Spaltenüberschrift („Tag [%]“), beim Zeilennamen („Bruttomarge [%]“) oder in einer eigenen Spalte
+  „… Einheit“, wenn sie je Zeile wechselt (z. B. Kurse in EUR, USD, CHF).
+- **Tabellen und Kennzahlen** werden so übernommen, wie sie sichtbar sind (Sortierung, Filter);
+  Minicharts und Knöpfe fallen weg. Mehrere Tabellen stehen untereinander, jeweils mit Überschrift.
+- **Diagramme liefern ihre Rohdaten mit:**
+
+| Fenster | Zusätzlich in der Datei |
+|---|---|
+| GP | Tageskurse (Eröffnung, Hoch, Tief, Schluss, Volumen) mit SMA/Bollinger; Vergleich; KGV-Band (je Monat und Zukunft); Schwankungskegel |
+| BWT-Detail | KGV je Monat, KGV je Jahr mit Schätzungen, Schätzungsverlauf, Zerlegung, KGV-Bänder |
+| RRG | Trend und Schwung jedes Mitglieds für jede Woche |
+| SPRD | Tageswerte aller Spreads im gewählten Zeitraum |
+| ECST | alle Kennzahlen je Land mit Jahr, dazu der ganze Verlauf |
+| Prognosen (ECO, ECST) | Verlauf, Konsens, Prognose mit 50-/80-%-Band |
+| IMAP, WMAP | alle Kacheln bzw. Länder mit allen Kennzahlen des Bereichs |
+| TOP, CN | angezeigte Meldungen mit Quelle, Kürzeln, Link und KI-Einordnung |
+| BRIEF | Punkte des Briefings mit Quellen |
+| GC, FWD, OMON, RISK | Kurven- und Diagrammwerte (Zinskurven, Terminkurve, Open Interest, Smile, Wertentwicklung) |
+
+Ohne Daten (z. B. ALRT ohne Alarme, ASK) meldet der Knopf „keine Daten“. Texte, die mit `=`, `+`, `-` oder
+`@` beginnen, bekommen ein `'` davor, damit Excel sie nicht als Formel ausführt.
+
 ## KGV-Bänder und Fair Value
 
 Welcher Kurs entspräche dem **üblichen KGV**? Aus dem eigenen KGV-Verlauf der letzten zehn Jahre (Monatswerte)

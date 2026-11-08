@@ -7,6 +7,7 @@ import { Empty, ErrorState, Loading, Seg } from "../components/ui";
 import { explain } from "../lib/glossary";
 import { escapeHtml, fmt, fmtDate, fmtPrice } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
+import { useCsvExport } from "../lib/exporter";
 import {
   colorRange,
   GROUP_LABEL,
@@ -59,6 +60,29 @@ export function WMAP(_: ScreenProps) {
   const [view, setView] = usePersistentState<keyof typeof VIEWS>("wmap.view", "welt", isOneOf(VIEW_KEYS));
   const metric = METRIC_BY_KEY[metricKey]?.group === group ? METRIC_BY_KEY[metricKey] : METRICS.find((m) => m.group === group)!;
   const q = useWorldMap(group);
+  // CSV: alle Kennzahlen des Bereichs je Land (nicht nur die gerade eingefärbte)
+  useCsvExport(() => {
+    const cs = q.data?.countries ?? [];
+    if (!cs.length) return [];
+    const ms = METRICS.filter((m) => m.group === group);
+    return [
+      {
+        title: `Weltkarte ${GROUP_LABEL[group]}`,
+        columns: [
+          "Land",
+          "ISO3",
+          ...(group === "equity" ? ["Index"] : []),
+          ...ms.flatMap((m) => [`${m.label} [${m.unit}]`, ...(m.macroKey ? [`${m.label} (Jahr)`] : [])]),
+        ],
+        rows: cs.map((c) => [
+          c.name,
+          c.iso3,
+          ...(group === "equity" ? [c.index?.name ?? null] : []),
+          ...ms.flatMap((m) => [m.value(c), ...(m.macroKey ? [c.macro[m.macroKey]?.year ?? null] : [])]),
+        ]),
+      },
+    ];
+  });
 
   const rows = useMemo(
     () =>
@@ -171,6 +195,7 @@ export function WMAP(_: ScreenProps) {
             <div className="wmap-map">
               <EChart
                 option={option}
+                csv={false}
                 onClick={(p) => {
                   const iso = p.name;
                   const r = rows.find((x) => x.c.iso3 === iso);

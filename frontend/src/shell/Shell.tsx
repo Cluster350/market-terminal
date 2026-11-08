@@ -13,6 +13,8 @@ import { resetAndReload } from "../lib/reset";
 import { useAiStatus } from "../lib/ai";
 import { useAlerts } from "../lib/alerts";
 import { useTapeVisible } from "../lib/tape";
+import { datasetsFromDom, datasetsToCsv, downloadCsv, ExportContext, fileName, type CsvProvider, type ExportRegistry } from "../lib/exporter";
+import { pushToast } from "../lib/toasts";
 
 /** Knopf "⟲ STANDARD": Seite, Ansicht oder alles auf den Auslieferungszustand zurücksetzen. */
 function ResetMenu() {
@@ -341,6 +343,39 @@ function Panel({ fn, index }: { fn: FnCode; index: number }) {
   const Screen = SCREENS[fn];
   const pinned = ws.state.pins[ws.state.page]?.[index] ?? null;
   const ticker = pinned ?? ws.state.security;
+  // CSV-Export: Rohdaten angemeldeter Diagramme plus alle Tabellen des Panels
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const providers = useRef(new Map<number, CsvProvider>());
+  const registry = useRef<ExportRegistry>({
+    set: (id, p) => {
+      if (p) providers.current.set(id, p);
+      else providers.current.delete(id);
+    },
+  });
+  const exportCsv = async (copy: boolean) => {
+    const sets = [...Array.from(providers.current.values()).flatMap((p) => {
+      try {
+        return p();
+      } catch {
+        return [];
+      }
+    }), ...(bodyRef.current ? datasetsFromDom(bodyRef.current) : [])].filter((d) => d.rows.length);
+    if (!sets.length) {
+      pushToast({ id: `csv-${fn}`, kind: "news", icon: "⇩", message: `${fn}: hier gibt es gerade keine Daten zum Exportieren.`, meta: "CSV-Export" }, 5000);
+      return;
+    }
+    const csv = datasetsToCsv(sets);
+    if (copy) {
+      try {
+        await navigator.clipboard.writeText(csv);
+        pushToast({ id: `csv-${fn}`, kind: "news", icon: "⇩", message: `${fn}: CSV in die Zwischenablage kopiert (${sets.length} ${sets.length === 1 ? "Tabelle" : "Tabellen"}).`, meta: "CSV-Export" }, 5000);
+      } catch {
+        pushToast({ id: `csv-${fn}`, kind: "news", icon: "⇩", message: "Kopieren nicht erlaubt – ohne Umschalttaste klicken, um die Datei zu speichern.", meta: "CSV-Export" }, 6000);
+      }
+      return;
+    }
+    downloadCsv(fileName(fn, FN[fn].needsTicker ? ticker : null), csv);
+  };
   return (
     <section
       className={`panel ${active ? "active" : ""}`}
@@ -384,6 +419,13 @@ function Panel({ fn, index }: { fn: FnCode; index: number }) {
               </option>
             ))}
           </select>
+          <button
+            className="tool"
+            title="Als CSV speichern (Excel: Semikolon, Dezimalkomma) – alle Tabellen und Diagrammdaten dieses Panels. Mit Umschalttaste: in die Zwischenablage."
+            onClick={(e) => void exportCsv(e.shiftKey)}
+          >
+            CSV
+          </button>
           <button className="tool" title="In neuem Fenster öffnen (z. B. für einen weiteren Monitor)" onClick={() => openWindow({ fn })}>
             ⧉
           </button>
@@ -392,16 +434,18 @@ function Panel({ fn, index }: { fn: FnCode; index: number }) {
           </button>
         </div>
       </div>
-      <div className="panel-body flush">
-        <Boundary resetKey={`${fn}|${ticker}`}>
-          <Suspense fallback={null}>
-            {FN[fn].needsTicker && !ticker ? (
-              <div className="state">Kein Wertpapier gewählt. Ticker in die Befehlszeile eingeben.</div>
-            ) : (
-              <Screen ticker={ticker} active={active} />
-            )}
-          </Suspense>
-        </Boundary>
+      <div className="panel-body flush" ref={bodyRef}>
+        <ExportContext.Provider value={registry.current}>
+          <Boundary resetKey={`${fn}|${ticker}`}>
+            <Suspense fallback={null}>
+              {FN[fn].needsTicker && !ticker ? (
+                <div className="state">Kein Wertpapier gewählt. Ticker in die Befehlszeile eingeben.</div>
+              ) : (
+                <Screen ticker={ticker} active={active} />
+              )}
+            </Suspense>
+          </Boundary>
+        </ExportContext.Provider>
       </div>
     </section>
   );

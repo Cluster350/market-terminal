@@ -9,6 +9,7 @@ import { useIntent } from "../lib/intents";
 import { DEFAULT_SIGNAL, isSignalSettings, SIGNAL_EVENT, type SignalSettings } from "../lib/newsSignal";
 import { usePersistentState } from "../lib/persist";
 import { useNews } from "../lib/queries";
+import { useCsvExport } from "../lib/exporter";
 import { newsTone } from "../lib/sound";
 import type { NewsItem } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
@@ -296,6 +297,34 @@ export function NewsTerminal({ tickers, compact, active, signal }: { tickers?: s
   const insightOf = (id: string): NewsInsight | undefined => selectedAi.data?.insights[id] ?? listAi.data?.insights[id];
   const pendingIds = new Set([...(listAi.data?.pending ?? []), ...(selectedAi.data?.pending ?? [])]);
   const shown = ai && relevantOnly ? unfiltered.filter((n) => (insightOf(n.id)?.relevance ?? -1) >= 2) : unfiltered;
+
+  // CSV: die angezeigten Meldungen (mit KI-Einordnung, soweit vorhanden)
+  useCsvExport(() => {
+    if (!shown.length) return [];
+    return [
+      {
+        title: "Nachrichten",
+        columns: ["Datum", "Uhrzeit", "Titel", "Quelle", "Kürzel", "Eilmeldung", "Stimmung (Quelle)", "KI-Relevanz", "KI-Stimmung", "KI-Ereignis", "KI-Zusammenfassung", "Link"],
+        rows: shown.map((n) => {
+          const ins = insightOf(n.id);
+          return [
+            fmtDate(n.date),
+            n.date.length > 10 ? fmtTime(n.date) : null,
+            n.title,
+            n.source,
+            n.symbols.map(displayTicker).join(", "),
+            n.urgent ? "ja" : "",
+            isNum(n.sentiment.polarity) ? n.sentiment.polarity : null,
+            ins ? RELEVANCE_LABEL[ins.relevance] ?? ins.relevance : null,
+            ins ? ins.sentiment : null,
+            ins ? EVENT_LABEL[ins.event] ?? ins.event : null,
+            ins?.summary ?? null,
+            safeUrl(n.link),
+          ];
+        }),
+      },
+    ];
+  });
 
   useEffect(() => {
     if (!q.data) return;

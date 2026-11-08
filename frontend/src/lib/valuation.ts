@@ -3,6 +3,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { IS_STATIC, qs, request } from "./api";
 import { fmt } from "./format";
+import type { CsvDataset } from "./exporter";
 
 export type ValKind = "sector" | "country";
 export type ValRegion = "all" | "us" | "eu";
@@ -258,4 +259,12 @@ export function bandTestText(test: ValBands["test"] | undefined): string {
 export function bandTestVerdict(test: ValBands["test"] | undefined): "hilfreich" | "unklar" | "zu wenig Daten" {
   if (!test || test.unten.n < 6 || test.oben.n < 6 || test.unten.avg === null || test.oben.avg === null) return "zu wenig Daten";
   return test.unten.avg - test.oben.avg > 0.05 ? "hilfreich" : "unklar";
+}
+
+/** KGV-Band als Tabelle: je Monat KGV, Kurs (bzw. Kursindex) und Kurs bei den KGV-Perzentilen, danach die Zukunft aus Schätzungen. */
+export function bandsCsv(b: ValBands, title: string, levelName: string, from = ""): CsvDataset {
+  const cols = BAND_KEYS.map((k) => `bei KGV ${fmt(b.pct[k], 1)} (${k.slice(1)} %)`);
+  const past = b.t.map((t, j) => [t, "Ist", b.pe[j], b.level[j], ...BAND_KEYS.map((k) => b.lines[k][j])]).filter((r) => String(r[0]) >= from);
+  const fut = b.futureT.map((t, j) => [t, "Schätzung", null, null, ...BAND_KEYS.map((k) => b.future[k][j])]);
+  return { title, columns: ["Monat", "Art", "KGV", levelName, ...cols], rows: [...past, ...fut] };
 }

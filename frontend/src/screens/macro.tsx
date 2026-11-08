@@ -10,6 +10,7 @@ import { useCalendar, useCommodities, useCountries, useCurves, useFx, useIndices
 import type { EconEvent, MarketRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import { ForecastPanel } from "../components/ForecastPanel";
+import { useCsvExport } from "../lib/exporter";
 import { IS_STATIC } from "../lib/api";
 import { digitsFor, fcTime, fmtVal, useEventForecast, useMacroForecast, type ForecastResult } from "../lib/forecast";
 import type { ScreenProps } from "./types";
@@ -207,9 +208,9 @@ export function GC(_: ScreenProps) {
         <Q q={q}>
           {(curves) => (
             <div className="gc-body">
-              <div className="gc-chart">{option && <EChart option={option} />}</div>
+              <div className="gc-chart">{option && <EChart option={option} csv="Zinskurven (Rendite in %)" />}</div>
               <div className="gc-table">
-                <table className="t">
+                <table className="t" data-export-title="Renditen je Laufzeit">
                   <thead>
                     <tr>
                       <th>Laufzeit</th>
@@ -282,6 +283,20 @@ const SPRD_RANGES = [
 export function SPRD(_: ScreenProps) {
   const q = useSpreads();
   const [months, setMonths] = usePersistentState<string>("sprd.months", "24", isOneOf(SPRD_RANGES.map((r) => r.value)));
+  // CSV: Tageswerte aller Spreads im gewählten Zeitraum, eine Spalte je Spread
+  useCsvExport(() => {
+    if (!q.data?.length) return [];
+    const all = Array.from(new Set(q.data.flatMap((s) => s.t))).sort();
+    const from = all.length ? shiftMonths(all[all.length - 1], Number(months)) : "";
+    const maps = q.data.map((s) => new Map(s.t.map((t, j) => [t, s.v[j]])));
+    return [
+      {
+        title: "Renditeabstände",
+        columns: ["Datum", ...q.data.map((s) => `${s.label} [bp]`)],
+        rows: all.filter((d) => d > from).map((d) => [d, ...maps.map((m) => m.get(d) ?? null)]),
+      },
+    ];
+  });
   const option = useMemo<EOption | null>(() => {
     if (!q.data?.length) return null;
     const all = Array.from(new Set(q.data.flatMap((s) => s.t))).sort();
@@ -343,7 +358,7 @@ export function SPRD(_: ScreenProps) {
                   );
                 })}
               </div>
-              <div style={{ flex: 1, minHeight: 160 }}>{option && <EChart option={option} />}</div>
+              <div style={{ flex: 1, minHeight: 160 }}>{option && <EChart option={option} csv={false} />}</div>
             </>
           )
         }
@@ -572,6 +587,23 @@ export function ECST(_: ScreenProps) {
   const [view, setView] = usePersistentState<"compare" | "forecast">("ecst.view", "compare", isOneOf(["compare", "forecast"] as const));
   const showForecast = view === "forecast" && !IS_STATIC;
   const fc = useMacroForecast(showForecast ? mark : null, focus, 3);
+  // CSV: Kennzahlen je Land mit Jahr der Angabe, dazu der Verlauf je Land und Kennzahl
+  useCsvExport(() => {
+    const d = q.data;
+    if (!d?.rows.length) return [];
+    const unit = (i: { unit: string }) => (i.unit ? ` [${i.unit}]` : "");
+    const hist: (string | number | null)[][] = [];
+    for (const r of d.rows)
+      for (const i of d.indicators) for (const h of r.history[i.key] ?? []) if (isNum(h.value)) hist.push([r.name, r.country, i.label, i.unit || null, h.year, h.value]);
+    return [
+      {
+        title: "Länderkennzahlen (letzter Wert)",
+        columns: ["Land", "Kürzel", ...d.indicators.flatMap((i) => [`${i.label}${unit(i)}`, `${i.label} (Jahr)`])],
+        rows: d.rows.map((r) => [r.name, r.country, ...d.indicators.flatMap((i) => [r.values[i.key]?.value ?? null, r.values[i.key]?.year ?? null])]),
+      },
+      ...(hist.length ? [{ title: "Verlauf je Land und Kennzahl", columns: ["Land", "Kürzel", "Kennzahl", "Einheit", "Jahr", "Wert"], rows: hist }] : []),
+    ];
+  });
 
   const option = useMemo<EOption | null>(() => {
     if (!q.data) return null;
@@ -630,7 +662,7 @@ export function ECST(_: ScreenProps) {
           {(t) => (
             <>
               <div style={{ overflow: "auto", flex: "1 1 auto" }}>
-                <table className="t">
+                <table className="t" data-csv-skip="" /* CSV: vollständige Werte über useCsvExport */>
                   <thead>
                     <tr>
                       <th>Land</th>
@@ -694,7 +726,7 @@ export function ECST(_: ScreenProps) {
                   {showForecast ? (
                     mark ? <ForecastPanel q={fc} maxHist={16} /> : <Empty>Land in der Tabelle anklicken: Verlauf der Kennzahl mit Prognose für die nächsten drei Jahre.</Empty>
                   ) : (
-                    option && <EChart option={option} />
+                    option && <EChart option={option} csv={false} />
                   )}
                 </div>
               </div>

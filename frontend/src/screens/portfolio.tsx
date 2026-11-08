@@ -377,6 +377,8 @@ export function PORT(_: ScreenProps) {
     { key: "w", label: "Gewicht", num: true, sort: (r) => r.weight, render: (r) => fmtPct(r.weight, 1, false) },
     {
       key: "g", label: `G/V ${p.base}`, num: true, sort: (r) => r.pnl, title: "Ergebnis seit Kauf in Basiswährung (mit Währungseffekt, wenn ein Kaufdatum eingetragen ist)",
+      csvLabel: `G/V ${p.base}\tG/V %`,
+      csv: (r) => `${isNum(r.pnl) ? fmt(r.pnl, 2) : ""}\t${isNum(r.pnlPctBase) ? fmt(r.pnlPctBase, 2) : ""}`,
       render: (r) => (
         <span className={tone(r.pnl, 0)} title={isNum(r.pnlPct) ? `In Handelswährung ${fmtPct(r.pnlPct, 1)}` : undefined}>
           {moneySigned(r.pnl)} <span className="xs">{fmtPct(r.pnlPctBase, 1)}</span>
@@ -650,7 +652,7 @@ export function RISK(_: ScreenProps) {
                 <div className="section-title">Wertentwicklung (Start = 100)</div>
                 <div style={{ height: 220 }}>
                   <Suspense fallback={null}>
-                    <EChart option={option} />
+                    <EChart option={option} csv="Wertentwicklung (Start = 100)" />
                   </Suspense>
                 </div>
               </div>

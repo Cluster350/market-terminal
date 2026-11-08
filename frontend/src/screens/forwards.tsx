@@ -33,11 +33,11 @@ const pctOrDash = (x: number | null | undefined, d = 2) => (x === null || x === 
 const signedPct = (x: number | null | undefined, d = 2) => fmtPct(x, d);
 const bp = (x: number | null | undefined) => (x === null || x === undefined ? "–" : `${x > 0 ? "+" : ""}${fmt(x, 0)} bp`);
 
-function Chart({ option, height = 200 }: { option: EOption; height?: number }) {
+function Chart({ option, height = 200, title }: { option: EOption; height?: number; title?: string }) {
   return (
     <div style={{ height }}>
       <Suspense fallback={null}>
-        <EChart option={option} />
+        <EChart option={option} csv={title ?? "Diagramm"} />
       </Suspense>
     </div>
   );
@@ -88,7 +88,7 @@ function FxView({ ticker }: { ticker: string | null }) {
         <Empty>Für {d.missing.join(" und ")} liegen keine kurzen Zinsen vor (Staatsanleihen 3M–2J) – Terminkurse lassen sich nicht berechnen.</Empty>
       ) : (
         <div className="fwd-grid">
-          <table className="t">
+          <table className="t" data-export-title="Terminkurse">
             <thead>
               <tr>
                 <th>Laufzeit</th>
@@ -115,6 +115,7 @@ function FxView({ ticker }: { ticker: string | null }) {
           <div>
             <div className="section-title">Terminkurve {pairLabel(d.pair)}</div>
             <Chart
+              title={`Terminkurve ${pairLabel(d.pair)}`}
               option={{
                 grid: { left: 54, right: 12, top: 14, bottom: 26 },
                 tooltip: {
@@ -167,7 +168,7 @@ function HedgeView() {
         <Empty>Keine Zinsdaten für {home}.</Empty>
       ) : (
         <div style={{ padding: "0 8px" }}>
-          <table className="t">
+          <table className="t" data-export-title="Absicherungskosten">
             <thead>
               <tr>
                 <th>Anlage in</th>
@@ -242,6 +243,7 @@ function RatesView() {
             <div>
               <div className="section-title">Zinskurve heute und Forward-Zinsen</div>
               <Chart
+                title="Zinskurve heute und Forward-Zinsen"
                 height={220}
                 option={{
                   grid: { left: 42, right: 12, top: 26, bottom: 26 },
@@ -264,7 +266,7 @@ function RatesView() {
                 }}
               />
             </div>
-            <table className="t">
+            <table className="t" data-export-title="Forward-Zinsen">
               <thead>
                 <tr>
                   <th title="Einjahreszins, der in so vielen Jahren beginnt">1-J.-Zins ab</th>

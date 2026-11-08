@@ -5,6 +5,7 @@ import EChart, { TOOLTIP, type EOption } from "../components/EChart";
 import { Empty, Q, Seg } from "../components/ui";
 import { displayTicker, sectorDe, escapeHtml, fmtBig, fmtPct, isNum } from "../lib/format";
 import { useHeatmap, useStatus } from "../lib/queries";
+import { useCsvExport } from "../lib/exporter";
 import type { ScreenRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
@@ -29,6 +30,18 @@ export default function IMAP(_: ScreenProps) {
   const [exchange, setExchange] = useState<string | undefined>(undefined);
   const [metric, setMetric] = useState<"chg1d" | "chg5d">("chg1d");
   const q = useHeatmap(exchange);
+  // CSV: alle Kacheln der Heatmap mit Sektor, Marktkapitalisierung und Veränderung
+  useCsvExport(() => {
+    const rows = q.data?.rows ?? [];
+    if (!rows.length) return [];
+    return [
+      {
+        title: "Markt-Heatmap",
+        columns: ["Kürzel", "Name", "Sektor", "Branche", "Kurs", "Währung", "Marktkap. [USD]", "Veränd. 1 Tag [%]", "Veränd. 5 Tage [%]"],
+        rows: rows.map((r) => [displayTicker(r.ticker), r.name, r.sector ? sectorDe(r.sector) : null, r.industry, r.price, r.currency, r.marketCap, r.chg1d, r.chg5d]),
+      },
+    ];
+  });
 
   const option = useMemo<EOption | null>(() => {
     if (!q.data) return null;
@@ -119,6 +132,7 @@ export default function IMAP(_: ScreenProps) {
               <div style={{ flex: 1, minHeight: 200 }}>
                 <EChart
                   option={option}
+                  csv={false}
                   onClick={(p) => {
                     const data = p.data as { chg?: number; name?: string } | undefined;
                     if (data?.chg !== undefined && data.name) ws.setSecurity(data.name);

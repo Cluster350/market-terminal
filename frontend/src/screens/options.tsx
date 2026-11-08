@@ -9,6 +9,7 @@ import { fmt, fmtBig, fmtDate, fmtPct, fmtPrice, isEquity } from "../lib/format"
 import { contractLabel, strikeWindow, useOptionChain, useOptionsOverview, type ActiveContract, type ExpirySummary, type OptionQuote, type OptionsOverview } from "../lib/options";
 import { isOneOf, usePersistentState } from "../lib/persist";
 import { useStatus } from "../lib/queries";
+import { useCsvExport } from "../lib/exporter";
 import { IS_STATIC } from "../lib/api";
 import { qualityLine, useVolForecast, verdictClass } from "../lib/forecast";
 import type { ScreenProps } from "./types";
@@ -28,11 +29,11 @@ function expLabel(e: ExpirySummary): string {
   return `${d}.${m}.${y.slice(2)} · ${e.dte} T${e.monthly ? " · M" : ""}${e.earnings ? " · E" : ""}`;
 }
 
-function Chart({ option, height = 220 }: { option: EOption; height?: number }) {
+function Chart({ option, height = 220, title }: { option: EOption; height?: number; title?: string | false }) {
   return (
     <div style={{ height }}>
       <Suspense fallback={null}>
-        <EChart option={option} />
+        <EChart option={option} csv={title ?? "Diagramm"} />
       </Suspense>
     </div>
   );
@@ -197,6 +198,10 @@ function ContractTable({ rows, title, hint, onOpen }: { rows: ActiveContract[]; 
 function OverviewView({ o, onOpen }: { o: OptionsOverview; onOpen: (c: ActiveContract) => void }) {
   const f = o.focus!;
   const spot = o.spot;
+  // CSV: Open Interest je Strike als positive Zahlen (im Diagramm zeigen Puts nach unten)
+  useCsvExport(() => [
+    { title: `Open Interest je Strike (Verfall ${f.exp})`, columns: ["Strike", "Call-OI", "Put-OI"], rows: o.oiByStrike.map((r) => [r.strike, r.callOi, r.putOi]) },
+  ]);
   const oiOption: EOption = {
     grid: { left: 70, right: 12, top: 24, bottom: 26 },
     legend: { top: 0, right: 6, textStyle: { color: "#8f8f8f", fontSize: 10 }, itemHeight: 8 },
@@ -240,11 +245,11 @@ function OverviewView({ o, onOpen }: { o: OptionsOverview; onOpen: (c: ActiveCon
       <div className="opt-grid">
         <div>
           <div className="section-title" title={explain("Open Interest")}>Open Interest je Strike · Verfall {fmtDate(f.exp)}</div>
-          <Chart option={oiOption} />
+          <Chart option={oiOption} title={false} />
         </div>
         <div>
           <div className="section-title" title={explain("Laufzeitstruktur")}>Volatilität nach Laufzeit</div>
-          <Chart option={termOption} />
+          <Chart option={termOption} title="Volatilität nach Laufzeit" />
         </div>
       </div>
       <div className="opt-grid">
@@ -331,7 +336,7 @@ function ChainView({ ticker, exp }: { ticker: string; exp: string | null }) {
       {!rows.length ? (
         <Empty>Keine Strikes in diesem Bereich.</Empty>
       ) : (
-        <table className="t opt-chain">
+        <table className="t opt-chain" data-export-title="Optionskette">
           <thead>
             <tr>
               <th colSpan={head.length} className="opt-side up">CALLS</th>
@@ -389,7 +394,7 @@ function VolView({ o, onPick }: { o: OptionsOverview; onPick: (exp: string) => v
     <>
       <div style={{ padding: "0 8px" }}>
         <div className="section-title" title={explain("Skew")}>Volatilitäts-Smile · Verfall {fmtDate(f.exp)}</div>
-        <Chart option={smile} height={230} />
+        <Chart option={smile} height={230} title={`Volatilitäts-Smile (Verfall ${f.exp})`} />
       </div>
       <div style={{ padding: "0 8px" }}>
         <div className="section-title">Alle Verfälle (Klick wählt den Verfall)</div>
