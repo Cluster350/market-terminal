@@ -19,7 +19,9 @@ CMDT (Rohstoffe), SPRD (Zinsspreads), ECST (Länderdaten), W (Watchlist), HELP.
 **Mehrere Monitore:** „⧉ FENSTER“ öffnet die aktuelle Seite, „⧉“ im Panelkopf eine einzelne
 Funktion in einem eigenen Browserfenster. Wertpapier, Watchlist und Verlauf sind zwischen den
 Fenstern verknüpft (über localStorage), „LINK“ löst ein Fenster davon; beim Wiederverknüpfen
-übernimmt es das Wertpapier der anderen Fenster.
+übernimmt es das Wertpapier der anderen Fenster. „▬ LAUFBAND“ blendet das Laufband mit Indizes und
+Watchlist oben ein oder aus – je Fenster, z. B. auf dem zweiten Monitor ohne Laufband; die Einstellung bleibt
+auch nach dem Neuladen.
 
 **Panels fixieren:** „◇ FIX“ im Panelkopf hält ein Panel auf seinem Wertpapier – etwa den Index
 neben der Aktie oder BTP neben Bund. Befehle für das aktive, fixierte Panel ändern nur dieses.

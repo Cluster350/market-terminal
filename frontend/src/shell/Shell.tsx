@@ -12,6 +12,7 @@ import { CommandLine } from "./CommandLine";
 import { resetAndReload } from "../lib/reset";
 import { useAiStatus } from "../lib/ai";
 import { useAlerts } from "../lib/alerts";
+import { useTapeVisible } from "../lib/tape";
 
 /** Knopf "⟲ STANDARD": Seite, Ansicht oder alles auf den Auslieferungszustand zurücksetzen. */
 function ResetMenu() {
@@ -165,6 +166,7 @@ function WindowTools() {
           ⧉ <span className="wt-label">FENSTER</span>
         </button>
       )}
+      <TapeToggle />
       <button
         type="button"
         className="key small-key"
@@ -206,7 +208,31 @@ export function TopBar() {
   );
 }
 
+/** Knopf „LAUFBAND“: Laufband in diesem Fenster ein- oder ausblenden. */
+function TapeToggle() {
+  const ws = useWorkspace();
+  const [visible, setVisible] = useTapeVisible(ws.state.window);
+  return (
+    <button
+      type="button"
+      className="key small-key"
+      aria-pressed={visible}
+      title={`Laufband mit Indizes und Watchlist ${visible ? "ausblenden" : "einblenden"} – gilt nur für dieses Fenster`}
+      onClick={() => setVisible(!visible)}
+    >
+      {visible ? "▬" : "▭"} <span className="wt-label">LAUFBAND</span>
+    </button>
+  );
+}
+
 export function TickerTape() {
+  const ws = useWorkspace();
+  const [visible] = useTapeVisible(ws.state.window);
+  if (!visible) return <div className="tape-off" aria-hidden="true" />; // Platzhalter: die Gitterzeilen bleiben gleich
+  return <TapeContent />;
+}
+
+function TapeContent() {
   const ws = useWorkspace();
   const idx = useIndices();
   const watch = useQuotes(ws.state.watchlist.slice(0, 20));

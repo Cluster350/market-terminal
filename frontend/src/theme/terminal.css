@@ -200,6 +200,7 @@ a { color: var(--link); }
   height: 22px;
   align-items: center;
 }
+.tape-off { height: 0; overflow: hidden; }
 .tape-track { display: inline-flex; gap: 22px; padding-left: 12px; animation: tape 90s linear infinite; }
 .tape:hover .tape-track { animation-play-state: paused; }
 .tape-item { display: inline-flex; gap: 6px; cursor: pointer; }
