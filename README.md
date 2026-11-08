@@ -286,6 +286,19 @@ sie mit den Gewinnschätzungen der Analysten bis Ende nächsten Jahres weiter.
 **Fair Value** = übliches KGV (Median) × Gewinnschätzung des nächsten Jahres. Median und Prozentränge statt
 Mittelwert ± Standardabweichung, weil Gewinneinbrüche (2009, 2020) einzelne Jahre extrem machen.
 
+**Drei Maßstäbe** (Kurschart-Kurzinfo und DES):
+
+| Fair Value | Rechnung | Gut, wenn … |
+|---|---|---|
+| **eigenes KGV** | übliches KGV der Aktie × Gewinnschätzung | sich Geschäft und Zinsumfeld kaum geändert haben |
+| **nach Sektor-KGV** | KGV des Sektors aufs nächste Jahr × Gewinnschätzung | die Firma dem Sektordurchschnitt ähnelt |
+| **relativ zum Sektor** | übliches Verhältnis KGV Aktie ÷ KGV Sektor × heutiges Sektor-KGV × Gewinnschätzung | der ganze Sektor neu bewertet wurde (z. B. durch Zinsen), die Firma aber ihre übliche Prämie behält |
+
+Das Sektor-KGV stammt aus BWT (Region nach Börse, bei zu wenigen Firmen USA + Europa) und wird **ohne die Aktie
+selbst** gerechnet – sonst wäre der Sektor bei großen Firmen zum Teil die Firma selbst. Im Kurschart schaltet
+„eigenes KGV / relativ zum Sektor“ die Basis der Bänder um. Hat der Sektor weniger als zwei andere Firmen, gibt es
+keinen Sektorvergleich.
+
 **Rückblick (Ehrlichkeitsprüfung):** Für jeden früheren Monat prüft das Terminal – nur mit dem bis dahin bekannten
 Verlauf –, ob das KGV unten, in der Mitte oder oben lag, und wie sich der Kurs in den zwölf Monaten danach
 entwickelte. „Band früher: hilfreich“ heißt: Nach einem Stand unten lief es im Schnitt besser als nach einem Stand

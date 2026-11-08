@@ -61,3 +61,12 @@ describe("KGV-Bänder: Rückblick in Worten", () => {
     expect(bandTestText(undefined)).toBe("");
   });
 });
+
+describe("Fair-Value-Abstand", () => {
+  it("formatiert Abstände mit Vorzeichen", async () => {
+    const { gapText } = await import("./valuation");
+    expect(gapText(0.123)).toBe("+12 %");
+    expect(gapText(-0.051)).toBe("−5 %");
+    expect(gapText(null)).toBe("–");
+  });
+});

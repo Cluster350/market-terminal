@@ -282,3 +282,46 @@ def test_stock_bands_endpoint_and_group_fair_value(tmp_path, monkeypatch):
         d = c.get("/api/valuation/detail", params={"kind": "sector", "key": "Technology"}).json()
         assert d["bands"]["level"][-1] == pytest.approx(100) and d["bands"]["pct"]["p50"] == pytest.approx(tech["median"])
         assert all("fairGap" in m for m in d["members"])
+
+
+def test_sector_relative_excludes_the_stock_itself():
+    from app.valuation.calc import aggregate, company_val, sector_relative
+
+    da, pa = _prices(50, 100)
+    db, pb = _prices(100, 100)
+    dc, pc = _prices(80, 60)
+    eps = {2021: 2.0, 2022: 2.5, 2023: 3.0, 2024: 3.5, 2025: 4.0}
+    a = company_val(_inputs("A.US", eps, 5.0, 6.0), 300e9, da, pa, TODAY, prices_adjusted=False)
+    b = company_val(_inputs("B.US", {y: 5.0 for y in eps}, 5.0, 5.0), 100e9, db, pb, TODAY, prices_adjusted=False)
+    cc = company_val(_inputs("C.US", {y: 4.0 for y in eps}, 4.0, 4.0), 50e9, dc, pc, TODAY, prices_adjusted=False)
+    g = aggregate([a, b, cc], TODAY)
+    rel = sector_relative(a, TODAY, g.sums, 300e9)
+    # Sektor ohne A = B und C: KGV aufs nächste Jahr = Börsenwert ÷ Gewinn der beiden
+    sb, sc = 100e9 / b.price_now, 50e9 / cc.price_now
+    expect = (sb * b.price_now + sc * cc.price_now) / (sb * 5.0 + sc * 4.0)
+    assert rel.pe_next == pytest.approx(expect)
+    assert rel.fair_sector == pytest.approx(expect * 6.0)  # Kurs von A beim Sektor-KGV
+    ex = aggregate([b, cc], TODAY)
+    assert rel.pe_now == pytest.approx(ex.pe_ttm)  # gleich wie die Gruppe ganz ohne A
+    # nicht Mitglied: Sektor bleibt vollständig
+    full = sector_relative(a, TODAY, g.sums, None)
+    assert full.pe_next == pytest.approx(g.pe_years[2027])
+    assert sector_relative(a, TODAY, {"num": [1.0], "den": [1.0]}, None) is None
+
+
+def test_stock_bands_with_sector(tmp_path):
+    import asyncio
+
+    from app.services.terminal import Terminal
+    from app.valuation.service import ValuationService
+
+    t = Terminal(DemoProvider(now_fn=lambda: NOW))
+    vs = ValuationService(t, str(tmp_path), "demo")
+    b0 = asyncio.run(vs.stock_bands("NWND.US"))
+    assert b0.sector is None  # Sektordaten noch nicht berechnet
+    asyncio.run(vs.build())
+    b = asyncio.run(vs.stock_bands("NWND.US"))
+    s = b.sector
+    assert s.label == "Technologie" and s.region == "us" and s.n >= 2
+    assert s.pe_next > 0 and s.rel_now > 0 and s.fair_sector_gap is not None and s.bands is not None
+    assert s.bands.pct["p50"] == pytest.approx(s.rel_median)

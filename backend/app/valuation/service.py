@@ -20,8 +20,8 @@ from ..errors import NotFound, TerminalError
 from ..models import ScreenRow
 from ..providers.base import ScreenFilter
 from .bands import Bands
-from .calc import LAGS, CompanyVal, GroupVal, aggregate, company_bands, company_val
-from .models import ValBands, ValDetail, ValMember, ValOverview, ValRow, ValSeries
+from .calc import LAGS, CompanyVal, GroupVal, aggregate, company_bands, company_val, sector_relative
+from .models import ValBands, ValDetail, ValMember, ValOverview, ValRow, ValSectorRel, ValSeries
 
 log = logging.getLogger("terminal.valuation")
 
@@ -286,6 +286,7 @@ class ValuationService:
                     "decomposition": agg.decomposition,
                     "coverage": {str(y): n for y, n in agg.coverage.items()},
                     "members": [_member(c, today, years).model_dump() for c in sorted(cs, key=lambda c: -c.mcap)],
+                    "sums": agg.sums,
                     "bands": _dump(bands_model(agg.bands, note=BANDS_NOTE + " Gruppen: Kursindex der Gruppe, heute = 100.")),
                 }
             self.result = {
@@ -402,10 +403,41 @@ class ValuationService:
         ttm = c.ttm(today)
         out = bands_model(b, ticker=ticker, name=inp.name, loss=bool(ttm is not None and ttm <= 0), note=BANDS_NOTE)
         assert out is not None
+        out.sector = await asyncio.to_thread(self._sector_rel, c, inp.sector, ticker, today, [d for d, _ in pairs], [x for _, x in pairs])
+        if out.sector is None and not self.result:
+            return out  # Sektordaten noch nicht berechnet: nicht zwischenspeichern
         if len(self._bands_cache) > 200:
             self._bands_cache.clear()
         self._bands_cache[key] = out
         return out
+
+    def _sector_rel(self, c: CompanyVal, sector: Optional[str], ticker: str, today: dt.date,
+                    chart_dates: list[str], chart_closes: list[float]) -> Optional[ValSectorRel]:
+        """Bewertung relativ zum eigenen Sektor (Region nach Börse; sonst USA + Europa)."""
+        if not self.result or not sector:
+            return None
+        exchange = ticker.rpartition(".")[2].upper()
+        region = "us" if exchange == "US" else "eu" if exchange in HOME_ISIN else "all"
+        for reg in (region, "all"):
+            gid = f"sector:{reg}:{sector}"
+            det, row = self.result["details"].get(gid), self.result["rows"].get(gid)
+            if not det or not row or not det.get("sums"):
+                continue
+            member = next((m for m in det["members"] if m["ticker"] == ticker), None)
+            if row["n"] - (1 if member else 0) < 2:
+                continue  # zu wenige andere Firmen: größerer Sektor als Maßstab
+            rel = sector_relative(c, today, det["sums"], member["mcap"] if member else None, chart_dates, chart_closes)
+            if rel is None or (rel.pe_now is None and rel.pe_next is None):
+                continue
+            b = rel.bands
+            return ValSectorRel(
+                key=sector, label=SECTOR_DE.get(sector, sector), region=reg, n=row["n"] - (1 if member else 0),
+                pe_now=rel.pe_now, pe_next=rel.pe_next, rel_now=rel.rel_now, rel_median=b.pct["p50"] if b else None,
+                fair_sector=rel.fair_sector, fair_sector_gap=rel.fair_sector_gap,
+                fair_relative=b.fair_next if b else None, fair_relative_gap=b.fair_gap if b else None,
+                bands=bands_model(b, note="Bänder auf das Verhältnis KGV der Aktie ÷ KGV des Sektors (ohne die Aktie)."),
+            )
+        return None
 
     def detail(self, kind: str, key: str, region: str) -> ValDetail:
         if not self.result:

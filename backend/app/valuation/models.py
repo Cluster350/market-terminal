@@ -72,6 +72,25 @@ class ValBands(Model):
     test: dict[str, dict[str, Optional[float]]] = {}
     loss: bool = False  # Gewinn der letzten zwölf Monate ≤ 0: kein aktuelles KGV
     note: str = ""
+    sector: Optional["ValSectorRel"] = None  # Bewertung relativ zum Sektor (nur Einzelaktien)
+
+
+class ValSectorRel(Model):
+    """Sektor-KGV als Maßstab: Fair Value beim heutigen Sektor-KGV und bei der üblichen Prämie zum Sektor."""
+
+    key: str  # Sektor (EODHD-Name)
+    label: str
+    region: str  # us | eu | all
+    n: int  # Firmen im Sektor (ohne die Aktie)
+    pe_now: Optional[float] = None
+    pe_next: Optional[float] = None
+    rel_now: Optional[float] = None  # KGV Aktie ÷ KGV Sektor heute
+    rel_median: Optional[float] = None  # übliches Verhältnis (Median zehn Jahre)
+    fair_sector: Optional[float] = None
+    fair_sector_gap: Optional[float] = None
+    fair_relative: Optional[float] = None  # übliches Verhältnis × Sektor-KGV × Gewinnschätzung
+    fair_relative_gap: Optional[float] = None
+    bands: Optional[ValBands] = None  # Kurslinien beim üblichen Verhältnis zum Sektor
 
 
 class ValDetail(Model):
@@ -99,3 +118,6 @@ class ValOverview(Model):
     built_at: Optional[str] = None
     message: Optional[str] = None
     note: str = ""
+
+
+ValBands.model_rebuild()

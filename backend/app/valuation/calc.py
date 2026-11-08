@@ -298,6 +298,9 @@ class GroupVal:
     dist52: Optional[float]  # Abstand zum 52-Wochen-Hoch (Anteil, ≤ 0)
     decomposition: dict[str, dict[str, Optional[float]]]  # 1J/3J/5J: Kurs, Gewinn, KGV (Anteile)
     bands: Optional[Bands] = None  # KGV-Bänder auf einem Kursindex (heute = 100)
+    # Monatssummen (Börsenwert, Gewinn, Zahl der Firmen) und Schätzjahre – damit sich das Sektor-KGV
+    # später auch ohne eine einzelne Firma berechnen lässt (relativer Fair Value)
+    sums: dict = field(default_factory=dict)
 
 
 def chain_index(cs: Sequence[CompanyVal], days: Sequence[dt.date]) -> list[Optional[float]]:
@@ -332,6 +335,7 @@ def aggregate(cs: Sequence[CompanyVal], today: dt.date, years_back: int = 5) -> 
     pe_years: dict[int, Optional[float]] = {}
     coverage: dict[int, int] = {}
     negative: list[int] = []
+    est_sums: dict[str, list[float]] = {}
     for y in years:
         num = den = 0.0
         n = 0
@@ -343,13 +347,20 @@ def aggregate(cs: Sequence[CompanyVal], today: dt.date, years_back: int = 5) -> 
             num += c.s * p
             den += c.s * c.k * e
             n += 1
+        if y >= y0:
+            est_sums[str(y)] = [num, den, float(n)]
         coverage[y] = n
         pe_years[y] = _ratio(num, den) if n else None
         if n and den <= 0:
             negative.append(y)
 
+    m_num: list[float] = []
+    m_den: list[float] = []
+    m_cnt: list[float] = []
+
     def pe_at(when: dt.date) -> Optional[float]:
         num = den = 0.0
+        n = 0
         day = when.isoformat()
         for c in cs:
             e, p = c.ttm(when), c.price_at(day)
@@ -357,6 +368,10 @@ def aggregate(cs: Sequence[CompanyVal], today: dt.date, years_back: int = 5) -> 
                 continue
             num += c.s * p
             den += c.s * c.k * e
+            n += 1
+        m_num.append(num)
+        m_den.append(den)
+        m_cnt.append(float(n))
         return _ratio(num, den) if den else None
 
     monthly = [(d.isoformat(), pe_at(d)) for d in month_ends(today)]
@@ -427,7 +442,7 @@ def aggregate(cs: Sequence[CompanyVal], today: dt.date, years_back: int = 5) -> 
     bands = pe_bands([d.isoformat() for d in months], [v for _, v in monthly], index, future)
 
     return GroupVal(
-        bands=bands,
+        bands=bands, sums={"num": m_num, "den": m_den, "n": m_cnt, "est": est_sums},
         n=len(cs), pe_years=pe_years, negative_years=negative, coverage=coverage, pe_ttm=pe_ttm, monthly=monthly,
         avg=avg, low=low, high=high, position=position, chg12m=chg12m, growth_next=growth, revisions=revisions,
         forward_path=forward_path, up30=sum(c.up30 for c in cs), down30=sum(c.down30 for c in cs), dist52=dist52,
@@ -455,3 +470,69 @@ def company_bands(c: CompanyVal, today: dt.date, chart_dates: Sequence[str] = ()
         e = c.eps_cy.get(y)
         future.append((f"{y}-12-31", c.price_now / (c.k * e) if e and e > 0 else None))
     return pe_bands([d.isoformat() for d in months], pe, level, future)
+
+
+@dataclass
+class SectorRel:
+    bands: Optional[Bands]  # Bänder auf das Verhältnis KGV Aktie ÷ KGV Sektor
+    sector_pe: list[Optional[float]]  # Sektor-KGV je Monat (ohne die Aktie)
+    pe_now: Optional[float]  # Sektor-KGV heute
+    pe_next: Optional[float]  # Sektor-KGV aufs nächste Jahr (Konsens)
+    rel_now: Optional[float]  # KGV Aktie ÷ KGV Sektor heute
+    fair_sector: Optional[float]  # Kurs, wenn die Aktie aufs nächste Jahr wie der Sektor bewertet wäre
+    fair_sector_gap: Optional[float]
+
+
+def sector_relative(c: CompanyVal, today: dt.date, sums: dict, member_mcap: Optional[float],
+                    chart_dates: Sequence[str] = (), chart_closes: Sequence[float] = ()) -> Optional[SectorRel]:
+    """Bewertung relativ zum Sektor. Das Sektor-KGV wird ohne die Aktie selbst gerechnet (sonst wäre der
+    Sektor bei großen Firmen zum Teil die Firma selbst)."""
+    months = month_ends(today)
+    num, den, cnt = sums.get("num") or [], sums.get("den") or [], sums.get("n") or []
+    if len(num) != len(months):
+        return None
+    s_i = member_mcap / c.price_now if member_mcap and c.price_now else 0.0
+    rel: list[Optional[float]] = []
+    sector_pe: list[Optional[float]] = []
+    level: list[Optional[float]] = []
+    for j, d in enumerate(months):
+        day = d.isoformat()
+        p, e = c.price_at(day), c.ttm(d)
+        n_, d_, k_ = num[j], den[j], cnt[j] if j < len(cnt) else 99
+        if s_i and p is not None and e is not None:  # war in der Gruppe enthalten
+            n_, d_, k_ = n_ - s_i * p, d_ - s_i * c.k * e, k_ - 1
+        spe = n_ / d_ if d_ > 0 and n_ > 0 and k_ >= 2 else None
+        own = p / (c.k * e) if p and e and e > 0 else None
+        sector_pe.append(spe)
+        rel.append(own / spe if own and spe else None)
+        if chart_dates:
+            i = bisect.bisect_right(chart_dates, day) - 1
+            level.append(chart_closes[i] if i >= 0 else None)
+        else:
+            level.append(p)
+    future: list[tuple[str, Optional[float]]] = []
+    pe_next = fair_sector = None
+    for y in (today.year, today.year + 1):
+        est, eps = (sums.get("est") or {}).get(str(y)), c.eps_cy.get(y)
+        if not est or not eps or eps <= 0:
+            continue
+        n_, d_, k_ = est[0], est[1], est[2] if len(est) > 2 else 99
+        if s_i:
+            n_, d_, k_ = n_ - s_i * c.price_now, d_ - s_i * c.k * eps, k_ - 1
+        spe_e = n_ / d_ if d_ > 0 and n_ > 0 and k_ >= 2 else None
+        own_e = c.price_now / (c.k * eps)
+        if spe_e:
+            future.append((f"{y}-12-31", own_e / spe_e))
+            if y == today.year + 1:
+                pe_next = spe_e
+                fair_sector = c.price_now * spe_e / own_e  # Kurs beim Sektor-KGV
+    t = [d.isoformat() for d in months]
+    bands = pe_bands(t, rel, level, future)
+    lvl_now = level[-1]
+    # Fair Value in der Skala des Charts (am Ende gleich dem gehandelten Kurs)
+    if fair_sector is not None and lvl_now:
+        fair_sector = fair_sector / c.price_now * lvl_now
+    return SectorRel(
+        bands=bands, sector_pe=sector_pe, pe_now=sector_pe[-1], pe_next=pe_next, rel_now=rel[-1],
+        fair_sector=fair_sector, fair_sector_gap=fair_sector / lvl_now - 1 if fair_sector and lvl_now else None,
+    )

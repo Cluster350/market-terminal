@@ -1,7 +1,7 @@
 // Aktien-Funktionen: DES, HP, FA, ERN, DVD, ANR
 
 import { useState, type ReactNode } from "react";
-import { bandTestText, useStockBands } from "../lib/valuation";
+import { bandTestText, gapText, useStockBands } from "../lib/valuation";
 import { Change, Empty, Kv, Q, Seg, Spark, Table, useNow } from "../components/ui";
 import {
   countryDe,
@@ -134,6 +134,34 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
                                 "–"
                               ),
                             ],
+                            ...(bands.data.sector
+                              ? ([
+                                  [
+                                    <span title={`Kurs, wenn die Aktie aufs nächste Jahr so bewertet wäre wie ihr Sektor ${bands.data.sector.label} (KGV ${fmt(bands.data.sector.peNext, 1)}, ohne diese Aktie)`}>
+                                      … nach Sektor-KGV
+                                    </span>,
+                                    isNum(bands.data.sector.fairSector) ? (
+                                      <span>
+                                        {fmtPrice(bands.data.sector.fairSector)} <span className={tone(bands.data.sector.fairSectorGap)}>({gapText(bands.data.sector.fairSectorGap)})</span>
+                                      </span>
+                                    ) : (
+                                      "–"
+                                    ),
+                                  ],
+                                  [
+                                    <span title={`Übliches Verhältnis zum Sektor-KGV (×${fmt(bands.data.sector.relMedian, 2)}, heute ×${fmt(bands.data.sector.relNow, 2)}) auf das heutige Sektor-KGV`}>
+                                      … relativ zum Sektor
+                                    </span>,
+                                    isNum(bands.data.sector.fairRelative) ? (
+                                      <span>
+                                        {fmtPrice(bands.data.sector.fairRelative)} <span className={tone(bands.data.sector.fairRelativeGap)}>({gapText(bands.data.sector.fairRelativeGap)})</span>
+                                      </span>
+                                    ) : (
+                                      "–"
+                                    ),
+                                  ],
+                                ] as [ReactNode, ReactNode][])
+                              : []),
                           ] as [ReactNode, ReactNode][])
                         : []),
                       ["PEG", fmt(c.valuation.peg, 2)],

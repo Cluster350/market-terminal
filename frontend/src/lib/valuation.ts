@@ -88,6 +88,32 @@ export interface ValBands {
   test: Record<"unten" | "mitte" | "oben", BandTest>;
   loss: boolean;
   note: string;
+  sector?: ValSectorRel | null;
+}
+
+/** Sektor-KGV als Maßstab (ohne die Aktie selbst gerechnet). */
+export interface ValSectorRel {
+  key: string;
+  label: string;
+  region: "us" | "eu" | "all";
+  n: number;
+  peNow: number | null;
+  peNext: number | null;
+  relNow: number | null;
+  relMedian: number | null;
+  fairSector: number | null;
+  fairSectorGap: number | null;
+  fairRelative: number | null;
+  fairRelativeGap: number | null;
+  bands: ValBands | null;
+}
+
+export const REGION_LABEL: Record<ValSectorRel["region"], string> = { us: "USA", eu: "Europa", all: "USA + Europa" };
+
+/** Abstand als „+12 %“ / „−5 %“. */
+export function gapText(x: number | null | undefined): string {
+  if (x === null || x === undefined || !Number.isFinite(x)) return "–";
+  return `${x >= 0 ? "+" : "−"}${fmt(Math.abs(x * 100), 0)} %`;
 }
 
 export interface ValSeries {
@@ -133,6 +159,8 @@ export const useStockBands = (ticker: string | null, enabled: boolean) =>
     enabled: !IS_STATIC && enabled && !!ticker,
     staleTime: 3_600_000,
     retry: false,
+    // Sektorvergleich fehlt, solange BWT noch rechnet: später erneut fragen
+    refetchInterval: (q) => (q.state.data && !q.state.data.sector ? 60_000 : false),
   });
 
 export const useValuationDetail = (kind: ValKind, key: string | null, region: ValRegion) =>

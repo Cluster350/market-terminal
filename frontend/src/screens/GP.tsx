@@ -21,7 +21,7 @@ import { volumeProfile } from "../lib/profile";
 import { alertStatus, alertsApi, conditionLabel, useAlerts, useAlertsRefresh, type Alert } from "../lib/alerts";
 import { api, ApiError, IS_STATIC } from "../lib/api";
 import { coneLines, useVolForecast } from "../lib/forecast";
-import { BAND_KEYS, bandTestText, bandTestVerdict, useStockBands } from "../lib/valuation";
+import { BAND_KEYS, bandTestText, bandTestVerdict, gapText, REGION_LABEL, useStockBands } from "../lib/valuation";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
 import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
 import { isBool, isNumberList, isOneOf, usePersistentState } from "../lib/persist";
@@ -309,6 +309,7 @@ export default function GP({ ticker }: ScreenProps) {
   const [showVp, setShowVp] = usePersistentState("gp.vp", false, isBool);
   const [showCone, setShowCone] = usePersistentState("gp.cone", false, isBool);
   const [showBand, setShowBand] = usePersistentState("gp.peband", false, isBool);
+  const [bandBase, setBandBase] = usePersistentState<"own" | "sector">("gp.bandBase", "own", isOneOf(["own", "sector"] as const));
   const [compare, setCompare] = useState<string[]>([]);
   // Setzen einer Marke: "alarm" = Kursmarke mit Alarm, "line" = nur Linie (ohne Alarm)
   const [placing, setPlacing] = useState<false | "alarm" | "line">(false);
@@ -333,6 +334,9 @@ export default function GP({ ticker }: ScreenProps) {
   // KGV-Band: Kurs beim üblichen KGV (Median, 25–75 %, 10–90 %), rechts mit den Analystenschätzungen
   const bandOn = showBand && !intradayRange && !comparing && !isYield && !IS_STATIC && !!ticker && isEquity(ticker);
   const bandQ = useStockBands(ticker, bandOn);
+  // Basis der Bänder: eigenes KGV oder übliches Verhältnis zum Sektor-KGV (falls vorhanden)
+  const bandSector = bandQ.data?.sector ?? null;
+  const shownBands = bandBase === "sector" && bandSector?.bands ? bandSector.bands : bandQ.data;
 
   const earn = useEarnings(ticker && isEquity(ticker) ? ticker : null);
 
@@ -625,7 +629,7 @@ export default function GP({ ticker }: ScreenProps) {
       s.bands[1].setData(bands.lower);
     }
     if (s.band.length === 10) {
-      const b = bandQ.data;
+      const b = shownBands;
       const first = String(bars[0].time);
       BAND_KEYS.forEach((k, i) => {
         const past = b ? b.t.map((t, j) => ({ time: t, value: b.lines[k][j] })).filter((p) => p.time >= first && isNum(p.value)) : [];
@@ -652,7 +656,7 @@ export default function GP({ ticker }: ScreenProps) {
       rsiChartRef.current?.timeScale().fitContent();
       fitKey.current = key;
     }
-  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen, bandQ.data]);
+  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen, shownBands]);
 
   // Laufende Kerze: Ticks des Echtzeit-Stroms (US-Werte, Devisen, Krypto) bzw. verzögerte Kurse
   // (übrige Börsen) schreiben die letzte Kerze fort, ohne den ganzen Chart neu zu zeichnen
@@ -1052,8 +1056,36 @@ export default function GP({ ticker }: ScreenProps) {
                     </span>
                   </>
                 )}
-                {" · "}Band früher: {bandTestVerdict(bandQ.data.test)}
+                {bandSector && (
+                  <span
+                    title={
+                      `Sektor ${bandSector.label} (${REGION_LABEL[bandSector.region]}, ${bandSector.n} Firmen ohne diese Aktie): KGV aufs nächste Jahr ${fmt(bandSector.peNext, 1)}.\n` +
+                      `Nach Sektor-KGV: Kurs, wenn die Aktie so bewertet wäre wie ihr Sektor.\n` +
+                      `Relativ: übliches Verhältnis zum Sektor (×${fmt(bandSector.relMedian, 2)}, heute ×${fmt(bandSector.relNow, 2)}) auf das heutige Sektor-KGV – berücksichtigt Firmenqualität und Marktlage.` +
+                      (bandSector.bands ? `\nRückblick relativ: ${bandTestText(bandSector.bands.test)}` : "")
+                    }
+                  >
+                    {" · "}Sektor-KGV {fmt(bandSector.peNext, 1)}:{" "}
+                    {isNum(bandSector.fairSector) ? fmtPrice(bandSector.fairSector, ticker) : "–"}{" "}
+                    <span className={isNum(bandSector.fairSectorGap) && bandSector.fairSectorGap >= 0 ? "up" : "down"}>({gapText(bandSector.fairSectorGap)})</span>
+                    {" · "}relativ ×{fmt(bandSector.relMedian, 2)}:{" "}
+                    {isNum(bandSector.fairRelative) ? fmtPrice(bandSector.fairRelative, ticker) : "–"}{" "}
+                    <span className={isNum(bandSector.fairRelativeGap) && bandSector.fairRelativeGap >= 0 ? "up" : "down"}>({gapText(bandSector.fairRelativeGap)})</span>
+                  </span>
+                )}
+                {" · "}Band früher: {bandTestVerdict(shownBands?.test)}
               </span>
+            )}
+            {bandOn && bandSector?.bands && (
+              <Seg
+                label="Basis der KGV-Bänder"
+                value={bandBase}
+                options={[
+                  { value: "own", label: "eigenes KGV" },
+                  { value: "sector", label: "relativ zum Sektor" },
+                ]}
+                onChange={setBandBase}
+              />
             )}
             {bandOn && bandQ.isError && <span className="small muted">KGV-Band: {(bandQ.error as Error).message}</span>}
           </>
