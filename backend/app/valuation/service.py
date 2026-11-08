@@ -19,8 +19,9 @@ from typing import Any, Optional
 from ..errors import NotFound, TerminalError
 from ..models import ScreenRow
 from ..providers.base import ScreenFilter
-from .calc import LAGS, CompanyVal, GroupVal, aggregate, company_val
-from .models import ValDetail, ValMember, ValOverview, ValRow, ValSeries
+from .bands import Bands
+from .calc import LAGS, CompanyVal, GroupVal, aggregate, company_bands, company_val
+from .models import ValBands, ValDetail, ValMember, ValOverview, ValRow, ValSeries
 
 log = logging.getLogger("terminal.valuation")
 
@@ -101,8 +102,30 @@ def _member(c: CompanyVal, today: dt.date, years: list[int]) -> ValMember:
     start = (today - dt.timedelta(days=365)).isoformat()
     year = [p for d, p in zip(c.dates, c.closes) if d >= start]
     dist = c.price_now / max(year) - 1 if year and max(year) > 0 else None
+    b = company_bands(c, today)
     return ValMember(ticker=c.ticker, name=c.name, mcap=c.mcap, pe_years=pe,
-                     pe_ttm=c.price_now / (c.k * ttm) if ttm and ttm > 0 else None, rev90=rev90, dist52=dist, notes=c.notes)
+                     pe_ttm=c.price_now / (c.k * ttm) if ttm and ttm > 0 else None, rev90=rev90, dist52=dist,
+                     median=b.pct["p50"] if b else None, fair_gap=b.fair_gap if b else None, notes=c.notes)
+
+
+def bands_model(b: Optional[Bands], **extra: Any) -> Optional[ValBands]:
+    if b is None:
+        return None
+    return ValBands(t=b.t, pe=b.pe, level=b.level, lines=b.lines, future_t=b.future_t, future=b.future, pct=b.pct,
+                    pe_now=b.pe_now, position=b.position, fair_now=b.fair_now, fair_next=b.fair_next, fair_year=b.fair_year,
+                    fair_gap=b.fair_gap, test=b.test, **extra)
+
+
+def _dump(m: Optional[ValBands]) -> Optional[dict]:
+    return m.model_dump() if m is not None else None
+
+
+BANDS_NOTE = (
+    "Bänder aus dem eigenen KGV-Verlauf (Monatswerte, Gewinn der letzten zwölf Monate): Median und die Bereiche "
+    "25–75 % und 10–90 %. Rechts: Kurs beim jeweiligen KGV auf den geschätzten Gewinn (Analystenkonsens). "
+    "Fair Value = übliches KGV (Median) × Gewinnschätzung – keine Empfehlung; ein dauerhaft geändertes Geschäft "
+    "oder Zinsumfeld macht die Geschichte zum schlechten Maßstab."
+)
 
 
 class ValuationService:
@@ -123,6 +146,7 @@ class ValuationService:
         self.result: Optional[dict] = None
         self._task: Optional[asyncio.Task] = None
         self._building: Optional[asyncio.Task] = None
+        self._bands_cache: dict[tuple[str, str], ValBands] = {}
         self._load()  # gespeichertes Ergebnis sofort verfügbar (Neustart ohne Neuberechnung)
 
     # --- Lebenszyklus ---------------------------------------------------------------------
@@ -262,6 +286,7 @@ class ValuationService:
                     "decomposition": agg.decomposition,
                     "coverage": {str(y): n for y, n in agg.coverage.items()},
                     "members": [_member(c, today, years).model_dump() for c in sorted(cs, key=lambda c: -c.mcap)],
+                    "bands": _dump(bands_model(agg.bands, note=BANDS_NOTE + " Gruppen: Kursindex der Gruppe, heute = 100.")),
                 }
             self.result = {
                 "built_at": dt.datetime.now(dt.timezone.utc).isoformat(), "today": today.isoformat(),
@@ -287,6 +312,7 @@ class ValuationService:
             pe_ttm=agg.pe_ttm, avg=agg.avg, low=agg.low, high=agg.high, position=agg.position, chg12m=agg.chg12m,
             growth_next=agg.growth_next, rev30=agg.revisions.get(30), rev90=agg.revisions.get(90),
             up30=agg.up30, down30=agg.down30, dist52=agg.dist52, state=_state(agg.dist52),
+            median=agg.bands.pct["p50"] if agg.bands else None, fair_gap=agg.bands.fair_gap if agg.bands else None,
         )
 
     # --- Speicher ---------------------------------------------------------------------------
@@ -348,6 +374,39 @@ class ValuationService:
                            state="building" if self.state == "building" else "ready", done=self.done, total=self.total,
                            built_at=self.result.get("built_at"), message=self.message, note=NOTE)
 
+    async def stock_bands(self, ticker: str) -> ValBands:
+        """KGV-Bänder einer Aktie für den Kurschart (Kurslinien in der Skala des Charts)."""
+        today = self.t.now().date()
+        key = (ticker, today.isoformat())
+        hit = self._bands_cache.get(key)
+        if hit is not None:
+            return hit
+        inp = await self.t._cached(f"valin:{ticker}", "fund", lambda: self.t.p.valuation_inputs(ticker))
+        hist = await self.t.history(ticker)
+        divs: list[tuple[str, float]] = []
+        splits: list[tuple[str, str]] = []
+        if self.prices_adjusted:
+            try:
+                d = await self.t.dividends(ticker)
+                divs = [(x.ex_date, x.value) for x in d.dividends if x.value]
+                splits = [(x.date, x.ratio) for x in d.splits]
+            except TerminalError:
+                pass
+        c = company_val(inp, 1.0, hist.t, hist.c, today, divs, splits, self.prices_adjusted, YEARS_BACK + 1)
+        if c is None:
+            raise NotFound(f"Keine Kursdaten für {ticker}.")
+        pairs = [(d[:10], x) for d, x in zip(hist.t, hist.c) if x]
+        b = await asyncio.to_thread(company_bands, c, today, [d for d, _ in pairs], [x for _, x in pairs])
+        if b is None:
+            raise NotFound(f"Zu wenig Gewinnhistorie für KGV-Bänder von {inp.name} (mindestens zwei Jahre mit Gewinn).")
+        ttm = c.ttm(today)
+        out = bands_model(b, ticker=ticker, name=inp.name, loss=bool(ttm is not None and ttm <= 0), note=BANDS_NOTE)
+        assert out is not None
+        if len(self._bands_cache) > 200:
+            self._bands_cache.clear()
+        self._bands_cache[key] = out
+        return out
+
     def detail(self, kind: str, key: str, region: str) -> ValDetail:
         if not self.result:
             raise NotFound("Der Bewertungstrend wird noch berechnet.")
@@ -362,6 +421,7 @@ class ValuationService:
             forward_path=ValSeries(t=[d for d, _ in det["forward"]], v=[v for _, v in det["forward"]]),
             recorded=ValSeries(t=[d for d, _ in rec], v=[x.get("peNext") for _, x in rec]),
             decomposition=det["decomposition"], coverage=det["coverage"], members=[ValMember(**m) for m in det["members"]],
+            bands=ValBands(**det["bands"]) if det.get("bands") else None,
         )
 
 

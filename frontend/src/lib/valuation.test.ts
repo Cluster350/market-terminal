@@ -47,3 +47,17 @@ describe("Bewertungstrend: Anzeige", () => {
     expect(PAGES.find((p) => p.id === "macro")!.pool).toContain("BWT");
   });
 });
+
+describe("KGV-Bänder: Rückblick in Worten", () => {
+  it("beschreibt, was früher nach unten und oben passierte", async () => {
+    const { bandTestText, bandTestVerdict } = await import("./valuation");
+    const test = { unten: { n: 20, avg: 0.18, up: 0.75 }, mitte: { n: 40, avg: 0.05, up: 0.55 }, oben: { n: 12, avg: -0.06, up: 0.33 } };
+    expect(bandTestText(test)).toBe(
+      "Unten im Band: im Schnitt +18 % nach 12 Monaten, 75 % der Fälle im Plus (20 Monate) · Mitte: im Schnitt +5 % nach 12 Monaten, 55 % der Fälle im Plus (40 Monate) · Oben im Band: im Schnitt −6 % nach 12 Monaten, 33 % der Fälle im Plus (12 Monate)",
+    );
+    expect(bandTestVerdict(test)).toBe("hilfreich");
+    expect(bandTestVerdict({ ...test, oben: { n: 12, avg: 0.2, up: 0.8 } })).toBe("unklar");
+    expect(bandTestVerdict({ ...test, oben: { n: 2, avg: null, up: null } })).toBe("zu wenig Daten");
+    expect(bandTestText(undefined)).toBe("");
+  });
+});

@@ -216,3 +216,69 @@ def test_listing_exclusions_adrs_and_dual_listings():
         "X.US": (None, "Taiwan", 1.0),  # ohne ISIN: nicht entscheidbar, bleibt
     })
     assert out == {"TSM.US", "ASML.US", "AIR.XETRA", "SAP.MI"}
+
+
+def test_pe_bands_lines_future_and_fair_value():
+    from app.valuation.bands import band_test, pe_bands, percentiles
+
+    t = [f"2020-{i:03d}" for i in range(40)]
+    pe = [10.0 + (i % 10) for i in range(40)]  # 10 … 19, Median 14,5
+    level = [100.0] * 40
+    pe[-1] = 20.0
+    b = pe_bands(t, pe, level, future=[("2099-12-31", 10.0)])
+    assert b.pct["p50"] == pytest.approx(14.5) and b.pct["p10"] < b.pct["p25"] < b.pct["p75"] < b.pct["p90"]
+    # Kurslinie = Kurs × Band-KGV ÷ KGV: heute (KGV 20) liegt der Median bei 100 × 14,5 / 20
+    assert b.lines["p50"][-1] == pytest.approx(72.5) and b.fair_now == pytest.approx(72.5)
+    # Zukunft: Kurs beim Median-KGV auf den geschätzten Gewinn (KGV dort 10 zum heutigen Kurs)
+    assert b.future_t == [t[-1], "2099-12-31"] and b.future["p50"][-1] == pytest.approx(145)
+    assert b.fair_next == pytest.approx(145) and b.fair_year == 2099 and b.fair_gap == pytest.approx(0.45)
+    assert b.position == 1.0
+    assert percentiles([5.0] * 10) is None  # zu wenig Monate
+    assert pe_bands(t[:5], pe[:5], level[:5]) is None
+    # Verlust: kein KGV, keine Kurslinie
+    pe2 = list(pe)
+    pe2[5] = None
+    assert pe_bands(t, pe2, level).lines["p50"][5] is None
+
+
+def test_band_test_uses_only_past():
+    from app.valuation.bands import band_test
+
+    # KGV schwankt; nach hohem KGV fällt der Kurs, nach tiefem steigt er
+    pe, level = [], []
+    price = 100.0
+    for i in range(80):
+        p = 15 + 5 * math.sin(i / 4)
+        pe.append(p)
+        level.append(price)
+        price *= 1 - (p - 15) / 200
+    r = band_test(pe, level, horizon=6, min_history=24)
+    assert r["oben"]["n"] > 0 and r["unten"]["n"] > 0
+    assert r["oben"]["avg"] < 0 < r["unten"]["avg"]
+    # ein Ausreißer ganz am Ende darf frühere Einordnungen nicht verändern (kein Blick in die Zukunft)
+    pe2 = pe[:-1] + [1000.0]
+    assert band_test(pe2, level, horizon=6, min_history=24) == r
+
+
+def test_stock_bands_endpoint_and_group_fair_value(tmp_path, monkeypatch):
+    monkeypatch.setenv("PORTFOLIO_DIR", str(tmp_path))
+    from app.config import Settings
+
+    with TestClient(create_app(DemoProvider(now_fn=lambda: NOW), cfg=Settings())) as c:
+        b = c.get("/api/valuation/bands/NWND US").json()
+        assert b["ticker"] == "NWND.US" and len(b["t"]) == 121 and set(b["lines"]) == {"p10", "p25", "p50", "p75", "p90"}
+        assert b["futureT"][-1] == "2027-12-31" and b["fairYear"] == 2027 and b["fairGap"] is not None
+        assert set(b["test"]) == {"unten", "mitte", "oben"} and "Median" in b["note"]
+        assert c.get("/api/valuation/bands/GDAXI.INDX").status_code in (404, 400)
+        import time
+
+        for _ in range(100):
+            o = c.get("/api/valuation/overview").json()
+            if o["state"] == "ready":
+                break
+            time.sleep(0.1)
+        tech = next(r for r in o["rows"] if r["key"] == "Technology")
+        assert tech["median"] > 0 and tech["fairGap"] is not None
+        d = c.get("/api/valuation/detail", params={"kind": "sector", "key": "Technology"}).json()
+        assert d["bands"]["level"][-1] == pytest.approx(100) and d["bands"]["pct"]["p50"] == pytest.approx(tech["median"])
+        assert all("fairGap" in m for m in d["members"])

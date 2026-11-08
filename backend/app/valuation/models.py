@@ -28,6 +28,8 @@ class ValRow(Model):
     up30: int = 0
     down30: int = 0
     dist52: Optional[float] = None  # Abstand zum 52-Wochen-Hoch (Anteil)
+    median: Optional[float] = None  # übliches KGV (Median der Monatswerte, zehn Jahre)
+    fair_gap: Optional[float] = None  # Kurs beim üblichen KGV auf den Gewinn nächstes Jahr ÷ heute − 1
     state: str = "nahe"  # baer (< −20 %) | korrektur (−10 … −20 %) | nahe
 
 
@@ -39,12 +41,37 @@ class ValMember(Model):
     pe_ttm: Optional[float] = None
     rev90: Optional[float] = None
     dist52: Optional[float] = None
+    median: Optional[float] = None
+    fair_gap: Optional[float] = None
     notes: list[str] = []
 
 
 class ValSeries(Model):
     t: list[str]
     v: list[Optional[float]]
+
+
+class ValBands(Model):
+    """KGV-Bänder: Kurslinien beim KGV der Bänder, Fortsetzung mit Analystenschätzungen, Prüfung."""
+
+    ticker: Optional[str] = None
+    name: Optional[str] = None
+    t: list[str]
+    pe: list[Optional[float]]
+    level: list[Optional[float]]
+    lines: dict[str, list[Optional[float]]]
+    future_t: list[str]
+    future: dict[str, list[Optional[float]]]
+    pct: dict[str, float]
+    pe_now: Optional[float] = None
+    position: Optional[float] = None
+    fair_now: Optional[float] = None
+    fair_next: Optional[float] = None
+    fair_year: Optional[int] = None
+    fair_gap: Optional[float] = None
+    test: dict[str, dict[str, Optional[float]]] = {}
+    loss: bool = False  # Gewinn der letzten zwölf Monate ≤ 0: kein aktuelles KGV
+    note: str = ""
 
 
 class ValDetail(Model):
@@ -57,6 +84,7 @@ class ValDetail(Model):
     decomposition: dict[str, dict[str, Optional[float]]]
     coverage: dict[str, int]
     members: list[ValMember]
+    bands: Optional[ValBands] = None
 
 
 class ValOverview(Model):

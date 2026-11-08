@@ -240,7 +240,8 @@ Meldung in der Leseansicht. Eingestellt wird das in **TOP** in der Werkzeugleist
 | **KGV 2021 … 2025** | tatsächliche KGVs der Vorjahre: Kurs am Jahresende ÷ tatsächlicher Gewinn des Jahres |
 | **heute** | heutiger Kurs ÷ Gewinn der letzten zwölf Monate |
 | **2026e, 2027e** | heutiger Kurs ÷ Analystenkonsens (auf Kalenderjahre umgerechnet) |
-| **Ø 10 J. / Lage** | Durchschnitt der letzten zehn Jahre und wo das KGV heute in dieser Spanne liegt (Kästchen links = günstig, rechts = teuer) |
+| **Median 10 J. / Lage** | übliches KGV der letzten zehn Jahre und wo das KGV heute in dieser Spanne liegt (Kästchen links = günstig, rechts = teuer) |
+| **Fair Value** | übliches KGV × Gewinnschätzung nächstes Jahr, verglichen mit dem Kurs (siehe KGV-Bänder) |
 | **12 M** | Veränderung des KGV in einem Jahr (Punkte) |
 | **Gewinn+** | erwartetes Gewinnwachstum nächstes Jahr |
 | **Schätzung 90 T** | wie die Analysten ihre Gewinnschätzung fürs nächste Jahr in 90 Tagen verändert haben – oft der früheste Hinweis |
@@ -268,6 +269,31 @@ vertreten (gut für die Richtung, nicht auf die Kommastelle). Analysten schätze
 Geschäftsjahr. Berechnet wird einmal täglich im Hintergrund (mit EODHD beim ersten Mal ein bis zwei Minuten,
 etwa 600 Firmen; das kostet API-Abrufe, bleibt aber deutlich im Tageskontingent). `↻` rechnet sofort neu.
 Der KI-Assistent ASK kann die Werte über das Werkzeug „bewertung“ abfragen.
+
+## KGV-Bänder und Fair Value
+
+Welcher Kurs entspräche dem **üblichen KGV**? Aus dem eigenen KGV-Verlauf der letzten zehn Jahre (Monatswerte)
+werden Median sowie die Bereiche 25–75 % und 10–90 % bestimmt und als Kurslinien gezeichnet. Nach rechts laufen
+sie mit den Gewinnschätzungen der Analysten bis Ende nächsten Jahres weiter.
+
+- **Kurschart (GP), Schalter „KGV-Band“** (Aktien, Tageszeiträume): Median durchgezogen, 25–75 % gestrichelt,
+  10–90 % gepunktet; daneben „KGV heute · üblich · Fair Value 2027 (Abstand)“.
+- **DES:** „KGV üblich (10 J.)“ und „Fair Value“ im Block Bewertung.
+- **BWT:** Spalten „Median 10 J.“ und „Fair Value“ (Plus = Kurs liegt darunter, Minus = darüber); im Detail die
+  Ansicht „Kurs + KGV-Bänder“ (Kursindex der Gruppe, heute = 100) bzw. „KGV-Verlauf“ mit schattierten Bereichen,
+  und je Einzelwert der Abstand zum Fair Value.
+
+**Fair Value** = übliches KGV (Median) × Gewinnschätzung des nächsten Jahres. Median und Prozentränge statt
+Mittelwert ± Standardabweichung, weil Gewinneinbrüche (2009, 2020) einzelne Jahre extrem machen.
+
+**Rückblick (Ehrlichkeitsprüfung):** Für jeden früheren Monat prüft das Terminal – nur mit dem bis dahin bekannten
+Verlauf –, ob das KGV unten, in der Mitte oder oben lag, und wie sich der Kurs in den zwölf Monaten danach
+entwickelte. „Band früher: hilfreich“ heißt: Nach einem Stand unten lief es im Schnitt besser als nach einem Stand
+oben. Bei Zyklikern und Firmen im Umbruch taugen Bänder oft wenig; die Zeiträume überlappen sich, die Fallzahl ist
+klein. Keine Empfehlung.
+
+Grenzen: Ohne Gewinn (Verlustjahre) gibt es kein KGV und keine Bänder; mindestens zwei Jahre mit Gewinn sind
+nötig. Ändern sich Geschäft oder Zinsumfeld dauerhaft, ist die eigene Geschichte ein schlechter Maßstab.
 
 ## Prognose mit Unsicherheitsbändern (Chronos-2)
 

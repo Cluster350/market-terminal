@@ -21,6 +21,7 @@ import { volumeProfile } from "../lib/profile";
 import { alertStatus, alertsApi, conditionLabel, useAlerts, useAlertsRefresh, type Alert } from "../lib/alerts";
 import { api, ApiError, IS_STATIC } from "../lib/api";
 import { coneLines, useVolForecast } from "../lib/forecast";
+import { BAND_KEYS, bandTestText, bandTestVerdict, useStockBands } from "../lib/valuation";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
 import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
 import { isBool, isNumberList, isOneOf, usePersistentState } from "../lib/persist";
@@ -307,6 +308,7 @@ export default function GP({ ticker }: ScreenProps) {
   const [showVwap, setShowVwap] = usePersistentState("gp.vwap", true, isBool);
   const [showVp, setShowVp] = usePersistentState("gp.vp", false, isBool);
   const [showCone, setShowCone] = usePersistentState("gp.cone", false, isBool);
+  const [showBand, setShowBand] = usePersistentState("gp.peband", false, isBool);
   const [compare, setCompare] = useState<string[]>([]);
   // Setzen einer Marke: "alarm" = Kursmarke mit Alarm, "line" = nur Linie (ohne Alarm)
   const [placing, setPlacing] = useState<false | "alarm" | "line">(false);
@@ -328,6 +330,9 @@ export default function GP({ ticker }: ScreenProps) {
   // Schwankungskegel: erwartete Spanne der nächsten 21 Handelstage aus der Schwankungsprognose
   const coneOn = showCone && !intradayRange && !comparing && !isYield && !IS_STATIC;
   const volFc = useVolForecast(ticker, null, coneOn);
+  // KGV-Band: Kurs beim üblichen KGV (Median, 25–75 %, 10–90 %), rechts mit den Analystenschätzungen
+  const bandOn = showBand && !intradayRange && !comparing && !isYield && !IS_STATIC && !!ticker && isEquity(ticker);
+  const bandQ = useStockBands(ticker, bandOn);
 
   const earn = useEarnings(ticker && isEquity(ticker) ? ticker : null);
 
@@ -428,6 +433,7 @@ export default function GP({ ticker }: ScreenProps) {
     cmp: ISeriesApi<"Line">[];
     rsi: ISeriesApi<"Line"> | null;
     cone: ISeriesApi<"Line">[];
+    band: ISeriesApi<"Line">[];
   } | null>(null);
   const barsRef = useRef<Map<string, Bar>>(new Map());
   const prevLineRef = useRef<ReturnType<ISeriesApi<"Line">["createPriceLine"]> | null>(null);
@@ -471,7 +477,7 @@ export default function GP({ ticker }: ScreenProps) {
       },
     });
     chartRef.current = chart;
-    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], rsi: null, cone: [] };
+    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], rsi: null, cone: [], band: [] };
     if (comparing) {
       for (let i = 0; i < compare.length + 1; i++) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
@@ -494,6 +500,21 @@ export default function GP({ ticker }: ScreenProps) {
       }
       if (intradayRange && showVwap) {
         refs.vwap = chart.addLineSeries({ color: "#f2c200", lineWidth: 1, lineStyle: LineStyle.Solid, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
+      }
+      if (bandOn) {
+        // erst die fünf Bänder (Vergangenheit), dann ihre Fortsetzung mit den Schätzungen
+        const look = [
+          ["rgba(255,160,40,0.4)", LineStyle.Dotted, 1], ["rgba(255,160,40,0.7)", LineStyle.Dashed, 1], ["#ffa028", LineStyle.Solid, 2],
+          ["rgba(255,160,40,0.7)", LineStyle.Dashed, 1], ["rgba(255,160,40,0.4)", LineStyle.Dotted, 1],
+        ] as const;
+        for (const future of [false, true]) {
+          look.forEach(([color, style, width], i) => {
+            refs.band.push(chart.addLineSeries({
+              color, lineWidth: width as 1 | 2, lineStyle: future ? LineStyle.SparseDotted : style, priceLineVisible: false, crosshairMarkerVisible: false,
+              lastValueVisible: future, title: future ? ["10 %", "25 %", "Median", "75 %", "90 %"][i] : "",
+            }));
+          });
+        }
       }
       if (coneOn) {
         for (const [color, style] of [["rgba(255,128,0,0.9)", LineStyle.Dashed], ["rgba(255,128,0,0.9)", LineStyle.Dashed], ["rgba(255,128,0,0.45)", LineStyle.Dotted], ["rgba(255,128,0,0.45)", LineStyle.Dotted]] as const) {
@@ -566,7 +587,7 @@ export default function GP({ ticker }: ScreenProps) {
       seriesRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasData, kind, intradayRange, isYield, maKey, boll, showRsi, cmpKey, showVwap, coneOn]);
+  }, [hasData, kind, intradayRange, isYield, maKey, boll, showRsi, cmpKey, showVwap, coneOn, bandOn]);
 
   useEffect(() => {
     const s = seriesRef.current;
@@ -603,6 +624,16 @@ export default function GP({ ticker }: ScreenProps) {
       s.bands[0].setData(bands.upper);
       s.bands[1].setData(bands.lower);
     }
+    if (s.band.length === 10) {
+      const b = bandQ.data;
+      const first = String(bars[0].time);
+      BAND_KEYS.forEach((k, i) => {
+        const past = b ? b.t.map((t, j) => ({ time: t, value: b.lines[k][j] })).filter((p) => p.time >= first && isNum(p.value)) : [];
+        const fut = b ? b.futureT.map((t, j) => ({ time: t, value: b.future[k][j] })).filter((p) => isNum(p.value)) : [];
+        s.band[i].setData(past as never);
+        s.band[i + 5].setData(fut as never);
+      });
+    }
     if (s.cone.length === 4) {
       const vol = volFc.data?.forecast.median[0];
       const last = bars[bars.length - 1];
@@ -621,7 +652,7 @@ export default function GP({ ticker }: ScreenProps) {
       rsiChartRef.current?.timeScale().fitContent();
       fitKey.current = key;
     }
-  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen]);
+  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen, bandQ.data]);
 
   // Laufende Kerze: Ticks des Echtzeit-Stroms (US-Werte, Devisen, Krypto) bzw. verzögerte Kurse
   // (übrige Börsen) schreiben die letzte Kerze fort, ohne den ganzen Chart neu zu zeichnen
@@ -994,6 +1025,37 @@ export default function GP({ ticker }: ScreenProps) {
               </label>
             )}
             {coneOn && volFc.isError && <span className="small muted">Kegel: {(volFc.error as Error).message}</span>}
+            {!isYield && !IS_STATIC && ticker && isEquity(ticker) && (
+              <label
+                className="check"
+                style={{ color: showBand ? "#ffa028" : undefined }}
+                title={
+                  "KGV-Band: Kurs, der dem üblichen KGV dieser Aktie entspräche – Median (durchgezogen), 25–75 % (gestrichelt), " +
+                  "10–90 % (gepunktet) der letzten zehn Jahre; rechts mit den Gewinnschätzungen der Analysten fortgesetzt." +
+                  (bandQ.data ? `\n\nRückblick (je Monat nur mit der Vorgeschichte): ${bandTestText(bandQ.data.test)}\n\n${bandQ.data.note}` : "")
+                }
+              >
+                <input type="checkbox" checked={showBand} onChange={(e) => setShowBand(e.target.checked)} />
+                KGV-Band
+              </label>
+            )}
+            {bandOn && bandQ.data && (
+              <span className="small muted" title={bandTestText(bandQ.data.test)}>
+                {bandQ.data.loss || !isNum(bandQ.data.peNow)
+                  ? "zurzeit Verlust – kein KGV"
+                  : `KGV ${fmt(bandQ.data.peNow, 1)} · üblich ${fmt(bandQ.data.pct.p50, 1)}`}
+                {isNum(bandQ.data.fairNext) && (
+                  <>
+                    {" · "}Fair Value {bandQ.data.fairYear}: <b className="lbl">{fmtPrice(bandQ.data.fairNext, ticker)}</b>{" "}
+                    <span className={isNum(bandQ.data.fairGap) && bandQ.data.fairGap >= 0 ? "up" : "down"}>
+                      ({isNum(bandQ.data.fairGap) ? `${bandQ.data.fairGap >= 0 ? "+" : "−"}${fmt(Math.abs(bandQ.data.fairGap * 100), 0)} %` : ""})
+                    </span>
+                  </>
+                )}
+                {" · "}Band früher: {bandTestVerdict(bandQ.data.test)}
+              </span>
+            )}
+            {bandOn && bandQ.isError && <span className="small muted">KGV-Band: {(bandQ.error as Error).message}</span>}
           </>
         )}
         {intradayRange && !isYield && (

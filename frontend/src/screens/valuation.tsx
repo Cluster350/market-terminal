@@ -9,6 +9,9 @@ import { IS_STATIC } from "../lib/api";
 import { fmt, fmtBig, fmtDate, isNum } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
 import {
+  BAND_KEYS,
+  bandTestText,
+  bandTestVerdict,
   decompositionText,
   fmtPe,
   groupRows,
@@ -18,6 +21,7 @@ import {
   useValuationDetail,
   useValuationOverview,
   valuationApi,
+  type BandKey,
   type Grouping,
   type ValDetail,
   type ValKind,
@@ -151,7 +155,7 @@ function Building({ o }: { o: ValOverview | undefined }) {
 function ValTable({ o, by, selected, onSelect }: { o: ValOverview; by: Grouping; selected: string | null; onSelect: (key: string) => void }) {
   const past = o.years.filter((y) => !o.estYears.includes(y));
   const groups = groupRows(o.rows, by);
-  const cols = 2 + past.length + 1 + o.estYears.length + 7;
+  const cols = 2 + past.length + 1 + o.estYears.length + 8;
   return (
     <table className="t bwt">
       <thead>
@@ -169,8 +173,9 @@ function ValTable({ o, by, selected, onSelect }: { o: ValOverview; by: Grouping;
               {y}e
             </th>
           ))}
-          <th className="num" title="Durchschnittliches KGV der letzten zehn Jahre (Monatswerte)">Ø 10 J.</th>
+          <th className="num" title="Übliches KGV: Median der Monatswerte der letzten zehn Jahre">Median 10 J.</th>
           <th title="Lage des heutigen KGV in der Spanne der letzten zehn Jahre: links günstig, rechts teuer">Lage</th>
+          <th className="num" title={`Fair Value = übliches KGV (Median) × Gewinnschätzung ${o.estYears[o.estYears.length - 1]}. Plus: Kurs liegt darunter (Luft nach oben), minus: darüber`}>Fair Value</th>
           <th className="num" title="Veränderung des KGV in zwölf Monaten (Punkte)">12 M</th>
           <th className="num" title="Erwartetes Gewinnwachstum nächstes Jahr gegenüber diesem">Gewinn+</th>
           <th className="num" title="Wie sich der Analystenkonsens für das nächste Jahr in 90 Tagen verändert hat">Schätzung 90 T</th>
@@ -212,10 +217,11 @@ function FragmentRows({ title, cols, rows, past, o, selected, onSelect }: { titl
               {fmtPe(r.peYears[String(y)], r.negativeYears.includes(y))}
             </td>
           ))}
-          <td className="num muted">{fmtPe(r.avg)}</td>
+          <td className="num muted">{fmtPe(r.median ?? r.avg)}</td>
           <td className="bwt-pos" title={r.position === null ? undefined : `${Math.round(r.position * 100)} % der Monate der letzten zehn Jahre waren günstiger oder gleich (Spanne ${fmtPe(r.low)} – ${fmtPe(r.high)})`}>
             {positionBlocks(r.position)}
           </td>
+          <td className={`num ${tone(r.fairGap)}`}>{pct(r.fairGap, 0)}</td>
           <td className={`num ${isNum(r.chg12m) ? (r.chg12m > 0.05 ? "pe-hi" : r.chg12m < -0.05 ? "pe-lo" : "") : ""}`}>
             {isNum(r.chg12m) ? `${r.chg12m >= 0 ? "+" : "−"}${fmt(Math.abs(r.chg12m), 1)}` : "–"}
           </td>
@@ -251,7 +257,7 @@ function ValMap({ o, onSelect }: { o: ValOverview; onSelect: (key: string) => vo
         ...TOOLTIP,
         formatter: (p: { data: { row: ValRow } }) => {
           const r = p.data.row;
-          return `${r.label}<br/>KGV heute ${fmtPe(r.peTtm)} (Ø 10 J. ${fmtPe(r.avg)})<br/>Schätzung nächstes Jahr 90 T: ${pct(r.rev90)}<br/>${quadrant(r.position, r.rev90)}`;
+          return `${r.label}<br/>KGV heute ${fmtPe(r.peTtm)} (üblich ${fmtPe(r.median ?? r.avg)})<br/>bis Fair Value ${pct(r.fairGap, 0)}<br/>Schätzung nächstes Jahr 90 T: ${pct(r.rev90)}<br/>${quadrant(r.position, r.rev90)}`;
         },
       },
       xAxis: { type: "value", min: 0, max: 100, name: "günstiger als üblich  ←  Lage in der 10-Jahres-Spanne  →  teurer als üblich", nameLocation: "middle", nameGap: 24, ...AXIS, nameTextStyle: { color: "#8f8f8f", fontSize: 10 } },
@@ -300,13 +306,51 @@ function detailOption(d: ValDetail): EOption {
     series: [
       {
         name: "KGV (letzte 12 Monate)", type: "line", data: monthly, symbol: "none", lineStyle: { color: "#d8d8d8", width: 1.5 },
-        markLine: isNum(r.avg) ? { silent: true, symbol: "none", lineStyle: { color: "#5c5c5c", type: "dashed" }, label: { color: "#8f8f8f", fontSize: 10, position: "insideStartTop", formatter: `Ø 10 J. ${fmtPe(r.avg)}` }, data: [{ yAxis: r.avg }] } : undefined,
+        markLine: isNum(r.median ?? r.avg) ? { silent: true, symbol: "none", lineStyle: { color: "#ffa028", type: "dashed", opacity: 0.8 }, label: { color: "#ffa028", fontSize: 10, position: "insideStartTop", formatter: `Median ${fmtPe(r.median ?? r.avg)}` }, data: [{ yAxis: r.median ?? r.avg }] } : undefined,
+        markArea: d.bands
+          ? {
+              silent: true,
+              data: [
+                [{ yAxis: d.bands.pct.p10, itemStyle: { color: "rgba(255,160,40,0.06)" } }, { yAxis: d.bands.pct.p90 }],
+                [{ yAxis: d.bands.pct.p25, itemStyle: { color: "rgba(255,160,40,0.10)" } }, { yAxis: d.bands.pct.p75 }],
+              ],
+            }
+          : undefined,
       },
       {
         name: "Analysten (Kalenderjahr)", type: "scatter", data: est, symbol: "diamond", symbolSize: 9, itemStyle: { color: "#ffa028" },
         label: { show: true, position: "top", color: "#ffa028", fontSize: 10, formatter: (p: { data: [string, number, string] }) => `${p.data[2]} ${fmtPe(p.data[1])}` },
       },
     ],
+  } as EOption;
+}
+
+/** Kurs-Sicht: Kursindex der Gruppe (heute = 100) mit den Kurslinien beim KGV der Bänder, rechts fortgesetzt. */
+function priceBandOption(d: ValDetail): EOption | null {
+  const b = d.bands;
+  if (!b) return null;
+  const pair = (ts: string[], vs: (number | null)[]) => ts.map((t, i) => [t, vs[i]]).filter((x) => isNum(x[1]));
+  const look: Record<BandKey, { color: string; type: "solid" | "dashed" | "dotted"; width: number; name: string }> = {
+    p10: { color: "rgba(255,160,40,0.45)", type: "dotted", width: 1, name: "KGV 10 %" },
+    p25: { color: "rgba(255,160,40,0.75)", type: "dashed", width: 1, name: "KGV 25 %" },
+    p50: { color: "#ffa028", type: "solid", width: 2, name: "Median-KGV" },
+    p75: { color: "rgba(255,160,40,0.75)", type: "dashed", width: 1, name: "KGV 75 %" },
+    p90: { color: "rgba(255,160,40,0.45)", type: "dotted", width: 1, name: "KGV 90 %" },
+  };
+  const series: unknown[] = [
+    { name: "Kursindex (heute = 100)", type: "line", data: pair(b.t, b.level), symbol: "none", lineStyle: { color: "#ececec", width: 1.5 }, z: 5 },
+  ];
+  for (const k of BAND_KEYS) {
+    series.push({ name: `${look[k].name} (${fmtPe(b.pct[k])})`, type: "line", data: pair(b.t, b.lines[k]), symbol: "none", lineStyle: { color: look[k].color, type: look[k].type, width: look[k].width } });
+    series.push({ name: `${look[k].name} – Schätzung`, type: "line", data: pair(b.futureT, b.future[k]), symbol: "circle", symbolSize: 3, lineStyle: { color: look[k].color, type: "dotted", width: look[k].width }, itemStyle: { color: look[k].color } });
+  }
+  return {
+    animation: false,
+    grid: { left: 44, right: 30, top: 16, bottom: 22 },
+    tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: (v: number) => fmt(v, 1) },
+    xAxis: { type: "time", max: `${d.estYears[d.estYears.length - 1] + 1}-03-31`, ...AXIS, axisLabel: { ...AXIS.axisLabel, hideOverlap: true } },
+    yAxis: { type: "value", scale: true, splitNumber: 3, ...AXIS },
+    series,
   } as EOption;
 }
 
@@ -329,7 +373,8 @@ function forwardOption(d: ValDetail): EOption | null {
 
 function Detail({ q, onClose }: { q: ReturnType<typeof useValuationDetail>; onClose: () => void }) {
   const d = q.data;
-  const main = useMemo(() => (d ? detailOption(d) : null), [d]);
+  const [view, setView] = usePersistentState<"pe" | "price">("bwt.detailView", "price", isOneOf(["pe", "price"] as const));
+  const main = useMemo(() => (d ? (view === "price" && d.bands ? priceBandOption(d) : detailOption(d)) : null), [d, view]);
   const fwd = useMemo(() => (d ? forwardOption(d) : null), [d]);
   return (
     <div className="bwt-detail">
@@ -344,15 +389,40 @@ function Detail({ q, onClose }: { q: ReturnType<typeof useValuationDetail>; onCl
         <>
           <div className="fc-head">
             <b>{d.row.label}</b>
-            <span className="xs muted">{d.row.n} Firmen · KGV heute {fmtPe(d.row.peTtm)} · Ø 10 J. {fmtPe(d.row.avg)} (Spanne {fmtPe(d.row.low)} – {fmtPe(d.row.high)})</span>
+            <span className="xs muted">{d.row.n} Firmen · KGV heute {fmtPe(d.row.peTtm)} · üblich {fmtPe(d.row.median ?? d.row.avg)} (Spanne {fmtPe(d.row.low)} – {fmtPe(d.row.high)})</span>
             <span className="xs lbl">{quadrant(d.row.position, d.row.rev90)}</span>
+            {d.bands && (
+              <span style={{ marginLeft: "auto" }}>
+                <Seg
+                  label="Darstellung"
+                  value={view}
+                  options={[
+                    { value: "price", label: "Kurs + KGV-Bänder" },
+                    { value: "pe", label: "KGV-Verlauf" },
+                  ]}
+                  onChange={setView}
+                />
+              </span>
+            )}
           </div>
           <div className="bwt-detail-body">
             <div className="bwt-chart">
               <EChart option={main} />
             </div>
             <div className="bwt-side small">
-              <div className="section-title">Warum hat sich das KGV verändert?</div>
+              {d.bands && (
+                <>
+                  <div className="section-title">Fair Value (übliches KGV × Gewinnschätzung)</div>
+                  <div>
+                    KGV heute {fmtPe(d.bands.peNow)} · Median {fmtPe(d.bands.pct.p50)} (Bereich {fmtPe(d.bands.pct.p25)} – {fmtPe(d.bands.pct.p75)}) ·{" "}
+                    {d.bands.fairYear}: <span className={tone(d.bands.fairGap)}>{pct(d.bands.fairGap, 0)}</span> bis Fair Value
+                  </div>
+                  <div className="xs dim" title={d.bands.note}>
+                    Rückblick ({bandTestVerdict(d.bands.test)}): {bandTestText(d.bands.test)}
+                  </div>
+                </>
+              )}
+              <div className="section-title" style={{ marginTop: 4 }}>Warum hat sich das KGV verändert?</div>
               {(["1J", "3J", "5J"] as const).map((k) => d.decomposition[k] && <div key={k}>{decompositionText(k.replace("J", " Jahr" + (k === "1J" ? "" : "e")), d.decomposition[k])}</div>)}
               <div className="section-title" style={{ marginTop: 6 }}>Analystenblick auf {d.estYears[1]}</div>
               <div>
@@ -399,6 +469,7 @@ function Members({ d }: { d: ValDetail }) {
               </th>
             ))}
             <th className="num">Schätzung 90 T</th>
+            <th className="num" title="Übliches KGV der Firma (Median 10 J.) × Gewinnschätzung nächstes Jahr, verglichen mit dem Kurs">Fair Value</th>
             <th className="num">Abst. Hoch</th>
           </tr>
         </thead>
@@ -423,6 +494,9 @@ function Members({ d }: { d: ValDetail }) {
                 </td>
               ))}
               <td className={`num ${tone(m.rev90)}`}>{pct(m.rev90)}</td>
+              <td className={`num ${tone(m.fairGap)}`} title={isNum(m.median) ? `übliches KGV ${fmtPe(m.median)}` : undefined}>
+                {pct(m.fairGap, 0)}
+              </td>
               <td className={`num ${isNum(m.dist52) && m.dist52 <= -0.2 ? "down" : "muted"}`}>{pct(m.dist52)}</td>
             </tr>
           ))}

@@ -1,6 +1,7 @@
 // Aktien-Funktionen: DES, HP, FA, ERN, DVD, ANR
 
 import { useState, type ReactNode } from "react";
+import { bandTestText, useStockBands } from "../lib/valuation";
 import { Change, Empty, Kv, Q, Seg, Spark, Table, useNow } from "../components/ui";
 import {
   countryDe,
@@ -72,6 +73,7 @@ export function DES({ ticker }: ScreenProps) {
 function CompanyDES({ ticker }: { ticker: string | null }) {
   const q = useCompany(ticker);
   const quote = useQuotes(ticker ? [ticker] : []).data?.[0];
+  const bands = useStockBands(ticker, true);
   const [more, setMore] = useState(false);
   return (
     <div className="panel-body">
@@ -113,6 +115,27 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
                       ["Enterprise Value", fmtBig(c.valuation.ev)],
                       ["KGV (TTM)", fmt(c.valuation.pe, 1)],
                       ["KGV erwartet", fmt(c.valuation.forwardPe, 1)],
+                      ...(bands.data
+                        ? ([
+                            [
+                              <span title="Median der Monats-KGVs der letzten zehn Jahre (Kurschart: Schalter „KGV-Band“)">KGV üblich (10 J.)</span>,
+                              fmt(bands.data.pct.p50, 1),
+                            ],
+                            [
+                              <span title={`Übliches KGV × Gewinnschätzung ${bands.data.fairYear ?? ""}. ${bandTestText(bands.data.test)}`}>Fair Value {bands.data.fairYear ?? ""}</span>,
+                              isNum(bands.data.fairNext) ? (
+                                <span>
+                                  {fmtPrice(bands.data.fairNext)}{" "}
+                                  <span className={tone(bands.data.fairGap)}>
+                                    ({isNum(bands.data.fairGap) ? `${bands.data.fairGap >= 0 ? "+" : "−"}${fmt(Math.abs(bands.data.fairGap * 100), 0)} %` : "–"})
+                                  </span>
+                                </span>
+                              ) : (
+                                "–"
+                              ),
+                            ],
+                          ] as [ReactNode, ReactNode][])
+                        : []),
                       ["PEG", fmt(c.valuation.peg, 2)],
                       ["KUV", fmt(c.valuation.priceSales, 2)],
                       ["KBV", fmt(c.valuation.priceBook, 2)],

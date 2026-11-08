@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query, Request
 
-from ..valuation.models import ValDetail, ValOverview
+from ..services.tickers import normalize
+from ..valuation.models import ValBands, ValDetail, ValOverview
 from ..valuation.service import ValuationService
 
 router = APIRouter(prefix="/api/valuation")
@@ -42,3 +43,9 @@ async def valuation_refresh(request: Request, kind: str = Query("sector", patter
 
         vs._building = asyncio.create_task(vs.build())
     return vs.overview(kind, region)
+
+
+@router.get("/bands/{ticker}", response_model=ValBands)
+async def valuation_bands(request: Request, ticker: str):
+    """KGV-Bänder einer Aktie (Kurschart): Kurs beim üblichen KGV, Fair Value, Ehrlichkeitsprüfung."""
+    return await _vs(request).stock_bands(normalize(ticker))

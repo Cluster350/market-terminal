@@ -28,6 +28,8 @@ export interface ValRow {
   up30: number;
   down30: number;
   dist52: number | null;
+  median?: number | null;
+  fairGap?: number | null;
   state: "baer" | "korrektur" | "nahe";
 }
 
@@ -53,7 +55,39 @@ export interface ValMember {
   peTtm: number | null;
   rev90: number | null;
   dist52: number | null;
+  median?: number | null;
+  fairGap?: number | null;
   notes: string[];
+}
+
+export type BandKey = "p10" | "p25" | "p50" | "p75" | "p90";
+export const BAND_KEYS: BandKey[] = ["p10", "p25", "p50", "p75", "p90"];
+
+export interface BandTest {
+  n: number;
+  avg: number | null;
+  up: number | null;
+}
+
+export interface ValBands {
+  ticker: string | null;
+  name: string | null;
+  t: string[];
+  pe: (number | null)[];
+  level: (number | null)[];
+  lines: Record<BandKey, (number | null)[]>;
+  futureT: string[];
+  future: Record<BandKey, (number | null)[]>;
+  pct: Record<BandKey, number>;
+  peNow: number | null;
+  position: number | null;
+  fairNow: number | null;
+  fairNext: number | null;
+  fairYear: number | null;
+  fairGap: number | null;
+  test: Record<"unten" | "mitte" | "oben", BandTest>;
+  loss: boolean;
+  note: string;
 }
 
 export interface ValSeries {
@@ -71,11 +105,13 @@ export interface ValDetail {
   decomposition: Record<string, { price: number | null; earnings: number | null; pe: number | null }>;
   coverage: Record<string, number>;
   members: ValMember[];
+  bands: ValBands | null;
 }
 
 export const valuationApi = {
   overview: (kind: ValKind, region: ValRegion) => request<ValOverview>(`/valuation/overview${qs({ kind, region })}`),
   detail: (kind: ValKind, key: string, region: ValRegion) => request<ValDetail>(`/valuation/detail${qs({ kind, key, region })}`),
+  bands: (ticker: string) => request<ValBands>(`/valuation/bands/${encodeURIComponent(ticker)}`, undefined, { timeoutMs: 60_000 }),
   refresh: (kind: ValKind, region: ValRegion) => request<ValOverview>(`/valuation/refresh${qs({ kind, region })}`, { method: "POST" }),
 };
 
@@ -88,6 +124,15 @@ export const useValuationOverview = (kind: ValKind, region: ValRegion) =>
     placeholderData: keepPreviousData,
     // während der Berechnung den Fortschritt nachfragen
     refetchInterval: (q) => (q.state.data?.state === "building" ? 2000 : false),
+  });
+
+export const useStockBands = (ticker: string | null, enabled: boolean) =>
+  useQuery({
+    queryKey: ["valuation-bands", ticker],
+    queryFn: () => valuationApi.bands(ticker!),
+    enabled: !IS_STATIC && enabled && !!ticker,
+    staleTime: 3_600_000,
+    retry: false,
   });
 
 export const useValuationDetail = (kind: ValKind, key: string | null, region: ValRegion) =>
@@ -168,4 +213,21 @@ export function quadrant(position: number | null, rev90: number | null): string 
   if (!cheap && up) return "teuer, Schätzungen steigen – Stärke, aber eingepreist";
   if (cheap && !up) return "günstig, Schätzungen sinken – billig aus gutem Grund?";
   return "teuer, Schätzungen sinken – Vorsicht, die Hoffnung bröckelt";
+}
+
+
+/** Ergebnis der Ehrlichkeitsprüfung in Worten: Was geschah früher zwölf Monate nach einem Stand unten/oben? */
+export function bandTestText(test: ValBands["test"] | undefined): string {
+  if (!test) return "";
+  const part = (label: string, z: BandTest) =>
+    z.n >= 6 && z.avg !== null && z.up !== null
+      ? `${label}: im Schnitt ${z.avg >= 0 ? "+" : "−"}${fmt(Math.abs(z.avg * 100), 0)} % nach 12 Monaten, ${fmt(z.up * 100, 0)} % der Fälle im Plus (${z.n} Monate)`
+      : `${label}: zu wenige Fälle`;
+  return [part("Unten im Band", test.unten), part("Mitte", test.mitte), part("Oben im Band", test.oben)].join(" · ");
+}
+
+/** Taugten die Bänder früher? Nur wenn es nach „unten“ besser lief als nach „oben“. */
+export function bandTestVerdict(test: ValBands["test"] | undefined): "hilfreich" | "unklar" | "zu wenig Daten" {
+  if (!test || test.unten.n < 6 || test.oben.n < 6 || test.unten.avg === null || test.oben.avg === null) return "zu wenig Daten";
+  return test.unten.avg - test.oben.avg > 0.05 ? "hilfreich" : "unklar";
 }

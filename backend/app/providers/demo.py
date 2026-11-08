@@ -1339,10 +1339,30 @@ class DemoProvider:
         # Bewertungstrend (BWT): Gewinn je Aktie der letzten zehn Geschäftsjahre und Analystenkonsens
         # mit Verlauf (heute, vor 7/30/60/90 Tagen) – Format wie EODHD Earnings::Annual und ::Trend
         annual_eps: dict[str, Any] = {}
+        # Ältere Jahre lose an den Kurs gekoppelt: Die Demo-Kurse laufen zufällig, die Gewinne stetig –
+        # ohne Kopplung lägen frühere KGVs unrealistisch hoch oder tief. Die beiden jüngsten Jahre bleiben
+        # wie in FA und den Quartalsberichten.
+        def year_end_close(y: int) -> Optional[float]:
+            cut = dt.date(y, 12, 31)
+            vals = [c for d, c in zip(series["days"], series["c"]) if d <= cut]
+            return vals[-1] if vals else None
+
+        eps_raw = {}
         for k in range(10):
             fy = years[0].year - k
             net = sum(quarter_net(dt.date(fy, m, d)) for m, d in ((3, 31), (6, 30), (9, 30), (12, 31)))
-            annual_eps[f"{fy}-12-31"] = {"date": f"{fy}-12-31", "epsActual": round(net / shares, 4)}
+            eps_raw[fy] = net / shares
+        anchor_pe = (year_end_close(years[0].year) or price) / eps_raw[years[0].year] if eps_raw[years[0].year] > 0 else None
+        mood = 0.0
+        for k in range(10):
+            fy = years[0].year - k
+            eps = eps_raw[fy]
+            mood = 0.7 * mood + _rng("pe-mood", ticker, fy).gauss(0, 0.12)  # Bewertung schwankt um das heutige Niveau
+            w = min(1.0, max(0.0, (k - 1) / 3))
+            close = year_end_close(fy)
+            if w > 0 and anchor_pe and close and eps > 0:
+                eps = eps ** (1 - w) * (close / (anchor_pe * math.exp(mood))) ** w
+            annual_eps[f"{fy}-12-31"] = {"date": f"{fy}-12-31", "epsActual": round(eps, 4)}
         rev_rng = _rng("revisions", ticker, self.today().isoformat()[:7])  # je Monat neue Stimmung
         drift = _REVISION_BIAS.get(sector, 0.0) + rev_rng.gauss(0, 0.025)  # Veränderung des Konsenses in 90 Tagen
         trend: dict[str, Any] = {}

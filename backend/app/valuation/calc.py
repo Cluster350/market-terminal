@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
+from .bands import Bands, pe_bands
 from .inputs import Estimate, ValInputs
 
 REPORT_LAG = 60  # Tage, bis ein Quartals- oder Jahresgewinn veröffentlicht ist
@@ -296,6 +297,33 @@ class GroupVal:
     down30: int
     dist52: Optional[float]  # Abstand zum 52-Wochen-Hoch (Anteil, ≤ 0)
     decomposition: dict[str, dict[str, Optional[float]]]  # 1J/3J/5J: Kurs, Gewinn, KGV (Anteile)
+    bands: Optional[Bands] = None  # KGV-Bänder auf einem Kursindex (heute = 100)
+
+
+def chain_index(cs: Sequence[CompanyVal], days: Sequence[dt.date]) -> list[Optional[float]]:
+    """Kursindex der Gruppe (Börsenwert, verkettet): Firmen, die später hinzukommen, lassen den Index
+    nicht springen. Heute = 100."""
+    out: list[Optional[float]] = []
+    level: Optional[float] = None
+    prev_day: Optional[str] = None
+    for d in days:
+        day = d.isoformat()
+        if level is None:
+            if any(c.price_at(day) for c in cs):
+                level = 1.0
+        elif prev_day is not None:
+            a = b = 0.0
+            for c in cs:
+                p0, p1 = c.price_at(prev_day), c.price_at(day)
+                if p0 and p1 and c.dates and c.dates[0] <= prev_day:
+                    a += c.s * p0
+                    b += c.s * p1
+            if a > 0:
+                level *= b / a
+        out.append(level)
+        prev_day = day
+    last = out[-1] if out else None
+    return [None if v is None or not last else v / last * 100 for v in out]
 
 
 def aggregate(cs: Sequence[CompanyVal], today: dt.date, years_back: int = 5) -> GroupVal:
@@ -393,9 +421,37 @@ def aggregate(cs: Sequence[CompanyVal], today: dt.date, years_back: int = 5) -> 
         else:
             decomposition[label] = {"price": None, "earnings": None, "pe": None}
 
+    months = month_ends(today)
+    index = chain_index(cs, months)
+    future = [(f"{y}-12-31", pe_years.get(y)) for y in (y0, y0 + 1)]
+    bands = pe_bands([d.isoformat() for d in months], [v for _, v in monthly], index, future)
+
     return GroupVal(
+        bands=bands,
         n=len(cs), pe_years=pe_years, negative_years=negative, coverage=coverage, pe_ttm=pe_ttm, monthly=monthly,
         avg=avg, low=low, high=high, position=position, chg12m=chg12m, growth_next=growth, revisions=revisions,
         forward_path=forward_path, up30=sum(c.up30 for c in cs), down30=sum(c.down30 for c in cs), dist52=dist52,
         decomposition=decomposition,
     )
+
+
+def company_bands(c: CompanyVal, today: dt.date, chart_dates: Sequence[str] = (), chart_closes: Sequence[float] = ()) -> Optional[Bands]:
+    """KGV-Bänder einer Firma. Kurslinien in der Skala des Charts (``chart_closes``, z. B. dividendenbereinigt);
+    ohne Chartkurse in gehandelten Kursen."""
+    months = month_ends(today)
+    pe: list[Optional[float]] = []
+    level: list[Optional[float]] = []
+    for d in months:
+        day = d.isoformat()
+        p, e = c.price_at(day), c.ttm(d)
+        pe.append(p / (c.k * e) if p and e and e > 0 else None)  # Verlust: kein KGV
+        if chart_dates:
+            i = bisect.bisect_right(chart_dates, day) - 1
+            level.append(chart_closes[i] if i >= 0 else None)
+        else:
+            level.append(p)
+    future = []
+    for y in (today.year, today.year + 1):
+        e = c.eps_cy.get(y)
+        future.append((f"{y}-12-31", c.price_now / (c.k * e) if e and e > 0 else None))
+    return pe_bands([d.isoformat() for d in months], pe, level, future)
