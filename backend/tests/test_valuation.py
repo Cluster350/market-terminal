@@ -198,3 +198,21 @@ def test_ask_tool_bewertung(tmp_path, monkeypatch):
     land = asyncio.run(run_tool(t, "bewertung", {"art": "land"}))
     assert land["art"] == "Länder" and any(x["name"] == "Deutschland" for x in land["gruppen"])
     assert summarize("bewertung", {}, res) == "Bewertungstrend"
+
+
+def test_listing_exclusions_adrs_and_dual_listings():
+    from app.valuation.service import listing_exclusions
+
+    out = listing_exclusions({
+        "AAPL.US": ("US0378331005", "USA", 5e7),
+        "TSM.US": ("US8740391003", "Taiwan", 1e7),  # ADR
+        "ACN.US": ("IE00B4BNMY34", "Ireland", 3e6),  # Sitz Irland, aber eigentliche Aktie in New York
+        "ASML.AS": ("NL0010273215", "Netherlands", 9e5),
+        "ASML.US": ("USN070592100", "Netherlands", 1e6),  # US-ISIN, Sitz Niederlande: ADR-artig
+        "AIR.PA": ("NL0000235190", "Netherlands", 1.5e6),
+        "AIR.XETRA": ("NL0000235190", "Netherlands", 2e4),  # Zweitnotierung, kleines Volumen
+        "SAP.XETRA": ("DE0007164600", "Germany", 1e6),
+        "SAP.MI": ("DE0007164600", "Germany", 5e6),  # mehr Volumen, aber Heimatbörse laut ISIN ist Xetra
+        "X.US": (None, "Taiwan", 1.0),  # ohne ISIN: nicht entscheidbar, bleibt
+    })
+    assert out == {"TSM.US", "ASML.US", "AIR.XETRA", "SAP.MI"}

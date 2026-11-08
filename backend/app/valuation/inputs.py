@@ -38,6 +38,7 @@ class ValInputs:
     quarters: list[tuple[dt.date, float]]  # berichtete Quartals-EPS, älteste zuerst
     annual: list[tuple[dt.date, float]]  # berichtete Geschäftsjahres-EPS, älteste zuerst
     estimates: list[Estimate]
+    isin: Optional[str] = None  # Wertpapierkennung: gleiche Aktie an mehreren Börsen hat dieselbe ISIN
 
 
 def _date(x: Any) -> Optional[dt.date]:
@@ -113,4 +114,5 @@ def from_fundamentals(data: Any, ticker: str) -> ValInputs:
         quarters=sorted(quarters.items()),
         annual=sorted(annual.items()),
         estimates=estimates,
+        isin=(text(g.get("ISIN")) or "").upper() or None,
     )

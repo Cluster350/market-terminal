@@ -50,6 +50,38 @@ NOTE = (
 )
 
 
+# Länderkürzel am Anfang der ISIN je Börse (Heimatbörse einer Aktie)
+HOME_ISIN = {"US": "US", "XETRA": "DE", "LSE": "GB", "PA": "FR", "AS": "NL", "SW": "CH", "MI": "IT", "MC": "ES"}
+US_NAMES = ("USA", "United States", "United States of America")
+
+
+def listing_exclusions(listings: dict[str, tuple[Optional[str], Optional[str], float]]) -> set[str]:
+    """Doppelt erfasste Aktien aussortieren. ``listings``: Ticker -> (ISIN, Sitzland, Ø Handelsvolumen).
+
+    - ADRs an US-Börsen (US-ISIN, aber Sitz im Ausland, z. B. TSMC, Novo Nordisk): gehören nicht zu „USA“
+      und würden die Firma sonst doppelt zählen. Firmen mit Sitz z. B. in Irland, die ihre eigentlichen Aktien
+      in New York handeln (Accenture, Medtronic, Linde), haben eine irische ISIN und bleiben.
+    - Dieselbe Aktie an mehreren Börsen (gleiche ISIN, z. B. Airbus in Paris und auf Xetra): nur die
+      Heimatbörse laut ISIN zählt, sonst die Börse mit dem größten Handelsvolumen.
+    """
+    out: set[str] = set()
+    by_isin: dict[str, list[str]] = {}
+    for ticker, (isin, domicile, _) in listings.items():
+        exchange = ticker.rpartition(".")[2].upper()
+        if exchange == "US" and isin and isin.startswith("US") and domicile and domicile not in US_NAMES:
+            out.add(ticker)
+            continue
+        if isin:
+            by_isin.setdefault(isin, []).append(ticker)
+    for isin, tickers in by_isin.items():
+        if len(tickers) < 2:
+            continue
+        home = [t for t in tickers if HOME_ISIN.get(t.rpartition(".")[2].upper()) == isin[:2]]
+        keep = home[0] if home else max(tickers, key=lambda t: listings[t][2] or 0)
+        out.update(t for t in tickers if t != keep)
+    return out
+
+
 def _state(dist52: Optional[float]) -> str:
     if dist52 is None:
         return "nahe"
@@ -193,26 +225,32 @@ class ValuationService:
                 for chunk in await asyncio.gather(*(self._screen(ex, sector, n) for ex in exs)):
                     rows.extend(chunk)
                 rows.sort(key=lambda r: -(r.market_cap or 0))
-                groups[gid] = {"kind": kind, "key": key, "label": label, "region": region, "members": rows[:n]}
+                # einige Reserve: ADRs und Zweitnotierungen fallen später heraus
+                groups[gid] = {"kind": kind, "key": key, "label": label, "region": region, "members": rows[: n + 5], "n": n}
 
             await asyncio.gather(*(members(j) for j in jobs))
-            for sector in SECTORS:  # Sektoren weltweit: USA und Europa zusammen
-                rows = groups.get(f"sector:us:{sector}", {}).get("members", []) + groups.get(f"sector:eu:{sector}", {}).get("members", [])
-                groups[f"sector:all:{sector}"] = {"kind": "sector", "key": sector, "label": SECTOR_DE.get(sector, sector), "region": "all", "members": rows}
-
-            tickers: dict[str, float] = {}
+            tickers: dict[str, ScreenRow] = {}
             for g in groups.values():
                 for r in g["members"]:
-                    tickers[r.ticker] = r.market_cap or 0
+                    tickers[r.ticker] = r
             self.total = len(tickers)
             sem = asyncio.Semaphore(6)
-            vals = dict(zip(tickers, await asyncio.gather(*(self._company(t, m, sem, today) for t, m in tickers.items()))))
+            vals = dict(zip(tickers, await asyncio.gather(*(self._company(t, r.market_cap or 0, sem, today) for t, r in tickers.items()))))
+            excluded = listing_exclusions({t: (v.isin, v.domicile, tickers[t].avg_vol or 0) for t, v in vals.items() if v})
+
+            chosen: dict[str, list[CompanyVal]] = {}
+            for gid, g in groups.items():
+                chosen[gid] = [vals[r.ticker] for r in g["members"] if vals.get(r.ticker) and r.ticker not in excluded][: g["n"]]
+            for sector in SECTORS:  # Sektoren weltweit: USA und Europa zusammen
+                gid = f"sector:all:{sector}"
+                groups[gid] = {"kind": "sector", "key": sector, "label": SECTOR_DE.get(sector, sector), "region": "all"}
+                chosen[gid] = chosen.get(f"sector:us:{sector}", []) + chosen.get(f"sector:eu:{sector}", [])
 
             years = list(range(today.year - YEARS_BACK, today.year + 2))
             rows_out: dict[str, dict] = {}
             details: dict[str, dict] = {}
             for gid, g in groups.items():
-                cs = [vals[r.ticker] for r in g["members"] if vals.get(r.ticker)]
+                cs = chosen.get(gid) or []
                 if not cs:
                     continue
                 agg = await asyncio.to_thread(aggregate, cs, today, YEARS_BACK)
@@ -244,7 +282,8 @@ class ValuationService:
     def _row(g: dict, agg: GroupVal, years: list[int]) -> ValRow:
         return ValRow(
             key=g["key"], label=g["label"], kind=g["kind"], region=g["region"], n=agg.n,
-            pe_years={str(y): agg.pe_years.get(y) for y in years}, negative_years=agg.negative_years,
+            pe_years={str(y): agg.pe_years.get(y) for y in years}, coverage={str(y): agg.coverage.get(y, 0) for y in years},
+            negative_years=agg.negative_years,
             pe_ttm=agg.pe_ttm, avg=agg.avg, low=agg.low, high=agg.high, position=agg.position, chg12m=agg.chg12m,
             growth_next=agg.growth_next, rev30=agg.revisions.get(30), rev90=agg.revisions.get(90),
             up30=agg.up30, down30=agg.down30, dist52=agg.dist52, state=_state(agg.dist52),

@@ -178,6 +178,8 @@ class CompanyVal:
     down30: int = 0
     analysts: int = 0
     notes: list[str] = field(default_factory=list)
+    isin: Optional[str] = None
+    domicile: Optional[str] = None  # Sitzland laut Datenquelle
 
     def price_at(self, day: str) -> Optional[float]:
         """Letzter Kurs bis einschließlich ``day``."""
@@ -244,7 +246,7 @@ def company_val(inp: ValInputs, mcap_usd: float, dates: Sequence[str], closes: S
             eps_cy[y] = lags[0]
 
     tmp = CompanyVal(inp.ticker, inp.name, inp.sector, inp.exchange, mcap_usd, mcap_usd / price_now, 1.0, price_now,
-                     ds, cs, eps_cy, est_cy, quarters, annual)
+                     ds, cs, eps_cy, est_cy, quarters, annual, isin=inp.isin, domicile=inp.country)
     eps_ttm = tmp.ttm(today)
     eps_fwd = est_cy.get(y0 + 1, {}).get(0)
     tmp.k = unit_factor(price_now, eps_ttm, inp.pe_ref, eps_fwd, inp.forward_pe_ref)

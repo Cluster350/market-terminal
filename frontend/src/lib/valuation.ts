@@ -14,6 +14,7 @@ export interface ValRow {
   region: string;
   n: number;
   peYears: Record<string, number | null>;
+  coverage?: Record<string, number>;
   negativeYears: number[];
   peTtm: number | null;
   avg: number | null;

@@ -14,6 +14,7 @@ class ValRow(Model):
     region: str  # all | us | eu (Sektoren) bzw. Region des Landes
     n: int  # Zahl der Firmen
     pe_years: dict[str, Optional[float]]  # "2021" … "2027"
+    coverage: dict[str, int] = {}  # Jahr -> Zahl der Firmen mit Gewinn und Kurs (IPOs fehlen in frühen Jahren)
     negative_years: list[int] = []
     pe_ttm: Optional[float] = None  # KGV heute (Gewinn der letzten zwölf Monate)
     avg: Optional[float] = None  # Durchschnitt 10 Jahre (Monatswerte)

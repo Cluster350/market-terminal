@@ -200,7 +200,7 @@ function FragmentRows({ title, cols, rows, past, o, selected, onSelect }: { titl
           <td>{r.label}</td>
           <td className="num muted">{r.n}</td>
           {past.map((y) => (
-            <td key={y} className={`num ${peTone(r.peYears[String(y)], r.avg)}`}>
+            <td key={y} className={`num ${peTone(r.peYears[String(y)], r.avg)}`} title={coverTitle(r, y)}>
               {fmtPe(r.peYears[String(y)], r.negativeYears.includes(y))}
             </td>
           ))}
@@ -208,7 +208,7 @@ function FragmentRows({ title, cols, rows, past, o, selected, onSelect }: { titl
             {fmtPe(r.peTtm)}
           </td>
           {o.estYears.map((y) => (
-            <td key={y} className="num est">
+            <td key={y} className="num est" title={coverTitle(r, y)}>
               {fmtPe(r.peYears[String(y)], r.negativeYears.includes(y))}
             </td>
           ))}
@@ -231,6 +231,13 @@ function FragmentRows({ title, cols, rows, past, o, selected, onSelect }: { titl
       ))}
     </>
   );
+}
+
+/** Hinweis je Jahr: aus wie vielen Firmen das KGV berechnet ist (junge Börsengänge fehlen in frühen Jahren). */
+function coverTitle(r: ValRow, y: number): string | undefined {
+  const c = r.coverage?.[String(y)];
+  if (c === undefined) return undefined;
+  return c < r.n ? `aus ${c} von ${r.n} Firmen (übrige ohne Gewinn- oder Kursdaten für ${y}, z. B. spätere Börsengänge)` : `aus allen ${r.n} Firmen`;
 }
 
 function ValMap({ o, onSelect }: { o: ValOverview; onSelect: (key: string) => void }) {
