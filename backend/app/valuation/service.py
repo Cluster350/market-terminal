@@ -20,7 +20,7 @@ from ..errors import NotFound, TerminalError
 from ..models import ScreenRow
 from ..providers.base import ScreenFilter
 from .bands import Bands
-from .calc import LAGS, CompanyVal, GroupVal, aggregate, company_bands, company_val, sector_relative
+from .calc import LAGS, CompanyVal, GroupVal, aggregate, chain_index, company_bands, company_val, sector_relative
 from .models import ValBands, ValDetail, ValMember, ValOverview, ValRow, ValSectorRel, ValSeries
 
 log = logging.getLogger("terminal.valuation")
@@ -270,6 +270,7 @@ class ValuationService:
                 groups[gid] = {"kind": "sector", "key": sector, "label": SECTOR_DE.get(sector, sector), "region": "all"}
                 chosen[gid] = chosen.get(f"sector:us:{sector}", []) + chosen.get(f"sector:eu:{sector}", [])
 
+            weekly = await asyncio.to_thread(self._weekly, chosen, groups, today)
             years = list(range(today.year - YEARS_BACK, today.year + 2))
             rows_out: dict[str, dict] = {}
             details: dict[str, dict] = {}
@@ -292,6 +293,7 @@ class ValuationService:
             self.result = {
                 "built_at": dt.datetime.now(dt.timezone.utc).isoformat(), "today": today.isoformat(),
                 "years": years, "est_years": [today.year, today.year + 1], "rows": rows_out, "details": details,
+                "weekly": weekly,
             }
             self._record(today, rows_out)
             self._save()
@@ -303,6 +305,30 @@ class ValuationService:
         except Exception as exc:  # noqa: BLE001
             log.exception("Bewertungstrend fehlgeschlagen")
             self.state, self.message = "error", f"Berechnung fehlgeschlagen: {exc}"
+
+    @staticmethod
+    def _weekly(chosen: dict[str, list[CompanyVal]], groups: dict[str, dict], today: dt.date) -> dict:
+        """Wochenindizes (Börsenwert, verkettet) je Gruppe und je Region für den Gesamtmarkt – Grundlage der
+        relativen Rotation (RRG) der Sektoren. Fünf Jahre, letzter Wert = aktuelle Woche."""
+        start = today - dt.timedelta(days=5 * 365)
+        first = start + dt.timedelta(days=(4 - start.weekday()) % 7)
+        days = [first + dt.timedelta(days=7 * k) for k in range((today - first).days // 7 + 1)]
+        if today.weekday() < 4:  # laufende Woche (Mo–Do): heutiger Stand
+            days.append(today)
+        keys = [(d + dt.timedelta(days=4 - d.weekday())).isoformat() for d in days]
+        out: dict[str, list[Optional[float]]] = {}
+        for gid, cs in chosen.items():
+            if cs and (gid.startswith("sector:") or gid.startswith("country:")):
+                out[gid] = chain_index(cs, days)
+        for region in ("us", "eu", "all"):
+            members: dict[str, CompanyVal] = {}
+            for gid, cs in chosen.items():
+                if gid.startswith(f"sector:{region}:"):
+                    for c in cs:
+                        members[c.ticker] = c
+            if members:
+                out[f"market:{region}"] = chain_index(list(members.values()), days)
+        return {"t": keys, "groups": out}
 
     @staticmethod
     def _row(g: dict, agg: GroupVal, years: list[int]) -> ValRow:

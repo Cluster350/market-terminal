@@ -27,6 +27,7 @@ from .api.option_routes import router as option_router
 from .api.portfolio_routes import current_portfolio, router as portfolio_router
 from .api.routes import router
 from .api.stream_routes import router as stream_router
+from .api.rotation_routes import router as rotation_router
 from .api.valuation_routes import router as valuation_router
 from .cache import TTLCache
 from .config import Settings, settings
@@ -38,6 +39,7 @@ from .realtime.demo import DemoSource
 from .realtime.eodhd_ws import EodhdSource
 from .realtime.hub import RealtimeHub
 from .services.terminal import Terminal, request_flags
+from .rotation.service import RotationService
 from .valuation.service import ValuationService
 
 log = logging.getLogger("terminal")
@@ -141,6 +143,7 @@ def create_app(
         app.state.forecast.start()
         app.state.valuation = ValuationService(app.state.terminal, cfg.portfolio_dir, prov.mode)
         app.state.terminal.valuation = app.state.valuation
+        app.state.rotation = RotationService(app.state.terminal, app.state.valuation)
         if valuation_auto:
             app.state.valuation.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
@@ -199,6 +202,7 @@ def create_app(
     app.include_router(stream_router)
     app.include_router(forecast_router)
     app.include_router(valuation_router)
+    app.include_router(rotation_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

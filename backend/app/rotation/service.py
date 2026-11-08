@@ -1,0 +1,288 @@
+"""Relative Rotation: Daten für Sektoren, Firmen im Sektor, Länderindizes und Währungen."""
+
+from __future__ import annotations
+
+import asyncio
+import math
+import time
+from typing import Any, Optional
+
+from ..errors import BadRequest, NotFound, TerminalError
+from ..models import Model
+from ..providers.base import WORLD
+from ..services.tickers import display
+from ..valuation.service import SECTOR_DE, SECTORS, ValuationService
+from .calc import HISTORY_WEEKS, Series, backtest, heading, quadrant, rrg_lines, to_weekly
+
+CACHE_SECONDS = 1800
+YEARS = 5
+
+# Währung je Land (ISO3) für die Umrechnung der Indizes in Euro
+COUNTRY_CCY = {
+    "USA": "USD", "CAN": "CAD", "MEX": "MXN", "BRA": "BRL", "ARG": "ARS", "CHL": "CLP", "DEU": "EUR", "FRA": "EUR",
+    "GBR": "GBP", "ITA": "EUR", "ESP": "EUR", "NLD": "EUR", "BEL": "EUR", "AUT": "EUR", "CHE": "CHF", "SWE": "SEK",
+    "NOR": "NOK", "DNK": "DKK", "FIN": "EUR", "POL": "PLN", "PRT": "EUR", "GRC": "EUR", "IRL": "EUR", "TUR": "TRY",
+    "ISR": "ILS", "SAU": "SAR", "ZAF": "ZAR", "JPN": "JPY", "CHN": "CNH", "IND": "INR", "KOR": "KRW", "TWN": "TWD",
+    "IDN": "IDR", "AUS": "AUD", "NZL": "NZD",
+}
+# Wert einer Währung in US-Dollar: (Paar, +1 = Paar ist CCYUSD, −1 = Paar ist USDCCY)
+FX_PAIRS: dict[str, tuple[str, int]] = {
+    "EUR": ("EURUSD.FOREX", 1), "GBP": ("GBPUSD.FOREX", 1), "JPY": ("USDJPY.FOREX", -1), "CHF": ("USDCHF.FOREX", -1),
+    "AUD": ("AUDUSD.FOREX", 1), "CAD": ("USDCAD.FOREX", -1), "NZD": ("NZDUSD.FOREX", 1), "CNH": ("USDCNH.FOREX", -1),
+    "SEK": ("USDSEK.FOREX", -1), "NOK": ("USDNOK.FOREX", -1),
+}
+CURRENCY_NAMES = {
+    "USD": "US-Dollar", "EUR": "Euro", "GBP": "Pfund", "JPY": "Yen", "CHF": "Franken", "AUD": "Austral-Dollar",
+    "CAD": "Kanada-Dollar", "NZD": "Neuseeland-Dollar", "CNH": "Renminbi", "SEK": "Schwed. Krone", "NOK": "Norw. Krone",
+}
+NOTE = (
+    "Offene Näherung an Relative Rotation Graphs auf Wochenbasis: Trend = relative Stärke gegenüber ihren letzten "
+    "20 Wochen, Schwung = Trend gegenüber seinen letzten 10 Wochen (je als z-Wert um 100). Zeigt nur, wer besser oder "
+    "schlechter läuft als der Maßstab – nicht, ob der Maßstab selbst steigt. Keine Empfehlung."
+)
+
+
+class RotMember(Model):
+    key: str
+    label: str
+    ticker: Optional[str] = None
+    trend: list[Optional[float]]
+    momentum: list[Optional[float]]
+    quadrant: Optional[str] = None
+    heading: Optional[float] = None  # Grad, 0 = nach rechts, 90 = nach oben
+    speed: Optional[float] = None
+    rel4: Optional[float] = None  # relative Entwicklung gegenüber dem Maßstab, 4 bzw. 13 Wochen
+    rel13: Optional[float] = None
+    fair_gap: Optional[float] = None  # aus dem Bewertungstrend (Sektoren, Firmen)
+    detail: Optional[str] = None
+
+
+class RotationResult(Model):
+    universe: str
+    title: str
+    benchmark: str
+    weeks: list[str]
+    members: list[RotMember]
+    test: dict[str, Any]
+    state: str = "ready"  # ready | building
+    note: str = NOTE
+    skipped: list[str] = []
+
+
+def _align(series: dict[str, dict[str, float]], weeks: list[str]) -> dict[str, list[Optional[float]]]:
+    return {k: [v.get(w) for w in weeks] for k, v in series.items()}
+
+
+def _chain_mean(values: list[list[Optional[float]]], weights: Optional[list[float]] = None) -> list[Optional[float]]:
+    """Index aus den Wochenveränderungen aller Reihen (gleich gewichtet im Logarithmus bzw. nach Gewicht);
+    fehlende Werte lassen den Index nicht springen."""
+    n = len(values[0]) if values else 0
+    out: list[Optional[float]] = []
+    level: Optional[float] = None
+    for i in range(n):
+        if level is None:
+            if any(v[i] for v in values):
+                level = 100.0
+            out.append(level)
+            continue
+        acc = wsum = 0.0
+        for j, v in enumerate(values):
+            if v[i - 1] and v[i]:
+                w = weights[j] if weights else 1.0
+                acc += w * math.log(v[i] / v[i - 1])  # type: ignore[operator]
+                wsum += w
+        if wsum:
+            level *= math.exp(acc / wsum)
+        out.append(level)
+    return out
+
+
+class RotationService:
+    def __init__(self, terminal: Any, valuation: ValuationService):
+        self.t = terminal
+        self.v = valuation
+        self._cache: dict[tuple, tuple[float, RotationResult]] = {}
+
+    async def rotation(self, universe: str, region: str = "us", sector: Optional[str] = None, ccy: str = "eur",
+                       bench: str = "basket") -> RotationResult:
+        key = (universe, region, sector, ccy, bench, self.t.now().date().isoformat(), self.v.result.get("built_at") if self.v.result else None)
+        hit = self._cache.get(key)
+        if hit and time.time() - hit[0] < CACHE_SECONDS:
+            return hit[1]
+        if universe == "sectors":
+            res = self._sectors(region)
+        elif universe == "sector":
+            res = await self._sector_members(region, sector or "")
+        elif universe == "countries":
+            res = await self._countries(ccy)
+        elif universe == "currencies":
+            res = await self._currencies(bench)
+        else:
+            raise BadRequest(f"Unbekannter Bereich „{universe}“.")
+        if res.state == "ready":
+            if len(self._cache) > 100:
+                self._cache.clear()
+            self._cache[key] = (time.time(), res)
+        return res
+
+    # --- gemeinsame Rechnung -------------------------------------------------------------
+
+    @staticmethod
+    def _compute(universe: str, title: str, bench_label: str, weeks: list[str], bench: list[Optional[float]],
+                 series: list[Series], skipped: Optional[list[str]] = None) -> RotationResult:
+        lines = []
+        members: list[RotMember] = []
+        for s in series:
+            rs, trend, mom = rrg_lines(s.values, bench)
+            if not any(x is not None for x in mom[-HISTORY_WEEKS:]):
+                (skipped or []).append(f"{s.label} (zu wenig Verlauf)")
+                continue
+            lines.append((rs, trend, mom))
+            i = len(rs) - 1
+            hd, sp = heading(trend, mom, i)
+
+            def rel(h: int) -> Optional[float]:
+                return rs[i] / rs[i - h] - 1 if i - h >= 0 and rs[i] and rs[i - h] else None
+
+            members.append(RotMember(
+                key=s.key, label=s.label, ticker=s.ticker, trend=trend[-HISTORY_WEEKS:], momentum=mom[-HISTORY_WEEKS:],
+                quadrant=quadrant(trend[i], mom[i]), heading=hd, speed=sp, rel4=rel(4), rel13=rel(13),
+                fair_gap=s.extra.get("fair_gap"), detail=s.extra.get("detail"),
+            ))
+        return RotationResult(universe=universe, title=title, benchmark=bench_label, weeks=weeks[-HISTORY_WEEKS:],
+                              members=members, test=backtest(lines), skipped=skipped or [])
+
+    async def _weekly_histories(self, tickers: list[str]) -> dict[str, dict[str, float]]:
+        sem = asyncio.Semaphore(6)
+
+        async def one(t: str) -> tuple[str, Optional[dict[str, float]]]:
+            async with sem:
+                try:
+                    h = await self.t.history(t)
+                except TerminalError:
+                    return t, None
+            return t, to_weekly(h.t, h.c)
+
+        return {t: w for t, w in await asyncio.gather(*(one(t) for t in tickers)) if w}
+
+    def _weeks(self, sets: list[dict[str, float]]) -> list[str]:
+        today = self.t.now().date()
+        cutoff = today.replace(year=today.year - YEARS).isoformat()
+        weeks = sorted({w for s in sets for w in s if w >= cutoff})
+        return weeks
+
+    # --- Sektoren -------------------------------------------------------------------------
+
+    def _sectors(self, region: str) -> RotationResult:
+        r = self.v.result
+        if not r or "weekly" not in r:
+            self.v.ensure()
+            return RotationResult(universe="sectors", title="Sektoren", benchmark="", weeks=[], members=[], test={}, state="building")
+        weekly = r["weekly"]
+        bench = weekly["groups"].get(f"market:{region}")
+        if not bench:
+            raise NotFound("Für diese Region gibt es keine Sektordaten.")
+        series = []
+        for sector in SECTORS:
+            gid = f"sector:{region}:{sector}"
+            vals = weekly["groups"].get(gid)
+            if vals:
+                row = r["rows"].get(gid) or {}
+                series.append(Series(key=sector, label=SECTOR_DE.get(sector, sector), values=vals,
+                                     extra={"fair_gap": row.get("fair_gap"), "detail": f"{row.get('n', '?')} Firmen"}))
+        reg = {"us": "USA", "eu": "Europa", "all": "USA + Europa"}[region]
+        return self._compute("sectors", f"Sektoren · {reg}", f"Gesamtmarkt {reg} (alle Sektoren, gleiche Firmen)", weekly["t"], bench, series)
+
+    async def _sector_members(self, region: str, sector: str) -> RotationResult:
+        r = self.v.result
+        if not r:
+            self.v.ensure()
+            return RotationResult(universe="sector", title=sector, benchmark="", weeks=[], members=[], test={}, state="building")
+        det = r["details"].get(f"sector:{region}:{sector}") or r["details"].get(f"sector:all:{sector}")
+        if not det:
+            raise NotFound(f"Keine Firmen für den Sektor „{sector}“.")
+        members = det["members"]
+        weekly = await self._weekly_histories([m["ticker"] for m in members])
+        weeks = self._weeks(list(weekly.values()))
+        aligned = _align(weekly, weeks)
+        tickers = [m["ticker"] for m in members if m["ticker"] in aligned]
+        # Sektorindex: Börsenwert-gewichtet aus denselben Kursen (gleiche Bereinigung wie die Firmen)
+        weights = [next(m["mcap"] for m in members if m["ticker"] == t) for t in tickers]
+        bench = _chain_mean([aligned[t] for t in tickers], weights)
+        series = [
+            Series(key=m["ticker"], label=m["name"], ticker=m["ticker"], values=aligned[m["ticker"]],
+                   extra={"fair_gap": m.get("fair_gap"), "detail": display(m["ticker"])})
+            for m in members if m["ticker"] in aligned
+        ]
+        label = SECTOR_DE.get(sector, sector)
+        return self._compute("sector", f"Im Sektor {label}", f"Sektorindex {label} (Börsenwert-gewichtet)", weeks, bench, series)
+
+    # --- Länder ---------------------------------------------------------------------------
+
+    async def _usd_values(self, ccys: set[str]) -> dict[str, dict[str, float]]:
+        """Wert je Währungseinheit in US-Dollar, wöchentlich (USD = 1)."""
+        pairs = {c: FX_PAIRS.get(c, (f"USD{c}.FOREX", -1)) for c in ccys if c != "USD"}
+        weekly = await self._weekly_histories(list({p for p, _ in pairs.values()}))
+        out: dict[str, dict[str, float]] = {}
+        for c, (pair, sign) in pairs.items():
+            w = weekly.get(pair)
+            if w:
+                out[c] = {k: (v if sign > 0 else 1 / v) for k, v in w.items() if v}
+        return out
+
+    async def _countries(self, ccy: str) -> RotationResult:
+        entries = [(iso, name, ticker) for iso, name, _, ticker, _ in WORLD if ticker]
+        weekly = await self._weekly_histories([t for _, _, t in entries])
+        skipped: list[str] = []
+        if ccy == "eur":
+            fx = await self._usd_values({COUNTRY_CCY.get(iso, "USD") for iso, _, _ in entries} | {"EUR"})
+            eur = fx.get("EUR")
+            converted: dict[str, dict[str, float]] = {}
+            for iso, name, t in entries:
+                c = COUNTRY_CCY.get(iso, "USD")
+                w = weekly.get(t)
+                if not w:
+                    continue
+                if c == "EUR":
+                    converted[t] = w
+                    continue
+                rate = fx.get(c) if c != "USD" else None
+                if (c != "USD" and rate is None) or eur is None:
+                    skipped.append(f"{name} (kein Kurs für {c})")
+                    continue
+                converted[t] = {k: v * (rate[k] if rate else 1.0) / eur[k] for k, v in w.items() if k in eur and (rate is None or k in rate)}
+            weekly = converted
+        weeks = self._weeks(list(weekly.values()))
+        aligned = _align(weekly, weeks)
+        names = {t: (iso, name) for iso, name, t in entries}
+        tickers = list(aligned)
+        bench = _chain_mean([aligned[t] for t in tickers])
+        series = [Series(key=names[t][0], label=names[t][1], ticker=t, values=aligned[t], extra={"detail": display(t)}) for t in tickers]
+        cur = "in Euro" if ccy == "eur" else "in Landeswährung"
+        return self._compute("countries", f"Länderindizes {cur}", f"Durchschnitt aller Länder (gleich gewichtet, {cur})", weeks, bench, series, skipped)
+
+    # --- Währungen ------------------------------------------------------------------------
+
+    async def _currencies(self, bench_mode: str) -> RotationResult:
+        ccys = set(FX_PAIRS) | {"USD"}
+        usd = await self._usd_values(ccys)
+        weeks = self._weeks(list(usd.values()))
+        aligned = _align(usd, weeks)
+        aligned["USD"] = [1.0] * len(weeks)
+        skipped = [f"{CURRENCY_NAMES.get(c, c)} (keine Kurse)" for c in sorted(ccys - set(aligned))]
+        order = [c for c in ("USD", "EUR", "GBP", "JPY", "CHF", "CNH", "AUD", "CAD", "NZD", "SEK", "NOK") if c in aligned]
+        if bench_mode == "eur":
+            if "EUR" not in aligned:
+                raise NotFound("Keine Euro-Kurse verfügbar.")
+            bench = aligned["EUR"]
+            order = [c for c in order if c != "EUR"]
+            bench_label = "Euro"
+        else:
+            bench = _chain_mean([aligned[c] for c in order])
+            bench_label = "Währungskorb (alle gezeigten Währungen, gleich gewichtet)"
+        series = [
+            Series(key=c, label=f"{CURRENCY_NAMES.get(c, c)} ({c})", ticker=FX_PAIRS[c][0] if c in FX_PAIRS else "EURUSD.FOREX",
+                   values=aligned[c], extra={"detail": c})
+            for c in order
+        ]
+        return self._compute("currencies", "Währungen", bench_label, weeks, bench, series, skipped)
