@@ -27,6 +27,7 @@ from .api.option_routes import router as option_router
 from .api.portfolio_routes import current_portfolio, router as portfolio_router
 from .api.routes import router
 from .api.stream_routes import router as stream_router
+from .api.valuation_routes import router as valuation_router
 from .cache import TTLCache
 from .config import Settings, settings
 from .errors import TerminalError
@@ -37,6 +38,7 @@ from .realtime.demo import DemoSource
 from .realtime.eodhd_ws import EodhdSource
 from .realtime.hub import RealtimeHub
 from .services.terminal import Terminal, request_flags
+from .valuation.service import ValuationService
 
 log = logging.getLogger("terminal")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -110,8 +112,10 @@ def make_realtime(app: FastAPI, prov: Provider, cfg: Settings, enabled: bool) ->
 
 def create_app(
     provider: Provider | None = None, cfg: Settings = settings, llm_transport: Optional[httpx.AsyncBaseTransport] = None,
-    realtime: Optional[bool] = None, forecast: Optional[str] = None,
+    realtime: Optional[bool] = None, forecast: Optional[str] = None, valuation: Optional[bool] = None,
 ) -> FastAPI:
+    # Bewertungstrend im Hintergrund vorberechnen (Tests mit eigenem Provider rechnen erst bei Abfrage)
+    valuation_auto = valuation if valuation is not None else provider is None
     # Prognose: Tests (eigener Provider) rechnen ohne Chronos-2, damit nicht bei jedem Start das Modell lädt
     forecast_mode = forecast or (cfg.forecast_mode if provider is None else "simple")
     # Echtzeit läuft im Betrieb; Tests übergeben einen eigenen Provider mit fester Uhr und schalten
@@ -135,10 +139,14 @@ def create_app(
         app.state.forecast = ForecastService(forecast_mode, cfg.forecast_model, cfg.forecast_device)
         app.state.terminal.forecast = app.state.forecast
         app.state.forecast.start()
+        app.state.valuation = ValuationService(app.state.terminal, cfg.portfolio_dir, prov.mode)
+        if valuation_auto:
+            app.state.valuation.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
         yield
         await app.state.realtime.close()
         await app.state.forecast.close()
+        await app.state.valuation.close()
         await app.state.alerts.close()
         await app.state.ai.close()
         await prov.close()
@@ -189,6 +197,7 @@ def create_app(
     app.include_router(option_router)
     app.include_router(stream_router)
     app.include_router(forecast_router)
+    app.include_router(valuation_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

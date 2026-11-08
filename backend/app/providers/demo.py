@@ -252,6 +252,14 @@ _BROKERS = ["Bergmann Research", "Nordhafen Capital", "Lindqvist & Co", "Meridia
 _CLIENTS = ["einem US-Großkunden", "einem europäischen Konzern", "einem asiatischen Kunden", "der öffentlichen Hand", "einem Bestandskunden"]
 
 
+# Demo: Richtung der Analystenrevisionen je Sektor (Anteil des Konsenses in 90 Tagen)
+_REVISION_BIAS = {
+    "Technology": -0.035, "Basic Materials": -0.02, "Energy": -0.015, "Consumer Cyclical": -0.01,
+    "Industrials": 0.0, "Communication Services": 0.005, "Healthcare": 0.01, "Consumer Defensive": 0.005,
+    "Financial Services": 0.025, "Utilities": 0.01, "Real Estate": -0.005,
+}
+
+
 class DemoProvider:
     mode = "demo"
     catalog = CATALOG
@@ -1328,6 +1336,29 @@ class DemoProvider:
         total = max(sb + b + hold + s + ss, 1)
         rating = (5 * sb + 4 * b + 3 * hold + 2 * s + 1 * ss) / total
 
+        # Bewertungstrend (BWT): Gewinn je Aktie der letzten zehn Geschäftsjahre und Analystenkonsens
+        # mit Verlauf (heute, vor 7/30/60/90 Tagen) – Format wie EODHD Earnings::Annual und ::Trend
+        annual_eps: dict[str, Any] = {}
+        for k in range(10):
+            fy = years[0].year - k
+            net = sum(quarter_net(dt.date(fy, m, d)) for m, d in ((3, 31), (6, 30), (9, 30), (12, 31)))
+            annual_eps[f"{fy}-12-31"] = {"date": f"{fy}-12-31", "epsActual": round(net / shares, 4)}
+        rev_rng = _rng("revisions", ticker, self.today().isoformat()[:7])  # je Monat neue Stimmung
+        drift = _REVISION_BIAS.get(sector, 0.0) + rev_rng.gauss(0, 0.025)  # Veränderung des Konsenses in 90 Tagen
+        trend: dict[str, Any] = {}
+        for period, end_year, eps_now in (("0y", years[0].year + 1, eps_cy), ("+1y", years[0].year + 2, eps_ny)):
+            scale = 1.0 if period == "0y" else 1.4  # weiter entfernte Jahre werden stärker angepasst
+            past = {d: eps_now / (1 + drift * scale * d / 90 + rev_rng.gauss(0, 0.002)) for d in (7, 30, 60, 90)}
+            ups = max(0, round(n_analysts * (0.35 + 6 * drift * scale) * rev_rng.uniform(0.6, 1.0)))
+            downs = max(0, round(n_analysts * (0.35 - 6 * drift * scale) * rev_rng.uniform(0.6, 1.0)))
+            trend[f"{end_year}-12-31"] = {
+                "date": f"{end_year}-12-31", "period": period, "earningsEstimateAvg": round(eps_now, 4),
+                "earningsEstimateNumberOfAnalysts": n_analysts, "epsTrendCurrent": round(eps_now, 4),
+                **{f"epsTrend{d}daysAgo": round(v, 4) for d, v in past.items()},
+                "epsRevisionsUpLast7days": min(ups, n_analysts) // 4, "epsRevisionsUpLast30days": min(ups, n_analysts),
+                "epsRevisionsDownLast7days": min(downs, n_analysts) // 4, "epsRevisionsDownLast30days": min(downs, n_analysts),
+            }
+
         earnings_hist: dict[str, Any] = {}
         for q in quarters[:8]:
             actual = q_net[q] / shares
@@ -1410,7 +1441,7 @@ class DemoProvider:
                 "Rating": round(rating, 2), "TargetPrice": round(target, 2), "StrongBuy": sb, "Buy": b,
                 "Hold": hold, "Sell": s, "StrongSell": ss,
             },
-            "Earnings": {"History": earnings_hist},
+            "Earnings": {"History": earnings_hist, "Annual": annual_eps, "Trend": trend},
             "Financials": {
                 "Income_Statement": {"currency_symbol": cur, "yearly": yearly_inc, "quarterly": q_inc},
                 "Balance_Sheet": {"currency_symbol": cur, "yearly": yearly_bal, "quarterly": q_bal},
@@ -1428,6 +1459,11 @@ class DemoProvider:
 
     async def company(self, ticker: str) -> Company:
         return mapping.company(self._fundamentals_raw(ticker), ticker)
+
+    async def valuation_inputs(self, ticker: str):  # -> ValInputs (Bewertungstrend)
+        from ..valuation.inputs import from_fundamentals
+
+        return from_fundamentals(self._fundamentals_raw(ticker), ticker)
 
     async def financials(self, ticker: str, period: str) -> Financials:
         return mapping.financials(self._fundamentals_raw(ticker), ticker, period)

@@ -239,6 +239,11 @@ class EODHDProvider:
     async def company(self, ticker: str) -> Company:
         return mapping.company(await self._fundamentals(ticker), ticker)
 
+    async def valuation_inputs(self, ticker: str):  # -> ValInputs (Bewertungstrend)
+        from ..valuation.inputs import from_fundamentals
+
+        return from_fundamentals(await self._fundamentals(ticker), ticker)
+
     async def financials(self, ticker: str, period: str) -> Financials:
         return mapping.financials(await self._fundamentals(ticker), ticker, period)
 

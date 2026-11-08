@@ -1,0 +1,181 @@
+"""Tests des Bewertungstrends: Kalenderjahre, Bereinigungen, Gruppen-KGV, Revisionen und Endpunkte."""
+
+import datetime as dt
+import json
+import math
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import create_app
+from app.providers.demo import DemoProvider
+from app.valuation.calc import (
+    aggregate, calendarize, company_val, fy_from_quarters, months_in_year, split_fix, split_ratio,
+    undo_dividend_adjustment, unit_factor,
+)
+from app.valuation.inputs import Estimate, ValInputs, from_fundamentals
+
+TODAY = dt.date(2026, 11, 6)
+NOW = dt.datetime(2026, 11, 6, 15, 0, tzinfo=dt.timezone.utc)
+
+
+def mi(y, m):
+    return y * 12 + m - 1
+
+
+def test_calendar_years_from_fiscal_years():
+    assert months_in_year(dt.date(2026, 12, 31), 2026) == 12
+    assert months_in_year(dt.date(2027, 1, 31), 2026) == 11  # NVIDIA: Feb 2026 – Jan 2027
+    assert months_in_year(dt.date(2026, 6, 30), 2026) == 6
+    # Geschäftsjahr bis Januar: Kalenderjahr 2026 = 1/12 GJ bis Jan 2026 + 11/12 GJ bis Jan 2027
+    fy = {mi(2026, 1): 12.0, mi(2027, 1): 24.0}
+    assert calendarize(fy, 2026) == pytest.approx(1 + 22)
+    assert calendarize(fy, 2027) is None  # GJ bis Jan 2028 fehlt
+    assert calendarize({mi(2026, 6): 6.0, mi(2027, 6): 12.0}, 2026) == pytest.approx(3 + 6)
+    q = [(dt.date(2025, 4, 30), 1.0), (dt.date(2025, 7, 31), 1.0), (dt.date(2025, 10, 31), 1.0), (dt.date(2026, 1, 31), 2.0),
+         (dt.date(2026, 4, 30), 3.0)]
+    assert fy_from_quarters(q, 1) == {mi(2026, 1): 5.0}  # unvollständiges Jahr fehlt
+
+
+def test_split_and_dividend_corrections():
+    assert split_ratio("10.000000/1.000000") == 10 and split_ratio("3:2") == 1.5 and split_ratio("x") is None
+    split = (dt.date(2024, 6, 10), 10.0)
+    raw = [(dt.date(2023, 12, 31), 5.0), (dt.date(2024, 3, 31), 5.5), (dt.date(2024, 9, 30), 0.6), (dt.date(2024, 12, 31), 0.62)]
+    fixed = split_fix(raw, [split])
+    assert fixed[0][1] == pytest.approx(0.5) and fixed[2][1] == 0.6
+    adjusted = [(d, v / 10 if d < split[0] else v) for d, v in raw]
+    assert split_fix(adjusted, [split]) == adjusted  # schon bereinigt: unverändert
+
+    dates = ["2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08"]
+    traded = [100.0, 102.0, 99.0, 98.0, 101.0]
+    divs = [("2026-01-06", 2.0), ("2026-01-08", 1.0)]
+    # so bereinigt die Datenquelle: Kurse vor jedem Ex-Tag × (1 − Dividende ÷ Vortageskurs)
+    adj = list(traded)
+    for ex, d in divs:
+        i = dates.index(ex)
+        f = 1 - d / traded[i - 1]
+        adj = [a * f if j < i else a for j, a in enumerate(adj)]
+    back = undo_dividend_adjustment(dates, adj, divs)
+    assert back == pytest.approx(traded)
+
+
+def test_unit_factor_detects_pence_and_currency():
+    assert unit_factor(2500.0, 2.0, 12.5) == pytest.approx(100)  # Kurs in Pence, Gewinn in Pfund
+    assert unit_factor(100.0, 5.0, 21.0) == 1.0  # kleine Abweichung (andere Abgrenzung) bleibt
+    assert unit_factor(100.0, None, None, 10.0, 9.0) == 1.0
+    assert unit_factor(100.0, None, None, 0.06, 15.0) == pytest.approx(100 / 0.06 / 15)  # Gewinn in Cent
+
+
+def _inputs(ticker, eps_by_year, est0, est1, ago=None, quarters=None, fy_month=12):
+    ann = [(dt.date(y, fy_month, 28 if fy_month == 2 else 30 if fy_month in (6, 9) else 31), v) for y, v in eps_by_year.items()]
+    ago = ago or {}
+    return ValInputs(
+        ticker=ticker, name=ticker, sector="Technology", country="USA", exchange="US", currency="USD", pe_ref=None, forward_pe_ref=None,
+        quarters=quarters or [], annual=ann,
+        estimates=[Estimate(end=dt.date(2026, 12, 31), period="0y", eps=est0, ago={d: est0 / (1 + ago.get(d, 0)) for d in (7, 30, 60, 90)}),
+                   Estimate(end=dt.date(2027, 12, 31), period="+1y", eps=est1, ago={d: est1 / (1 + ago.get(d, 0)) for d in (7, 30, 60, 90)}, up30=3, down30=1)],
+    )
+
+
+def _prices(start_price, end_price):
+    days, out = [], []
+    d = dt.date(2020, 1, 1)
+    n = (TODAY - d).days
+    for i in range(n + 1):
+        day = d + dt.timedelta(days=i)
+        if day.weekday() < 5:
+            days.append(day.isoformat())
+            out.append(start_price * (end_price / start_price) ** (i / n))
+    return days, out
+
+
+def test_group_pe_is_total_value_over_total_earnings():
+    da, pa = _prices(50, 100)  # A verdoppelt sich
+    db, pb = _prices(100, 100)
+    a = company_val(_inputs("A.US", {2021: 2.0, 2022: 2.5, 2023: 3.0, 2024: 3.5, 2025: 4.0}, 5.0, 6.0, ago={90: 0.1}), 300e9, da, pa, TODAY, prices_adjusted=False)
+    b = company_val(_inputs("B.US", {2021: 5.0, 2022: 5.0, 2023: 5.0, 2024: -1.0, 2025: 5.0}, 5.0, 5.0), 100e9, db, pb, TODAY, prices_adjusted=False)
+    g = aggregate([a, b], TODAY, years_back=5)
+    # 2027e: Börsenwert 300 + 100 Mrd. ÷ Gewinn (300/100·6 + 100/100·5 = 23 Mrd. »Einheiten«)
+    sa, sb = 300e9 / a.price_now, 100e9 / b.price_now
+    assert g.pe_years[2027] == pytest.approx((300e9 + 100e9) / (sa * 6.0 + sb * 5.0))
+    # 2024 mit Verlust bei B: Verlust mindert den Gesamtgewinn
+    pe24 = (sa * a.year_end(2024) + sb * b.year_end(2024)) / (sa * 3.5 + sb * -1.0)
+    assert g.pe_years[2024] == pytest.approx(pe24)
+    assert g.coverage[2021] == 2 and g.n == 2
+    # Revisionen: Konsens von A war vor 90 Tagen 10 % niedriger
+    assert g.revisions[90] == pytest.approx((sa * 6 + sb * 5) / (sa * 6 / 1.1 + sb * 5) - 1)
+    assert g.revisions[7] == pytest.approx(0)
+    assert g.up30 == 6 and g.down30 == 2
+    assert g.growth_next == pytest.approx((sa * 6 + sb * 5) / (sa * 5 + sb * 5) - 1)
+    assert len(g.forward_path) == 5 and g.forward_path[-1][1] == pytest.approx(g.pe_years[2027])
+    assert g.dist52 == pytest.approx(0, abs=1e-9)  # beide auf dem Hoch
+    assert set(g.decomposition) == {"1J", "3J", "5J"}
+
+
+def test_negative_group_earnings_and_member_pe():
+    d, p = _prices(10, 10)
+    c = company_val(_inputs("L.US", {2023: -1.0, 2024: -2.0, 2025: -1.5}, -0.5, 0.5), 5e9, d, p, TODAY, prices_adjusted=False)
+    g = aggregate([c], TODAY)
+    assert g.pe_years[2026] is None and 2026 in g.negative_years
+    assert g.pe_years[2027] == pytest.approx(10 / 0.5)
+
+
+def test_inputs_parse_trend_formats():
+    raw = {
+        "General": {"Name": "X", "Sector": "Energy", "CountryName": "USA", "Exchange": "NYSE", "CurrencyCode": "USD"},
+        "Valuation": {"TrailingPE": 12.0, "ForwardPE": 10.0},
+        "Earnings": {
+            "History": {"2026-06-30": {"date": "2026-06-30", "epsActual": 1.1}, "2026-09-30": {"date": "2026-09-30", "epsActual": None}},
+            "Annual": {"2025-12-31": {"date": "2025-12-31", "epsActual": 4.0}},
+            "Trend": {"Annual": {"2026-12-31": {"date": "2026-12-31", "period": "0y", "earningsEstimateAvg": "4.5", "epsTrend90daysAgo": "4.2",
+                                                "epsRevisionsUpLast30days": "5", "epsRevisionsDownLast30days": 2}},
+                      "Quarterly": {"2026-12-31": {"date": "2026-12-31", "period": "0q"}}},
+        },
+    }
+    v = from_fundamentals(raw, "X.US")
+    assert v.quarters == [(dt.date(2026, 6, 30), 1.1)] and v.annual == [(dt.date(2025, 12, 31), 4.0)]
+    assert len(v.estimates) == 1 and v.estimates[0].eps == 4.5 and v.estimates[0].ago[90] == 4.2 and v.estimates[0].up30 == 5
+    flat = {"Earnings": {"Trend": {"a": {"date": "2027-12-31", "period": "+1y", "epsTrendCurrent": 5.0}, "b": {"date": "2026-12-31", "period": "0q"}}}}
+    assert [e.period for e in from_fundamentals(flat, "Y").estimates] == ["+1y"]
+
+
+def test_valuation_endpoints_demo(tmp_path, monkeypatch):
+    monkeypatch.setenv("PORTFOLIO_DIR", str(tmp_path))
+    from app.config import Settings
+
+    with TestClient(create_app(DemoProvider(now_fn=lambda: NOW), cfg=Settings())) as c:
+        first = c.get("/api/valuation/overview").json()
+        assert first["state"] in ("building", "ready")
+        c.app.state.valuation  # noqa: B018
+        import asyncio
+        import time
+
+        for _ in range(100):
+            o = c.get("/api/valuation/overview", params={"kind": "sector", "region": "all"}).json()
+            if o["state"] == "ready":
+                break
+            time.sleep(0.1)
+        assert o["state"] == "ready" and o["years"] == list(range(2021, 2028)) and o["estYears"] == [2026, 2027]
+        labels = {r["label"] for r in o["rows"]}
+        assert "Technologie" in labels and len(o["rows"]) == 11
+        tech = next(r for r in o["rows"] if r["key"] == "Technology")
+        assert tech["n"] >= 5 and tech["peYears"]["2027"] and tech["peTtm"] and 0 <= tech["position"] <= 1
+        assert tech["rev90"] is not None and tech["state"] in ("baer", "korrektur", "nahe")
+        us = c.get("/api/valuation/overview", params={"kind": "sector", "region": "us"}).json()
+        assert all(r["region"] == "us" for r in us["rows"]) and us["rows"]
+        countries = c.get("/api/valuation/overview", params={"kind": "country"}).json()["rows"]
+        assert {r["label"] for r in countries} >= {"USA", "Deutschland", "Schweiz"}
+        d = c.get("/api/valuation/detail", params={"kind": "sector", "key": "Technology", "region": "all"}).json()
+        assert len(d["monthly"]["t"]) == 121 and len(d["forwardPath"]["v"]) == 5 and d["recorded"]["t"] == ["2026-11-06"]
+        assert d["members"][0]["mcap"] >= d["members"][-1]["mcap"] and set(d["decomposition"]) == {"1J", "3J", "5J"}
+        de = c.get("/api/valuation/detail", params={"kind": "country", "key": "XETRA"}).json()
+        assert de["row"]["label"] == "Deutschland"
+        assert c.get("/api/valuation/detail", params={"kind": "sector", "key": "Unbekannt"}).status_code == 404
+        assert c.get("/api/valuation/overview", params={"kind": "x"}).status_code == 422
+    saved = json.loads((tmp_path / "bewertung-demo.json").read_text())
+    assert saved["today"] == "2026-11-06" and saved["rows"]
+    rec = json.loads((tmp_path / "bewertung-verlauf-demo.json").read_text())
+    assert "2026-11-06" in rec["sector:all:Technology"]
+    # Neustart: gespeichertes Ergebnis wird ohne Neuberechnung geladen
+    with TestClient(create_app(DemoProvider(now_fn=lambda: NOW), cfg=Settings())) as c:
+        assert c.get("/api/valuation/overview").json()["state"] == "ready"
