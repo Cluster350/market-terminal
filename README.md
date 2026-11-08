@@ -272,6 +272,34 @@ Geschäftsjahr. Berechnet wird einmal täglich im Hintergrund (mit EODHD beim er
 etwa 600 Firmen; das kostet API-Abrufe, bleibt aber deutlich im Tageskontingent). `↻` rechnet sofort neu.
 Der KI-Assistent ASK kann die Werte über das Werkzeug „bewertung“ abfragen.
 
+## Relative Rotation (RRG)
+
+`RRG` (oder „Rotation“) zeigt, **wer besser läuft als der Maßstab und ob das zunimmt oder nachlässt** – nach
+dem Prinzip der Relative Rotation Graphs (Julius de Kempenaer), auf Wochenbasis.
+
+| Bereich | Werte | Maßstab |
+|---|---|---|
+| **Sektoren** | elf Sektoren (USA, Europa oder beide), Index aus den größten Firmen wie in BWT | Gesamtmarkt derselben Firmen |
+| **Im Sektor** | die Firmen eines Sektors | Sektorindex (Börsenwert-gewichtet) |
+| **Länder** | Leitindizes, **in Euro** oder in Landeswährung | Durchschnitt aller Länder |
+| **Währungen** | Dollar, Euro, Pfund, Yen, Franken, Renminbi, Austral-, Kanada-, Neuseeland-Dollar … | Währungskorb oder Euro |
+
+- **Waagerecht: Trend** der relativen Stärke (über 100 = besser als der Maßstab), **senkrecht: Schwung**
+  (über 100 = der Vorsprung wächst). Vier Felder: **führend** (oben rechts), **schwächer werdend** (unten rechts),
+  **Nachzügler** (unten links), **erholend** (oben links). Typisch ist ein Lauf im Uhrzeigersinn.
+- **Schweif** der letzten 4–20 Wochen mit Pfeil in Laufrichtung; nach rechts oben ist am stärksten.
+  **▶** spielt die Rotation der letzten zwei Jahre Woche für Woche ab, der Regler springt zu einer Woche.
+- **Tabelle:** Feld, Trend, Schwung, Richtung, Entwicklung gegenüber dem Maßstab in 4 und 13 Wochen, bei Sektoren
+  und Firmen der Abstand zum Fair Value aus BWT. Klick auf einen Sektor zeigt dessen Firmen, sonst den Kurschart.
+- **Rückblick:** wie sich die Werte in den 13 Wochen nach einem Stand in jedem Feld entwickelten, und wie oft die
+  Wechsel im Uhrzeigersinn liefen. Wichtig: Auch Zufallskurse drehen meist im Uhrzeigersinn (Folge der Rechnung) –
+  aussagekräftig ist nur, ob die Felder danach unterschiedlich liefen.
+
+Rechnung: offene Näherung, nicht die geschützte Originalformel. Relative Stärke = Kurs ÷ Maßstab (3 Wochen
+geglättet); Trend = deren Abstand zu den letzten 20 Wochen, Schwung = Abstand des Trends zu seinen letzten 10
+Wochen (je als z-Wert um 100). Grenzen: nur relativ – „führend“ kann auch heißen „fällt weniger als der Markt“.
+Länder ohne Devisenkurs (in Euro) werden genannt und weggelassen. Sektoren brauchen die tägliche Berechnung von BWT.
+
 ## KGV-Bänder und Fair Value
 
 Welcher Kurs entspräche dem **üblichen KGV**? Aus dem eigenen KGV-Verlauf der letzten zehn Jahre (Monatswerte)

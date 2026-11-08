@@ -149,8 +149,10 @@ class RotationService:
                 quadrant=quadrant(trend[i], mom[i]), heading=hd, speed=sp, rel4=rel(4), rel13=rel(13),
                 fair_gap=s.extra.get("fair_gap"), detail=s.extra.get("detail"),
             ))
+        test = backtest(lines)
+        test["clockwiseShare"] = test.pop("clockwise_share")  # wie alle Felder für das Frontend in camelCase
         return RotationResult(universe=universe, title=title, benchmark=bench_label, weeks=weeks[-HISTORY_WEEKS:],
-                              members=members, test=backtest(lines), skipped=skipped or [])
+                              members=members, test=test, skipped=skipped or [])
 
     async def _weekly_histories(self, tickers: list[str]) -> dict[str, dict[str, float]]:
         sem = asyncio.Semaphore(6)

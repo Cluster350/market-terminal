@@ -59,6 +59,7 @@ def test_rotation_endpoints_demo(tmp_path, monkeypatch):
         tech = next(m for m in r["members"] if m["key"] == "Technology")
         assert len(tech["trend"]) == 104 and tech["quadrant"] in ("fuehrend", "schwaecher", "nachzuegler", "erholend")
         assert "fairGap" in tech and set(r["test"]["quadrants"]) == {"fuehrend", "schwaecher", "nachzuegler", "erholend"}
+        assert 0 <= r["test"]["clockwiseShare"] <= 1
         s = c.get("/api/rotation", params={"universe": "sector", "region": "us", "sector": "Technology"}).json()
         assert s["members"] and all(m["ticker"].endswith(".US") for m in s["members"]) and "Sektorindex" in s["benchmark"]
         eur = c.get("/api/rotation", params={"universe": "countries", "ccy": "eur"}).json()
