@@ -179,3 +179,22 @@ def test_valuation_endpoints_demo(tmp_path, monkeypatch):
     # Neustart: gespeichertes Ergebnis wird ohne Neuberechnung geladen
     with TestClient(create_app(DemoProvider(now_fn=lambda: NOW), cfg=Settings())) as c:
         assert c.get("/api/valuation/overview").json()["state"] == "ready"
+
+
+def test_ask_tool_bewertung(tmp_path, monkeypatch):
+    import asyncio
+
+    from app.ai.tools import run_tool, summarize
+    from app.services.terminal import Terminal
+    from app.valuation.service import ValuationService
+
+    t = Terminal(DemoProvider(now_fn=lambda: NOW))
+    assert "fehler" in asyncio.run(run_tool(t, "bewertung", {}))
+    t.valuation = ValuationService(t, str(tmp_path), "demo")
+    asyncio.run(t.valuation.build())
+    res = asyncio.run(run_tool(t, "bewertung", {"art": "sektor", "name": "Technologie"}))
+    g = res["gruppen"]
+    assert len(g) == 1 and g[0]["name"] == "Technologie" and "2027" in g[0]["kgv_je_jahr"] and "Analystenschätzungen" in res["hinweis"]
+    land = asyncio.run(run_tool(t, "bewertung", {"art": "land"}))
+    assert land["art"] == "Länder" and any(x["name"] == "Deutschland" for x in land["gruppen"])
+    assert summarize("bewertung", {}, res) == "Bewertungstrend"

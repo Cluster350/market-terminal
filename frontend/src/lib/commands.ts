@@ -6,7 +6,7 @@ import { countryCode } from "./intents";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT";
 
 export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "Depot" | "System";
 
@@ -34,6 +34,7 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "EVTS", title: "Earnings-Kalender", group: "News", needsTicker: false, desc: "Quartalszahlen aller Unternehmen nach Termin, mit Schätzung und Ergebnis" },
   { code: "BRIEF", title: "Morgenbriefing", group: "KI", needsTicker: false, desc: "KI-Zusammenfassung: Märkte, Ihre Werte, Termine heute, Zinsen und Devisen – mit Quellen" },
   { code: "ASK", title: "KI-Assistent", group: "KI", needsTicker: false, desc: "Fragen an die KI; sie liest nur Terminal-Daten und zeigt, welche Daten sie genutzt hat" },
+  { code: "BWT", title: "Bewertungstrend", group: "Makro", needsTicker: false, desc: "KGVs von Sektoren und Ländern über die Jahre, Analystenschätzungen für dieses und nächstes Jahr und wie sich die Schätzungen verändern" },
   { code: "WMAP", title: "Weltkarte", group: "Makro", needsTicker: false, desc: "Länder eingefärbt nach Aktienmarkt, Zinsen oder Konjunktur, mit Rangliste" },
   { code: "FWD", title: "Terminkurse", group: "Makro", needsTicker: false, desc: "Devisen-Terminkurse, Kosten der Währungsabsicherung und eingepreiste künftige Zinsen (berechnet)" },
   { code: "WEI", title: "Weltindizes", group: "Makro", needsTicker: false, desc: "Aktienindizes weltweit" },
@@ -73,6 +74,8 @@ const ALIASES: Record<string, FnCode> = {
   TERMIN: "FWD", TERMINKURSE: "FWD", FORWARD: "FWD", FORWARDS: "FWD", FRD: "FWD", FXFA: "FWD", ABSICHERUNG: "FWD", HEDGE: "FWD",
   // Bloomberg-Kürzel für Forward-Kurven und eingepreiste Notenbankzinsen: nächster Ersatz ist FWD (Ansicht Zinsen)
   FWCV: "FWD", FWCM: "FWD", WIRP: "FWD", FFIP: "FWD",
+  BEWERTUNG: "BWT", BEWERTUNGEN: "BWT", BEWERTUNGSTREND: "BWT", KGV: "BWT", KGVS: "BWT", SEKTOREN: "BWT", SEKTOR: "BWT",
+  BRANCHEN: "BWT", VALUATION: "BWT", PE: "BWT", PER: "BWT",
   KARTE: "WMAP", WELTKARTE: "WMAP", MAP: "WMAP", WORLD: "WMAP", WELT: "WMAP", LAENDERKARTE: "WMAP",
   OPTIONEN: "OMON", OPTIONS: "OMON", OPTION: "OMON", OPT: "OMON", OV: "OMON", OVDV: "OMON", KETTE: "OMON", OPTIONSKETTE: "OMON",
   MP: "TPO", MKTP: "TPO", MARKETPROFILE: "TPO", MARKTPROFIL: "TPO", VOLUMENPROFIL: "TPO", VOLUMEPROFILE: "TPO", VPRO: "TPO",

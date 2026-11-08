@@ -754,3 +754,20 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .eco-fc { flex: 0 0 50%; min-height: 220px; border-top: 1px solid var(--rule); position: relative; display: flex; flex-direction: column; }
 .eco-fc-close { position: absolute; right: 6px; top: 2px; z-index: 2; }
 .eco-fc .fc-head { padding-right: 34px; }
+
+/* Bewertungstrend (BWT) */
+.t.bwt td, .t.bwt th { padding-left: 6px; padding-right: 6px; }
+.t .est { background: rgba(255, 160, 40, 0.06); color: #ffcf8a; }
+.pe-hi { color: #ff9d7a; }
+.pe-lo { color: #7fd6a4; }
+.bwt-pos { font-size: 9px; letter-spacing: 1px; color: var(--label); white-space: nowrap; }
+.t tr.bwt-baer td:first-child { box-shadow: inset 3px 0 0 var(--down); }
+.t tr.group.bwt-g-baer td { color: var(--down); }
+.bwt-progress { padding: 3px 10px; color: var(--label); border-bottom: 1px solid var(--rule); }
+.bwt-detail { flex: 0 0 55%; min-height: 260px; border-top: 1px solid var(--rule); position: relative; display: flex; flex-direction: column; overflow: hidden; }
+.bwt-detail .fc-head { padding-right: 34px; }
+.bwt-detail-body { display: flex; gap: 10px; flex: 0 0 auto; height: 220px; padding: 0 6px; }
+.bwt-chart { flex: 1 1 60%; min-width: 0; }
+.bwt-side { flex: 1 1 40%; min-width: 220px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.bwt-members { flex: 1 1 auto; min-height: 0; overflow: auto; border-top: 1px solid var(--rule); }
+.bwt-side > * { flex-shrink: 0; }

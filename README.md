@@ -6,7 +6,7 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 | Seite | Panels | Inhalt |
 |---|---|---|
 | **1 AKTIE** | GP · DES · FA · CN | Kurschart, Firmenprofil mit Kennzahlen, Finanzberichte, Firmen-News |
-| **2 MAKRO** | WMAP · WEI · GC · ECO | Weltkarte, Weltindizes, Zinskurven, Wirtschaftskalender (FX über das Auswahlfeld) |
+| **2 MAKRO** | WMAP · WEI · GC · ECO | Weltkarte, Weltindizes, Zinskurven, Wirtschaftskalender (FX, ECST, BWT Bewertungstrend über das Auswahlfeld) |
 | **3 SCREENER** | EQS · IMAP · MOST | Aktien-Screener, Markt-Heatmap, Top-Bewegungen |
 | **4 NEWS** | TOP · BRIEF · ASK | News-Terminal mit KI-Einordnung, Morgenbriefing, KI-Assistent |
 | **5 DEPOT** | PORT · RISK | Eigenes Depot: Wert, Ergebnis, Aufteilung; Risiko mit Schwankung, Beta, VaR, Korrelationen; dazu ALRT (Kursalarme) |
@@ -229,6 +229,45 @@ Meldung in der Leseansicht. Eingestellt wird das in **TOP** in der Werkzeugleist
   10 Minuten (EODHD liefert News je Wert, jeder Abruf kostet API-Calls). Ein Signal kann also bis
   zu 10 Minuten nach der Veröffentlichung kommen. News werden je Wert zwischengespeichert: TOP,
   CN, das Signal und weitere Fenster teilen sich dieselben Abrufe.
+
+## Bewertungstrend (BWT): KGVs von Sektoren und Ländern über die Zeit
+
+`BWT` (oder „KGV“, „Bewertung“, „Sektoren“ in die Befehlszeile tippen) zeigt, ob Sektoren und Länder
+über die Jahre **teurer oder günstiger** geworden sind und **was die Analysten erwarten**.
+
+| Spalte | Bedeutung |
+|---|---|
+| **KGV 2021 … 2025** | tatsächliche KGVs der Vorjahre: Kurs am Jahresende ÷ tatsächlicher Gewinn des Jahres |
+| **heute** | heutiger Kurs ÷ Gewinn der letzten zwölf Monate |
+| **2026e, 2027e** | heutiger Kurs ÷ Analystenkonsens (auf Kalenderjahre umgerechnet) |
+| **Ø 10 J. / Lage** | Durchschnitt der letzten zehn Jahre und wo das KGV heute in dieser Spanne liegt (Kästchen links = günstig, rechts = teuer) |
+| **12 M** | Veränderung des KGV in einem Jahr (Punkte) |
+| **Gewinn+** | erwartetes Gewinnwachstum nächstes Jahr |
+| **Schätzung 90 T** | wie die Analysten ihre Gewinnschätzung fürs nächste Jahr in 90 Tagen verändert haben – oft der früheste Hinweis |
+| **↑ / ↓ 30 T** | Zahl der Anhebungen und Senkungen in 30 Tagen |
+| **Abst. Hoch** | Abstand zum 52-Wochen-Hoch; die Tabelle gliedert danach in Bärenmarkt (> 20 %), Korrektur (10–20 %) und nahe am Hoch |
+
+- **Sektoren** für USA, Europa oder beide; **Länder** (USA, Deutschland, Frankreich, Großbritannien, Niederlande,
+  Schweiz, Italien, Spanien) nach Region gegliedert.
+- **Landkarte:** jede Gruppe als Punkt – waagerecht wie teuer im Vergleich zur eigenen Geschichte, senkrecht ob
+  die Schätzungen steigen oder fallen. Vier Felder: Erholungskandidat, eingepreist, billig aus gutem Grund?, Vorsicht.
+- **Klick auf eine Zeile:** KGV-Verlauf über zehn Jahre mit Durchschnitt und den Analystenpunkten, die Zerlegung
+  „Kurse gegen Gewinne“ (warum das KGV gestiegen oder gefallen ist), der Verlauf des KGV aufs nächste Jahr und
+  alle Einzelwerte im gleichen Aufbau.
+- **Eigene Aufzeichnung:** Fertige Analystenhistorie gibt es nur für 90 Tage. Das Terminal speichert deshalb jeden
+  Tag die Werte je Gruppe (Benutzerordner, `bewertung-verlauf-eodhd.json`); daraus wächst ein eigener Verlauf.
+
+So wird gerechnet: KGV einer Gruppe = Börsenwert aller Firmen ÷ ihr Gesamtgewinn (wie bei Indexanbietern;
+Verlustbringer mindern den Gewinn). Einbezogen sind die größten Firmen je Sektor (25) bzw. Börse (30) laut
+Screener. Geschäftsjahre (z. B. bis Januar) werden anteilig auf Kalenderjahre verteilt. Die Datenquelle bereinigt
+Kurse um Dividenden – für das KGV wird das zurückgerechnet; Splits und abweichende Einheiten (Pence, Bericht in
+anderer Währung) werden erkannt und angeglichen.
+
+Grenzen: Die Rückschau nutzt die heutige Zusammensetzung und Aktienzahl, heutige Gewinner sind also stärker
+vertreten (gut für die Richtung, nicht auf die Kommastelle). Analysten schätzen nur das laufende und das nächste
+Geschäftsjahr. Berechnet wird einmal täglich im Hintergrund (mit EODHD beim ersten Mal ein bis zwei Minuten,
+etwa 600 Firmen; das kostet API-Abrufe, bleibt aber deutlich im Tageskontingent). `↻` rechnet sofort neu.
+Der KI-Assistent ASK kann die Werte über das Werkzeug „bewertung“ abfragen.
 
 ## Prognose mit Unsicherheitsbändern (Chronos-2)
 

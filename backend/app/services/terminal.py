@@ -125,6 +125,7 @@ class Terminal:
         self.alerts_source: Optional[Callable[[], Awaitable[Any]]] = None  # für das KI-Werkzeug „alarme“
         self.realtime: Any = None  # RealtimeHub (Echtzeit-Kurse), von main.py gesetzt
         self.forecast: Any = None  # ForecastService (Prognose), von main.py gesetzt
+        self.valuation: Any = None  # ValuationService (Bewertungstrend), von main.py gesetzt
 
     # --- Infrastruktur ----------------------------------------------------------
 

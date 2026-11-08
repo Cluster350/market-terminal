@@ -140,6 +140,7 @@ def create_app(
         app.state.terminal.forecast = app.state.forecast
         app.state.forecast.start()
         app.state.valuation = ValuationService(app.state.terminal, cfg.portfolio_dir, prov.mode)
+        app.state.terminal.valuation = app.state.valuation
         if valuation_auto:
             app.state.valuation.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)

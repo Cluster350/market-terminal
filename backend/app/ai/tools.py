@@ -426,6 +426,39 @@ async def _prognose(t: Terminal, a: dict) -> dict:
     }
 
 
+async def _bewertung(t: Terminal, a: dict) -> dict:
+    """KGVs der Sektoren bzw. Länder über die Jahre, Analystenkonsens und Schätzungsänderungen."""
+    vs = t.valuation
+    if vs is None:
+        return {"fehler": "Bewertungstrend ist nicht verfügbar."}
+    art = "country" if str(a.get("art") or "").lower().startswith(("land", "länder", "laender", "country")) else "sector"
+    region = {"usa": "us", "us": "us", "europa": "eu", "eu": "eu"}.get(str(a.get("region") or "").strip().lower(), "all")
+    o = vs.overview(art, region)
+    if not o.rows:
+        return {"hinweis": "Der Bewertungstrend wird gerade berechnet – bitte gleich noch einmal fragen."}
+    name = str(a.get("name") or "").strip().lower()
+    rows = [r for r in o.rows if name and (name in r.label.lower() or name in r.key.lower())] or o.rows
+    est = o.est_years
+    return {
+        "art": "Sektoren" if art == "sector" else "Länder", "region": region, "stand": o.built_at,
+        "gruppen": [
+            {
+                "name": r.label, "firmen": r.n,
+                "kgv_je_jahr": {y: _r(v, 1) for y, v in r.pe_years.items()},
+                "kgv_heute": _r(r.pe_ttm, 1), "kgv_durchschnitt_10j": _r(r.avg, 1),
+                "lage_in_10j_spanne_prozent": None if r.position is None else round(r.position * 100),
+                "veraenderung_kgv_12m_punkte": _r(r.chg12m, 1),
+                "gewinnwachstum_naechstes_jahr_prozent": None if r.growth_next is None else round(r.growth_next * 100, 1),
+                "konsens_naechstes_jahr_aenderung_90t_prozent": None if r.rev90 is None else round(r.rev90 * 100, 1),
+                "anhebungen_30t": r.up30, "senkungen_30t": r.down30,
+                "abstand_52w_hoch_prozent": None if r.dist52 is None else round(r.dist52 * 100, 1),
+            }
+            for r in rows[:12]
+        ],
+        "hinweis": f"Jahre {est[0]} und {est[1]} sind Analystenschätzungen (heutiger Kurs ÷ Konsens). " + o.note,
+    }
+
+
 def _obj(props: dict, required: tuple[str, ...] = ()) -> dict:
     return {"type": "object", "properties": props, "required": list(required)}
 
@@ -462,6 +495,10 @@ TOOLS: list[Tool] = [
          "art='schwankung' für die erwartete Schwankung (Volatilität) eines Wertpapiers. Keine Kursprognose.",
          _obj({"art": {"type": "string", "enum": ["kennzahl", "termin", "schwankung"]}, "land": {"type": "string"}, "kennzahl": {"type": "string"},
                "termin": {"type": "string"}, "ticker": TICKER}, ("art",)), _prognose),
+    Tool("bewertung", "KGVs von Sektoren oder Ländern über die letzten Jahre (tatsächlich), dieses und nächstes Jahr (Analystenkonsens), "
+         "Lage gegenüber dem 10-Jahres-Durchschnitt und wie sich die Gewinnschätzungen der Analysten in 90 Tagen verändert haben. "
+         "art: 'sektor' oder 'land'; region (nur Sektoren): 'usa', 'europa' oder leer für beide; name optional, z. B. 'Technologie' oder 'Deutschland'.",
+         _obj({"art": {"type": "string", "enum": ["sektor", "land"]}, "region": {"type": "string"}, "name": {"type": "string"}}), _bewertung),
     Tool("alarme", "Kursalarme und Kursmarken des Nutzers mit Status, Abstand zum Kurs und zuletzt ausgelöste Alarme.", _obj({}), _alarme),
     Tool("depot", "Das eigene Depot des Nutzers: Wert, Ergebnis heute und seit Kauf, Positionen mit Gewicht und Risikoanteil, "
          "Volatilität, Beta, Drawdown, Value at Risk, Sektoren.", _obj({}), _depot),
@@ -496,7 +533,7 @@ def summarize(name: str, args: dict, result: dict) -> str:
         "kurs": "Kurs", "wertentwicklung": "Wertentwicklung", "kennzahlen": "Kennzahlen", "finanzen": "Finanzdaten",
         "earnings": "Quartalszahlen", "news": "Nachrichten", "kalender": "Wirtschaftskalender", "earnings_kalender": "Earnings-Kalender",
         "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot", "alarme": "Alarme", "optionen": "Optionen",
-        "bewegungen": "Größte Bewegungen", "zinsen": "Zinskurve", "devisentermin": "Devisentermine", "prognose": "Prognose",
+        "bewegungen": "Größte Bewegungen", "zinsen": "Zinskurve", "devisentermin": "Devisentermine", "prognose": "Prognose", "bewertung": "Bewertungstrend",
     }.get(name, name)
     subject = result.get("ticker") or args.get("ticker") or args.get("text") or ""
     if isinstance(subject, str) and "." in subject:
