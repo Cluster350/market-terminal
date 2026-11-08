@@ -230,6 +230,48 @@ Meldung in der Leseansicht. Eingestellt wird das in **TOP** in der Werkzeugleist
   zu 10 Minuten nach der Veröffentlichung kommen. News werden je Wert zwischengespeichert: TOP,
   CN, das Signal und weitere Fenster teilen sich dieselben Abrufe.
 
+## Prognose mit Unsicherheitsbändern (Chronos-2)
+
+Das Terminal kann Konjunkturdaten, Länderkennzahlen und die Schwankung einer Aktie vorausschätzen,
+immer mit Bändern und einer **Ehrlichkeitsprüfung**. Kursrichtungen sagt es bewusst nicht voraus:
+Dort schlägt kein Modell verlässlich die Regel „morgen wie heute“.
+
+| Wo | Was |
+|---|---|
+| **ECST** | Land in der Tabelle anklicken: Verlauf der Kennzahl (Inflation, BIP-Wachstum …) mit Prognose für drei Jahre |
+| **ECO** | Termin anklicken: frühere Veröffentlichungen, Prognose der nächsten drei und **Modell gegen Konsens** – samt der Angabe, wer bisher näher lag |
+| **GP** | Schalter **Kegel**: erwartete Spanne der nächsten 21 Handelstage (gestrichelt ±1 Standardabweichung ≈ 68 %, gepunktet ±2 ≈ 95 %), ohne Richtung |
+| **OMON** | Kennzahl **Schwankung Prognose** neben der impliziten Volatilität: liegt die IV über dem Band, preisen Optionen mehr Schwankung ein, als das Modell erwartet |
+| **ASK** | Werkzeug „prognose“, z. B. „Wie entwickelt sich die Inflation in Deutschland?“ |
+
+**So ist sie zu lesen:** gestrichelte Linie = Mittelwert (Median), dunkles Band = 50 %, helles Band =
+80 % Wahrscheinlichkeit. Darunter steht das Ergebnis des **Rückblick-Tests**: Das Terminal rechnet an
+bis zu 24 früheren Zeitpunkten so, als wäre die Zukunft unbekannt, und vergleicht mit dem, was
+tatsächlich kam – gegen die einfache Regel „bleibt wie zuletzt“ und mit der Trefferquote der Bänder.
+Waren die Bänder früher zu eng, werden sie verbreitert. „Rückblick: schwach“ heißt: Die Prognose war
+früher nicht besser als „bleibt wie zuletzt“ – dann mit Vorsicht lesen.
+
+**Zwei Methoden, Auto-Auswahl:** Die eingebaute Statistik (gedämpfter Trend) ist immer da.
+**Chronos-2** (Amazon, frei nutzbar, läuft auf dem eigenen Rechner ohne Grafikkarte) ist meist genauer;
+je Reihe nimmt das Terminal die Methode, die im Rückblick-Test besser war (Hinweis beim Darüberfahren
+über das Kästchen „Chronos-2“/„Statistik“). Chronos-2 läuft nicht in LM Studio, sondern direkt im
+Terminal-Server.
+
+Chronos-2 einrichten (einmalig, ca. 1–2 GB Download):
+1. Terminal einmal mit `Start-Windows.bat` gestartet haben.
+2. **`Prognose-installieren-Windows.bat`** doppelklicken. Es installiert PyTorch und Chronos-2, lädt
+   das Modell (ca. 0,5 GB) und macht eine Probe-Prognose.
+3. Terminal neu starten (`Stop-Windows.bat`, dann `Start-Windows.bat`). Das Modell lädt beim Start im
+   Hintergrund (rund 10 Sekunden); bis dahin rechnet die Statistik.
+
+Danach braucht die Prognose kein Internet mehr. Speicher: etwa 1 GB Arbeitsspeicher, solange das
+Terminal läuft. Einstellungen in der `.env`: `FORECAST_MODE=auto` (Standard), `simple` (nur Statistik)
+oder `off`. Wird der Programmordner neu angelegt (neue Python-Version), die Installation wiederholen.
+
+Grenzen: Die Modelle kennen nur den bisherigen Verlauf, keine Politik, Nachrichten oder Ereignisse.
+Bei Notenbankzinsen ist „bleibt wie zuletzt“ meist schwer zu schlagen; der Analysten-Konsens liegt bei
+Konjunkturdaten oft näher als jedes Modell – das zeigt ECO offen an. Keine Anlageberatung.
+
 ## KI-Helfer mit LM Studio
 
 Das Terminal kann ein Sprachmodell nutzen, das auf dem eigenen Rechner in

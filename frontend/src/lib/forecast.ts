@@ -210,3 +210,34 @@ export function fanData(r: ForecastResult, maxHist = 36): FanData {
     splitIndex: n,
   };
 }
+
+// --- Schwankungskegel im Kurschart ----------------------------------------------------
+
+/** Die nächsten `n` Werktage (Mo–Fr) nach `date` (JJJJ-MM-TT); Feiertage werden nicht beachtet. */
+export function nextBusinessDays(date: string, n: number): string[] {
+  const d = new Date(`${date.slice(0, 10)}T12:00:00Z`);
+  const out: string[] = [];
+  while (out.length < n) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const wd = d.getUTCDay();
+    if (wd !== 0 && wd !== 6) out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+export interface ConeLine {
+  time: string;
+  value: number;
+}
+
+/**
+ * Erwartete Schwankungsbreite ab dem letzten Schlusskurs: ±1 und ±2 Standardabweichungen über
+ * `days` Handelstage, aus der Jahres-Volatilität in % (z. B. 28 für 28 % p. a.). Lognormal, ohne Richtung.
+ */
+export function coneLines(lastTime: string, lastClose: number, volPct: number, days = 21): { up1: ConeLine[]; lo1: ConeLine[]; up2: ConeLine[]; lo2: ConeLine[] } {
+  const sigma = volPct / 100;
+  const times = [lastTime.slice(0, 10), ...nextBusinessDays(lastTime, days)];
+  const at = (k: number, z: number) => lastClose * Math.exp(z * sigma * Math.sqrt(k / 252));
+  const line = (z: number) => times.map((time, k) => ({ time, value: at(k, z) }));
+  return { up1: line(1), lo1: line(-1), up2: line(2), lo2: line(-2) };
+}

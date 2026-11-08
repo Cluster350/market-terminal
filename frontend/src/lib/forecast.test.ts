@@ -62,3 +62,17 @@ describe("Prognose: Anzeige", () => {
     expect(fmtVal(48_000, result({ unit: "USD", history: { t: ["a"], v: [48_000] } }))).toBe("48.000");
   });
 });
+
+describe("Schwankungskegel", () => {
+  it("rechnet Werktage und die Spanne nach der Wurzel-Zeit-Regel", async () => {
+    const { coneLines, nextBusinessDays } = await import("./forecast");
+    expect(nextBusinessDays("2026-11-06", 3)).toEqual(["2026-11-09", "2026-11-10", "2026-11-11"]); // Freitag -> Mo, Di, Mi
+    const c = coneLines("2026-11-06", 100, 25.2, 21);
+    expect(c.up1).toHaveLength(22);
+    expect(c.up1[0]).toEqual({ time: "2026-11-06", value: 100 });
+    const s = 0.252 * Math.sqrt(21 / 252);
+    expect(c.up1[21].value).toBeCloseTo(100 * Math.exp(s), 6);
+    expect(c.lo2[21].value).toBeCloseTo(100 * Math.exp(-2 * s), 6);
+    expect(c.up1[21].time).toBe("2026-12-07");
+  });
+});

@@ -9,6 +9,8 @@ import { fmt, fmtBig, fmtDate, fmtPct, fmtPrice, isEquity } from "../lib/format"
 import { contractLabel, strikeWindow, useOptionChain, useOptionsOverview, type ActiveContract, type ExpirySummary, type OptionQuote, type OptionsOverview } from "../lib/options";
 import { isOneOf, usePersistentState } from "../lib/persist";
 import { useStatus } from "../lib/queries";
+import { IS_STATIC } from "../lib/api";
+import { qualityLine, useVolForecast, verdictClass } from "../lib/forecast";
 import type { ScreenProps } from "./types";
 
 const EChart = lazy(() => import("../components/EChart"));
@@ -36,6 +38,49 @@ function Chart({ option, height = 220 }: { option: EOption; height?: number }) {
   );
 }
 
+/** Prognose der Schwankung für die nächsten 21 Handelstage (Modell) im Vergleich zur impliziten Volatilität. */
+export function volVsImplied(iv: number | null | undefined, lo80: number, hi80: number): { cls: string; text: string } | null {
+  if (iv === null || iv === undefined) return null;
+  const pct = iv * 100;
+  if (pct > hi80) return { cls: "down", text: "IV über dem Band: Optionen laut Modell teuer" };
+  if (pct < lo80) return { cls: "up", text: "IV unter dem Band: Optionen laut Modell günstig" };
+  return { cls: "", text: "IV im Band des Modells" };
+}
+
+function VolForecastKpi({ o }: { o: OptionsOverview }) {
+  const q = useVolForecast(o.ticker, o.iv30 !== null && o.iv30 !== undefined ? o.iv30 * 100 : null, !IS_STATIC);
+  const r = q.data;
+  if (IS_STATIC || q.isError) return null;
+  if (!r) {
+    return (
+      <div className="kpi">
+        <div className="kpi-l">Schwankung Prognose</div>
+        <div className="kpi-v muted">…</div>
+      </div>
+    );
+  }
+  const f = r.forecast;
+  const cmp = volVsImplied(o.iv30, f.lo80[0], f.hi80[0]);
+  return (
+    <div
+      className="kpi"
+      title={
+        `Modellprognose (${r.engineLabel}) der tatsächlichen Schwankung in den nächsten 21 Handelstagen, annualisiert, mit 80-%-Band. ` +
+        `Vergleich mit der impliziten Volatilität: Liegt sie über dem Band, preisen Optionen mehr Schwankung ein, als das Modell erwartet.\n` +
+        `${r.verdictText}\n${qualityLine(r.quality, 1)}\nKeine Empfehlung.`
+      }
+    >
+      <div className="kpi-l">
+        Schwankung Prognose <span className={`fc-verdict ${verdictClass(r.verdict)}`}>{r.engine === "chronos" ? "Chronos-2" : "Statistik"}</span>
+      </div>
+      <div className="kpi-v">{fmt(f.median[0], 1)} %</div>
+      <div className="kpi-s">
+        80 %: {fmt(f.lo80[0], 0)}–{fmt(f.hi80[0], 0)} %{cmp ? <> · <span className={cmp.cls}>{cmp.text}</span></> : null}
+      </div>
+    </div>
+  );
+}
+
 function Kpis({ o }: { o: OptionsOverview }) {
   const f = o.focus;
   return (
@@ -45,6 +90,7 @@ function Kpis({ o }: { o: OptionsOverview }) {
         <div className="kpi-v">{ivPct(o.iv30)}</div>
         <div className="kpi-s">HV 30T {ivPct(o.hv30)} · 1J {ivPct(o.hv1y)}</div>
       </div>
+      <VolForecastKpi o={o} />
       <div className="kpi" title="Implizite Volatilität (30 Kalendertage) geteilt durch die tatsächliche Schwankung der letzten 21 Handelstage (≈ 30 Kalendertage). Über 1: Optionen eher teuer.">
         <div className="kpi-l">IV / HV</div>
         <div className={`kpi-v ${o.ivHv && o.ivHv > 1.2 ? "down" : o.ivHv && o.ivHv < 0.85 ? "up" : ""}`}>{ratio(o.ivHv)}</div>

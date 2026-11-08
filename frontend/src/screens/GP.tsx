@@ -20,6 +20,7 @@ import { VolumeProfilePrimitive } from "../components/volumeProfile";
 import { volumeProfile } from "../lib/profile";
 import { alertStatus, alertsApi, conditionLabel, useAlerts, useAlertsRefresh, type Alert } from "../lib/alerts";
 import { api, ApiError, IS_STATIC } from "../lib/api";
+import { coneLines, useVolForecast } from "../lib/forecast";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
 import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
 import { isBool, isNumberList, isOneOf, usePersistentState } from "../lib/persist";
@@ -305,6 +306,7 @@ export default function GP({ ticker }: ScreenProps) {
   const [showRsi, setShowRsi] = usePersistentState("gp.rsi", false, isBool);
   const [showVwap, setShowVwap] = usePersistentState("gp.vwap", true, isBool);
   const [showVp, setShowVp] = usePersistentState("gp.vp", false, isBool);
+  const [showCone, setShowCone] = usePersistentState("gp.cone", false, isBool);
   const [compare, setCompare] = useState<string[]>([]);
   // Setzen einer Marke: "alarm" = Kursmarke mit Alarm, "line" = nur Linie (ohne Alarm)
   const [placing, setPlacing] = useState<false | "alarm" | "line">(false);
@@ -323,6 +325,9 @@ export default function GP({ ticker }: ScreenProps) {
   const isLive = !!ticker && !!liveStatus?.live.includes(ticker);
   const isYield = ticker?.endsWith(".GBOND") ?? false;
   const comparing = compare.length > 0 && !intradayRange;
+  // Schwankungskegel: erwartete Spanne der nächsten 21 Handelstage aus der Schwankungsprognose
+  const coneOn = showCone && !intradayRange && !comparing && !isYield && !IS_STATIC;
+  const volFc = useVolForecast(ticker, null, coneOn);
 
   const earn = useEarnings(ticker && isEquity(ticker) ? ticker : null);
 
@@ -422,6 +427,7 @@ export default function GP({ ticker }: ScreenProps) {
     bands: ISeriesApi<"Line">[];
     cmp: ISeriesApi<"Line">[];
     rsi: ISeriesApi<"Line"> | null;
+    cone: ISeriesApi<"Line">[];
   } | null>(null);
   const barsRef = useRef<Map<string, Bar>>(new Map());
   const prevLineRef = useRef<ReturnType<ISeriesApi<"Line">["createPriceLine"]> | null>(null);
@@ -465,7 +471,7 @@ export default function GP({ ticker }: ScreenProps) {
       },
     });
     chartRef.current = chart;
-    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], rsi: null };
+    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], rsi: null, cone: [] };
     if (comparing) {
       for (let i = 0; i < compare.length + 1; i++) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
@@ -488,6 +494,11 @@ export default function GP({ ticker }: ScreenProps) {
       }
       if (intradayRange && showVwap) {
         refs.vwap = chart.addLineSeries({ color: "#f2c200", lineWidth: 1, lineStyle: LineStyle.Solid, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
+      }
+      if (coneOn) {
+        for (const [color, style] of [["rgba(255,128,0,0.9)", LineStyle.Dashed], ["rgba(255,128,0,0.9)", LineStyle.Dashed], ["rgba(255,128,0,0.45)", LineStyle.Dotted], ["rgba(255,128,0,0.45)", LineStyle.Dotted]] as const) {
+          refs.cone.push(chart.addLineSeries({ color, lineWidth: 1, lineStyle: style, lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false }));
+        }
       }
       if (boll && !intradayRange) {
         for (let i = 0; i < 2; i++) {
@@ -555,7 +566,7 @@ export default function GP({ ticker }: ScreenProps) {
       seriesRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasData, kind, intradayRange, isYield, maKey, boll, showRsi, cmpKey, showVwap]);
+  }, [hasData, kind, intradayRange, isYield, maKey, boll, showRsi, cmpKey, showVwap, coneOn]);
 
   useEffect(() => {
     const s = seriesRef.current;
@@ -592,6 +603,16 @@ export default function GP({ ticker }: ScreenProps) {
       s.bands[0].setData(bands.upper);
       s.bands[1].setData(bands.lower);
     }
+    if (s.cone.length === 4) {
+      const vol = volFc.data?.forecast.median[0];
+      const last = bars[bars.length - 1];
+      if (isNum(vol) && vol > 0) {
+        const c = coneLines(String(last.time), last.close, vol);
+        [c.up1, c.lo1, c.up2, c.lo2].forEach((d, i) => s.cone[i].setData(d as never));
+      } else {
+        s.cone.forEach((x) => x.setData([]));
+      }
+    }
     compareLines.forEach((l, i) => s.cmp[i]?.setData(l.data));
     s.rsi?.setData((comparing ? alignRsi(rsi, compareLines) : rsi) as never);
     const key = `${ticker}|${range}|${kind}|${maKey}|${cmpKey}|${showRsi}`;
@@ -600,7 +621,7 @@ export default function GP({ ticker }: ScreenProps) {
       rsiChartRef.current?.timeScale().fitContent();
       fitKey.current = key;
     }
-  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, prevDay, intradayRange, earn.data, isYield]);
+  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen]);
 
   // Laufende Kerze: Ticks des Echtzeit-Stroms (US-Werte, Devisen, Krypto) bzw. verzögerte Kurse
   // (übrige Börsen) schreiben die letzte Kerze fort, ohne den ganzen Chart neu zu zeichnen
@@ -958,6 +979,21 @@ export default function GP({ ticker }: ScreenProps) {
               <input type="checkbox" checked={boll} onChange={(e) => setBoll(e.target.checked)} />
               BB 20
             </label>
+            {!isYield && !IS_STATIC && (
+              <label
+                className="check"
+                style={{ color: showCone ? "#ff8000" : undefined }}
+                title={
+                  "Schwankungskegel: erwartete Spanne der nächsten 21 Handelstage (gestrichelt ±1 Standardabweichung ≈ 68 %, gepunktet ±2 ≈ 95 %), " +
+                  "aus der Prognose der Schwankung (Chronos-2 bzw. Statistik). Keine Aussage über die Richtung." +
+                  (volFc.data ? `\n${volFc.data.verdictText}` : "")
+                }
+              >
+                <input type="checkbox" checked={showCone} onChange={(e) => setShowCone(e.target.checked)} />
+                Kegel{coneOn && volFc.data ? ` σ ${fmt(volFc.data.forecast.median[0], 0)} %` : ""}
+              </label>
+            )}
+            {coneOn && volFc.isError && <span className="small muted">Kegel: {(volFc.error as Error).message}</span>}
           </>
         )}
         {intradayRange && !isYield && (
