@@ -22,7 +22,7 @@ from ..portfolio.models import Portfolio
 from ..rotation.calc import to_weekly
 from ..services import metrics
 from ..services.tickers import split
-from ..crypto.calc import pairs as price_pairs
+from ..crypto.calc import pairs as price_pairs, with_quote
 from . import calc
 from .universe import FACTOR_HELP, REGIONS, FactorDef, Region
 
@@ -86,15 +86,6 @@ class FactorExposure(Model):
     factors: list[Loading] = []
     us_share: Optional[float] = None
     notes: list[str] = []
-
-
-def _with_quote(pts: list[tuple[str, float]], q: Optional[Quote]) -> list[tuple[str, float]]:
-    if not q or q.last is None or q.last <= 0 or not pts:
-        return pts
-    day = (q.timestamp or "")[:10]
-    if not day or day < pts[-1][0]:
-        return pts
-    return pts[:-1] + [(day, q.last)] if day == pts[-1][0] else pts + [(day, q.last)]
 
 
 def _beta(a: list[tuple[str, float]], b: list[tuple[str, float]], days: int = 365) -> Optional[float]:
@@ -196,7 +187,7 @@ class FactorService:
                     h = await self.t.history(t)
                 except TerminalError:
                     return t, []
-            return t, _with_quote(price_pairs(h.t, h.c), quotes.get(t))
+            return t, with_quote(price_pairs(h.t, h.c), quotes.get(t))
 
         return {t: s for t, s in await asyncio.gather(*(one(t) for t in tickers)) if s}
 
@@ -306,7 +297,7 @@ class FactorService:
     async def exposure(self, p: Portfolio, region: str = "auto") -> FactorExposure:
         if not p.positions:
             raise NotFound("Das Depot ist leer – Faktorlast gibt es erst mit Positionen.")
-        a = await analyze(self.t, p)
+        a = await analyze(self.t, p, risk=False)  # nur Werte und Währungen der Positionen
         held = [(pos, r) for pos, r in zip(p.positions, a.rows) if r.value is not None and r.currency]
         if not held:
             raise NotFound("Keine bewerteten Positionen im Depot.")

@@ -30,10 +30,21 @@ CLOCKWISE = {("erholend", "fuehrend"), ("fuehrend", "schwaecher"), ("schwaecher"
 COUNTER = {(b, a) for a, b in CLOCKWISE}
 
 
+_WEEK_KEYS: dict[str, str] = {}
+
+
 def week_key(day: str) -> str:
-    """Freitag der Kalenderwoche als Schlüssel (JJJJ-MM-TT)."""
-    d = dt.date.fromisoformat(day[:10])
-    return (d + dt.timedelta(days=4 - d.weekday())).isoformat()
+    """Freitag der Kalenderwoche als Schlüssel (JJJJ-MM-TT). Gemerkt: dieselben Handelstage kommen in jeder
+    Kursreihe wieder (Depot, Faktoren, Rotation – zusammen mehrere Hunderttausend Aufrufe je Berechnung)."""
+    key = day[:10]
+    hit = _WEEK_KEYS.get(key)
+    if hit is None:
+        d = dt.date.fromisoformat(key)
+        hit = (d + dt.timedelta(days=4 - d.weekday())).isoformat()
+        if len(_WEEK_KEYS) > 100_000:
+            _WEEK_KEYS.clear()
+        _WEEK_KEYS[key] = hit
+    return hit
 
 
 def to_weekly(dates: Sequence[str], closes: Sequence[Optional[float]]) -> dict[str, float]:
@@ -61,12 +72,15 @@ def ema(xs: Sequence[Optional[float]], n: int) -> list[Optional[float]]:
 def zscore(xs: Sequence[Optional[float]], n: int) -> list[Optional[float]]:
     """100 + z-Wert gegenüber den letzten ``n`` Werten (einschließlich des aktuellen)."""
     out: list[Optional[float]] = []
-    for i in range(len(xs)):
-        w = [x for x in xs[max(0, i - n + 1): i + 1] if x is not None]
-        x = xs[i]
-        if x is None or len(w) < n:
+    last_none = -1  # Index des letzten fehlenden Werts
+    for i, x in enumerate(xs):
+        if x is None:
+            last_none = i
+        # erst mit n vorhandenen Werten im Fenster (kürzeres Fenster oder Lücke darin: kein Wert)
+        if x is None or i - last_none < n:
             out.append(None)
             continue
+        w = xs[i - n + 1: i + 1]
         m = sum(w) / n
         sd = math.sqrt(sum((v - m) ** 2 for v in w) / (n - 1))
         if sd <= 1e-12:

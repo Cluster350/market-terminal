@@ -10,11 +10,25 @@ import datetime as dt
 import math
 from typing import Optional, Sequence
 
+from ..models import Quote
+
 DAYS_PER_YEAR = 365
 
 
 def pairs(dates: Sequence[str], values: Sequence[Optional[float]]) -> list[tuple[str, float]]:
     return [(d[:10], float(v)) for d, v in zip(dates, values) if v is not None and v > 0]
+
+
+def with_quote(pts: list[tuple[str, float]], q: Optional[Quote]) -> list[tuple[str, float]]:
+    """Laufenden Kurs an die Tagesreihe hängen (bzw. den heutigen Schluss ersetzen)."""
+    if not q or q.last is None or q.last <= 0 or not pts:
+        return pts
+    day = (q.timestamp or "")[:10]
+    if not day or day < pts[-1][0]:
+        return pts
+    if day == pts[-1][0]:
+        return pts[:-1] + [(day, q.last)]
+    return pts + [(day, q.last)]
 
 
 def window(pts: Sequence[tuple[str, float]], days: int) -> list[tuple[str, float]]:
@@ -80,24 +94,41 @@ def ffill(grid: Sequence[str], pts: Sequence[tuple[str, float]]) -> list[Optiona
     return out
 
 
-def rolling_corr(a: Sequence[tuple[str, float]], b: Sequence[tuple[str, float]], n: int = 90) -> list[tuple[str, float]]:
+def rolling_corr(a: Sequence[tuple[str, float]], b: Sequence[tuple[str, float]], n: int = 90,
+                 start: Optional[str] = None, memo: Optional[dict] = None) -> list[tuple[str, float]]:
     """Gleitende Korrelation der Tagesrenditen an gemeinsamen Tagen (z. B. Bitcoin gegen Nasdaq an
-    Börsentagen), Fenster ``n`` gemeinsame Tage."""
+    Börsentagen), Fenster ``n`` gemeinsame Tage. ``start``: nur Fenster, die an oder nach diesem Tag
+    enden (frühere werden gar nicht erst gerechnet – die Fenster sind der teure Teil).
+
+    ``memo``: Zwischenspeicher für wiederholte Aufrufe mit denselben Reihen (je Reihenpaar ein eigenes
+    dict). Ändert sich seit dem letzten Aufruf nur der letzte gemeinsame Tag (laufender Kurs), wird nur das
+    letzte Fenster neu gerechnet – alle früheren hängen nicht von ihm ab."""
     ma = dict(a)
     common = [(d, ma[d], v) for d, v in b if d in ma]
     ra = [math.log(common[i][1] / common[i - 1][1]) for i in range(1, len(common))]
     rb = [math.log(common[i][2] / common[i - 1][2]) for i in range(1, len(common))]
     days = [common[i][0] for i in range(1, len(common))]
-    out: list[tuple[str, float]] = []
-    for i in range(n - 1, len(ra)):
+    last = len(ra) - 1  # Index des letzten Fensters
+
+    def one(i: int) -> Optional[tuple[str, float]]:
+        if start is not None and days[i] < start:
+            return None
         x, y = ra[i - n + 1 : i + 1], rb[i - n + 1 : i + 1]
         mx, my = sum(x) / n, sum(y) / n
         sxy = sum((p - mx) * (q - my) for p, q in zip(x, y))
         sxx = sum((p - mx) ** 2 for p in x)
         syy = sum((q - my) ** 2 for q in y)
-        if sxx > 0 and syy > 0:
-            out.append((days[i], sxy / math.sqrt(sxx * syy)))
-    return out
+        return (days[i], sxy / math.sqrt(sxx * syy)) if sxx > 0 and syy > 0 else None
+
+    prev = memo.get("common") if memo is not None and memo.get("args") == (n, start) else None
+    if prev is not None and len(prev) == len(common) and prev[:-1] == common[:-1]:
+        head = memo["head"]  # type: ignore[index]
+    else:
+        head = [w for i in range(n - 1, last) if (w := one(i)) is not None]
+    if memo is not None:
+        memo.update(args=(n, start), common=common, head=head)
+    tail = one(last) if last >= n - 1 else None
+    return head + [tail] if tail is not None else list(head)
 
 
 def change_24h(bars: Sequence[tuple[int, float, float, float]], now_ts: float, last: Optional[float] = None,

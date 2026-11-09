@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.providers.demo import DemoProvider
 from app.valuation.calc import (
-    aggregate, calendarize, company_val, fy_from_quarters, months_in_year, split_fix, split_ratio,
+    aggregate, calendarize, chain_index, company_val, fy_from_quarters, months_in_year, split_fix, split_ratio,
     undo_dividend_adjustment, unit_factor,
 )
 from app.valuation.inputs import Estimate, ValInputs, from_fundamentals
@@ -110,6 +110,20 @@ def test_group_pe_is_total_value_over_total_earnings():
     assert len(g.forward_path) == 5 and g.forward_path[-1][1] == pytest.approx(g.pe_years[2027])
     assert g.dist52 == pytest.approx(0, abs=1e-9)  # beide auf dem Hoch
     assert set(g.decomposition) == {"1J", "3J", "5J"}
+
+
+def test_chain_index_shared_price_cache():
+    da, pa = _prices(50, 100)
+    db, pb = _prices(100, 80)
+    a = company_val(_inputs("A.US", {2023: 3.0, 2024: 3.5, 2025: 4.0}, 5.0, 6.0), 300e9, da, pa, TODAY, prices_adjusted=False)
+    b = company_val(_inputs("B.US", {2023: 5.0, 2024: 5.0, 2025: 5.0}, 5.0, 5.0), 100e9, db[300:], pb[300:], TODAY, prices_adjusted=False)
+    days = [dt.date(2020, 1, 3) + dt.timedelta(days=7 * k) for k in range(300)]
+    plain = [chain_index([a, b], days), chain_index([b], days), chain_index([a], days)]
+    prices: dict = {}
+    assert [chain_index([a, b], days, prices), chain_index([b], days, prices), chain_index([a], days, prices)] == plain
+    assert plain[0][-1] == 100.0 and plain[1][0] is None  # B kommt später hinzu
+    other = days[:-10]  # anderes Raster mit demselben Zwischenspeicher: wird nicht vermischt
+    assert chain_index([a, b], other, prices) == chain_index([a, b], other)
 
 
 def test_negative_group_earnings_and_member_pe():

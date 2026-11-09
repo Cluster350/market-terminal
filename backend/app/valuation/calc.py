@@ -201,12 +201,13 @@ class CompanyVal:
         return cache[when]
 
     def _ttm(self, when: dt.date) -> Optional[float]:
-        known = [(d, v) for d, v in self.quarters if d + dt.timedelta(days=REPORT_LAG) <= when]
+        cut = when - dt.timedelta(days=REPORT_LAG)  # veröffentlicht: Periodenende + REPORT_LAG ≤ when
+        known = [(d, v) for d, v in self.quarters if d <= cut]
         if len(known) >= 4:
             last4 = known[-4:]
             if (when - last4[-1][0]).days <= 200 and (last4[-1][0] - last4[0][0]).days <= 300:
                 return sum(v for _, v in last4)
-        known_a = [(d, v) for d, v in self.annual if d + dt.timedelta(days=REPORT_LAG) <= when]
+        known_a = [(d, v) for d, v in self.annual if d <= cut]
         if known_a and (when - known_a[-1][0]).days <= 450:
             return known_a[-1][1]
         return None
@@ -303,28 +304,38 @@ class GroupVal:
     sums: dict = field(default_factory=dict)
 
 
-def chain_index(cs: Sequence[CompanyVal], days: Sequence[dt.date]) -> list[Optional[float]]:
+def chain_index(cs: Sequence[CompanyVal], days: Sequence[dt.date], prices: Optional[dict] = None) -> list[Optional[float]]:
     """Kursindex der Gruppe (Börsenwert, verkettet): Firmen, die später hinzukommen, lassen den Index
-    nicht springen. Heute = 100."""
+    nicht springen. Heute = 100.
+
+    ``prices``: Zwischenspeicher der Kurse je Firma auf genau diesen Tagen – wer mehrere Gruppen auf
+    demselben Raster rechnet (Sektoren, Regionen, Gesamtmarkt), sucht jeden Kurs nur einmal."""
     out: list[Optional[float]] = []
     level: Optional[float] = None
-    prev_day: Optional[str] = None
-    for d in days:
-        day = d.isoformat()
+    keys = [d.isoformat() for d in days]
+    if prices is None or prices.setdefault("t", keys) != keys:
+        prices = {}  # anderes Raster: nichts wiederverwenden
+    cols = []
+    for c in cs:
+        hit = prices.get(id(c))
+        if hit is None or hit[0] is not c:
+            hit = prices[id(c)] = (c, [c.price_at(day) for day in keys])
+        cols.append((c.s, c.dates[0] if c.dates else None, hit[1]))
+    for k, day in enumerate(keys):
         if level is None:
-            if any(c.price_at(day) for c in cs):
+            if any(px[k] for _, _, px in cols):
                 level = 1.0
-        elif prev_day is not None:
+        elif k:
+            prev_day = keys[k - 1]
             a = b = 0.0
-            for c in cs:
-                p0, p1 = c.price_at(prev_day), c.price_at(day)
-                if p0 and p1 and c.dates and c.dates[0] <= prev_day:
-                    a += c.s * p0
-                    b += c.s * p1
+            for s, first, px in cols:
+                p0, p1 = px[k - 1], px[k]
+                if p0 and p1 and first is not None and first <= prev_day:
+                    a += s * p0
+                    b += s * p1
             if a > 0:
                 level *= b / a
         out.append(level)
-        prev_day = day
     last = out[-1] if out else None
     return [None if v is None or not last else v / last * 100 for v in out]
 

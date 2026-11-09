@@ -21,6 +21,11 @@ def test_weekly_keys_and_smoothing():
     z = zscore([1.0, 2.0, 3.0, 4.0], 3)
     assert z[:2] == [None, None] and z[2] == pytest.approx(101.0) and z[3] == pytest.approx(101.0)
     assert zscore([5.0, 5.0, 5.0], 3)[-1] == 100.0  # ohne Schwankung: neutral
+    # Lücken: erst wieder ein Wert, wenn das Fenster n vorhandene Werte hat
+    z = zscore([1.0, 2.0, None, 3.0, 4.0, 6.0, 7.0], 3)
+    assert z[:5] == [None] * 5 and z[5] == pytest.approx(100 + (6 - 13 / 3) / math.sqrt(((3 - 13 / 3) ** 2 + (4 - 13 / 3) ** 2 + (6 - 13 / 3) ** 2) / 2))
+    assert z[6] is not None
+    assert week_key("2026-11-08T12:00:00Z") == "2026-11-06" and week_key("2024-12-30") == "2025-01-03"
 
 
 def test_cycle_rotates_clockwise_and_quadrants():

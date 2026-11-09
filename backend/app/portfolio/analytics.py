@@ -255,7 +255,9 @@ def choose_benchmark(p: Portfolio, values: dict[str, float]) -> str:
 # --- Berechnung ---------------------------------------------------------------------
 
 
-async def analyze(t: Terminal, p: Portfolio) -> Analytics:
+async def analyze(t: Terminal, p: Portfolio, risk: bool = True) -> Analytics:
+    """Kennzahlen des Depots; ``risk=False`` lässt Verlauf und Risiko weg (wer nur Werte und Währungen der
+    Positionen braucht, z. B. die Faktorlast)."""
     notes: list[str] = []
     sem = asyncio.Semaphore(6)
     positions = p.positions
@@ -346,7 +348,7 @@ async def analyze(t: Terminal, p: Portfolio) -> Analytics:
         allocation=allocation, notes=notes,
         as_of=max((q.timestamp for q in quotes.values() if q.timestamp), default=None),
     )
-    if not now_values:
+    if not now_values or not risk:
         return result
     await _risk(t, p, rows, fx, ccy_of, bench, result, sem)
     return result

@@ -324,9 +324,10 @@ class ValuationService:
             days.append(today)
         keys = [(d + dt.timedelta(days=4 - d.weekday())).isoformat() for d in days]
         out: dict[str, list[Optional[float]]] = {}
+        prices: dict = {}  # Kurse je Firma auf dem Raster (jede Firma steckt in mehreren Gruppen)
         for gid, cs in chosen.items():
             if cs and (gid.startswith("sector:") or gid.startswith("country:")):
-                out[gid] = chain_index(cs, days)
+                out[gid] = chain_index(cs, days, prices)
         for region in ("us", "eu", "all"):
             members: dict[str, CompanyVal] = {}
             for gid, cs in chosen.items():
@@ -334,7 +335,7 @@ class ValuationService:
                     for c in cs:
                         members[c.ticker] = c
             if members:
-                out[f"market:{region}"] = chain_index(list(members.values()), days)
+                out[f"market:{region}"] = chain_index(list(members.values()), days, prices)
         return {"t": keys, "groups": out}
 
     @staticmethod
@@ -345,9 +346,10 @@ class ValuationService:
         days = [start + dt.timedelta(days=k) for k in range((today - start).days + 1)]
         days = [d for d in days if d.weekday() < 5]
         out: dict[str, list[Optional[float]]] = {}
+        prices: dict = {}  # Kurse je Firma auf dem Raster (jede Firma steckt in mehreren Gruppen)
         for gid, cs in chosen.items():
             if cs and gid.startswith("sector:"):
-                out[gid] = chain_index(cs, days)
+                out[gid] = chain_index(cs, days, prices)
         for region in ("us", "eu", "all"):
             members: dict[str, CompanyVal] = {}
             for gid, cs in chosen.items():
@@ -355,7 +357,7 @@ class ValuationService:
                     for c in cs:
                         members[c.ticker] = c
             if members:
-                out[f"market:{region}"] = chain_index(list(members.values()), days)
+                out[f"market:{region}"] = chain_index(list(members.values()), days, prices)
         return {"t": [d.isoformat() for d in days], "groups": out}
 
     @staticmethod

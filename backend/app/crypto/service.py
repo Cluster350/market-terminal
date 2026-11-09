@@ -10,7 +10,7 @@ import time
 from typing import Any, Optional
 
 from ..errors import NotFound, TerminalError
-from ..models import Model, Quote
+from ..models import Model
 from ..services import metrics
 from . import calc
 from .universe import COINS
@@ -72,24 +72,13 @@ class CryptoOverview(Model):
     skipped: list[str] = []
 
 
-def _with_quote(pts: list[tuple[str, float]], q: Optional[Quote]) -> list[tuple[str, float]]:
-    """Laufenden Kurs an die Tagesreihe hängen (bzw. den heutigen Schluss ersetzen)."""
-    if not q or q.last is None or q.last <= 0 or not pts:
-        return pts
-    day = (q.timestamp or "")[:10]
-    if not day or day < pts[-1][0]:
-        return pts
-    if day == pts[-1][0]:
-        return pts[:-1] + [(day, q.last)]
-    return pts + [(day, q.last)]
-
-
 class CryptoService:
     def __init__(self, terminal: Any):
         self.t = terminal
         self._cache: dict[str, tuple[float, CryptoOverview]] = {}
         self._info: dict[str, tuple[float, dict]] = {}
         self._intra: dict[str, tuple[float, list[tuple[int, float, float, float]]]] = {}
+        self._corr_memo: dict[str, dict] = {}  # gleitende Korrelation je Vergleichswert (siehe calc.rolling_corr)
         self._lock = asyncio.Lock()
 
     def _gold(self) -> Optional[str]:
@@ -171,11 +160,13 @@ class CryptoService:
             async with sem:
                 return await self._bars(t)
 
-        intra = dict(zip(tickers + ["EURUSD.FOREX"], await asyncio.gather(*(bars(t) for t in tickers + ["EURUSD.FOREX"]))))
+        # 5-Minuten-Kurse von EUR/USD braucht nur die Euro-Ansicht (jeder Intraday-Abruf kostet bei EODHD 5 Calls)
+        intra_tickers = tickers + (["EURUSD.FOREX"] if ccy == "eur" else [])
+        intra = dict(zip(intra_tickers, await asyncio.gather(*(bars(t) for t in intra_tickers))))
         now_ts = self.t.now().timestamp()
-        series = {t: _with_quote(h, quotes.get(t)) for t, h in zip(tickers, all_hist[: len(tickers)])}
+        series = {t: calc.with_quote(h, quotes.get(t)) for t, h in zip(tickers, all_hist[: len(tickers)])}
         cross_hist = dict(zip([c for c, _ in cross_defs], all_hist[len(tickers) : -1]))
-        eurusd = _with_quote(all_hist[-1], quotes.get("EURUSD.FOREX"))
+        eurusd = calc.with_quote(all_hist[-1], quotes.get("EURUSD.FOREX"))
         notes: list[str] = []
         skipped: list[str] = []
 
@@ -262,7 +253,7 @@ class CryptoService:
         corr_lines: list[Line] = []
         for c, lab in cross_defs:
             other = cross_hist.get(c) or []
-            rc = [p for p in calc.rolling_corr(btc_usd, other, 90) if p[0] >= start]
+            rc = calc.rolling_corr(btc_usd, other, 90, start, memo=self._corr_memo.setdefault(c, {}))
             if rc:
                 corr_lines.append(Line(key=c, label=f"Bitcoin ↔ {lab}", t=[d for d, _ in rc], v=[round(v, 3) for _, v in rc]))
         return CryptoOverview(

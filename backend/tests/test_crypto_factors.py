@@ -49,6 +49,33 @@ def test_crypto_calc():
     assert ccalc.sma(pts, 500) is None
 
 
+def test_rolling_corr_start_and_memo_match_full_calculation():
+    rng = random.Random(5)
+    days = _days(900, "2023-01-01")
+    a, b, pa, pb = [], [], 100.0, 50.0
+    for i, d in enumerate(days):
+        pa *= math.exp(rng.gauss(0, 0.03))
+        pb *= math.exp(rng.gauss(0, 0.01) + 0.2 * math.log(pa / (a[-1][1] if a else pa)))
+        a.append((d, pa))
+        if i % 7 not in (5, 6):  # Börsentage
+            b.append((d, pb))
+    full = ccalc.rolling_corr(a, b, 30)
+    start = "2024-06-01"
+    assert ccalc.rolling_corr(a, b, 30, start) == [p for p in full if p[0] >= start]
+    memo: dict = {}
+    assert ccalc.rolling_corr(a, b, 30, start, memo) == [p for p in full if p[0] >= start]
+    # laufender Kurs am letzten Tag ändert sich: nur das letzte Fenster wird neu gerechnet, Ergebnis wie neu gerechnet
+    for f in (1.01, 0.97):
+        a2 = a[:-1] + [(a[-1][0], a[-1][1] * f)]
+        got = ccalc.rolling_corr(a2, b, 30, start, memo)
+        assert got == [p for p in ccalc.rolling_corr(a2, b, 30) if p[0] >= start] and got[-1] != full[-1]
+        got.clear()  # Rückgabe ist eine Kopie
+    b2 = b + [("2025-06-20", b[-1][1] * 1.02)]  # neuer Tag
+    a3 = a + [("2025-06-20", a[-1][1])]
+    assert ccalc.rolling_corr(a3, b2, 30, start, memo) == [p for p in ccalc.rolling_corr(a3, b2, 30) if p[0] >= start]
+    assert ccalc.rolling_corr(a3, b2, 20, None, memo) == ccalc.rolling_corr(a3, b2, 20)  # andere Fenster: kein Wiederverwenden
+
+
 def test_crypto_stats_mapping():
     data = {"General": {"Name": "Bitcoin"}, "Statistics": {"MarketCapitalization": "1.2e12", "CirculatingSupply": 19.9e6,
                                                             "maxSupply": 21e6, "MarketCapDominance": 56.1}}
