@@ -25,6 +25,8 @@ const FWD = lazy(async () => ({ default: (await import("./forwards")).FWD }));
 const OMON = lazy(async () => ({ default: (await import("./options")).OMON }));
 const BWT = lazy(async () => ({ default: (await import("./valuation")).BWT }));
 const RRG = lazy(async () => ({ default: (await import("./rotation")).RRG }));
+const CRYP = lazy(async () => ({ default: (await import("./crypto")).CRYP }));
+const FCTR = lazy(async () => ({ default: (await import("./factors")).FCTR }));
 
 export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   GP,
@@ -59,6 +61,8 @@ export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   WMAP,
   BWT,
   RRG,
+  CRYP,
+  FCTR,
   FWD,
   OMON,
 };

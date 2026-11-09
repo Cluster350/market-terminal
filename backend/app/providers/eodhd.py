@@ -239,6 +239,11 @@ class EODHDProvider:
     async def company(self, ticker: str) -> Company:
         return mapping.company(await self._fundamentals(ticker), ticker)
 
+    async def crypto_info(self, ticker: str) -> dict[str, Any]:
+        """Umlaufende Menge, Höchstmenge, Marktkapitalisierung und Marktanteil eines Coins
+        (EODHD-Fundamentaldaten der Kryptowährungen, Abschnitt „Statistics“)."""
+        return mapping.crypto_stats(await self._fundamentals(ticker))
+
     async def valuation_inputs(self, ticker: str):  # -> ValInputs (Bewertungstrend)
         from ..valuation.inputs import from_fundamentals
 

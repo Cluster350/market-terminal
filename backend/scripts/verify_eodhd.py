@@ -215,6 +215,47 @@ async def main(ticker: str) -> None:
             print(f"[{WARN}] Weltkarte: {total - len(missing)} von {total} Reihen da, fehlen: {', '.join(missing)}")
         else:
             print(f"[{OK}] Weltkarte: alle {total} Länderindizes und Anleihen vorhanden")
+        # Kryptowährungen (CRYP): Kurse und Stammdaten (umlaufende Menge, Marktanteil)
+        await check("Krypto Ethereum (ETH-USD.CC)", p.history("ETH-USD.CC"), lambda h: (f"Schluss {h.c[-1]} am {h.t[-1]}, Daten seit {h.t[0]}", False))
+
+        def describe_crypto(s):
+            if not s:
+                return "keine Statistik in den Fundamentaldaten – Marktkapitalisierung fehlt in CRYP", True
+            return f"Menge {s.get('circulating_supply')}, Marktkap. {s.get('market_cap')}, Anteil {s.get('dominance')} %", s.get("circulating_supply") is None
+
+        await check("Krypto-Stammdaten Bitcoin", p.crypto_info("BTC-USD.CC"), describe_crypto)
+        coin_missing = []
+        from app.crypto.universe import COINS
+
+        for ticker, name in COINS:
+            try:
+                if not (await p.history(ticker)).c:
+                    coin_missing.append(name)
+            except TerminalError:
+                coin_missing.append(name)
+        print(f"[{WARN if coin_missing else OK}] Krypto: {len(COINS) - len(coin_missing)} von {len(COINS)} Coins mit Kursen"
+              + (f", fehlen: {', '.join(coin_missing)}" if coin_missing else ""))
+        # Faktoren (FCTR): US-ETFs direkt, europäische UCITS-ETFs über die ISIN (wie im Terminal)
+        from app.factors.universe import REGIONS
+
+        for reg in REGIONS.values():
+            found, lost = [], []
+            for f in (reg.bench, *reg.factors):
+                ticker = f.ticker
+                if f.isin:
+                    try:
+                        hits = await p.search(f.isin, 20)
+                    except TerminalError:
+                        hits = []
+                    eur = [h.ticker for h in hits if (h.currency or "").upper() == "EUR"]
+                    xetra = [t for t in eur if t.endswith(".XETRA")]
+                    ticker = (xetra or eur or [f.ticker])[0]
+                try:
+                    ok = bool((await p.history(ticker)).c)
+                except TerminalError:
+                    ok = False
+                (found if ok else lost).append(f"{f.label} = {ticker}")
+            print(f"[{WARN if lost else OK}] Faktoren {reg.label}: " + "; ".join(found) + (f" – ohne Kurse: {'; '.join(lost)}" if lost else ""))
         print("\nVerbrauch laut lokalem Zähler:", p.client.budget.snapshot())
     finally:
         await p.close()

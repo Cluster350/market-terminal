@@ -39,6 +39,8 @@ from ..models import (
 )
 from ..services import metrics
 from ..services.util import pct
+from ..crypto.universe import COIN_NAMES
+from ..factors.universe import REGIONS as FACTOR_REGIONS, FactorDef
 from . import demo_data as D
 from .base import (
     COUNTRIES,
@@ -64,6 +66,11 @@ EARLIEST = dt.datetime(2016, 1, 5, 23, 59, tzinfo=dt.timezone.utc)
 def _seed(*parts: Any) -> int:
     h = hashlib.sha256("|".join(str(p) for p in parts).encode()).digest()
     return int.from_bytes(h[:8], "big")
+
+
+def _px(x: float) -> float:
+    """Kurs runden: fünf Nachkommastellen, bei Kleinstkursen (z. B. Shiba Inu) sechs gültige Stellen."""
+    return round(x, 5) if abs(x) >= 0.01 else float(f"{x:.6g}")
 
 
 def _rng(*parts: Any) -> random.Random:
@@ -220,6 +227,12 @@ _ETF: dict[str, tuple[str, str, float, float]] = {
     "XFTS.LSE": ("Thames FTSE 100 UCITS ETF", "FTSE.INDX", 0.1, 0.0007),
 }
 
+# Faktor-ETFs (FCTR) und weitere Kryptowährungen (CRYP): Ticker -> (Region, Definition) bzw. Name
+_FACTOR: dict[str, tuple[str, FactorDef]] = {
+    f.ticker: (r.key, f) for r in FACTOR_REGIONS.values() for f in (r.bench, *r.factors) if f.ticker in D.FACTOR_ETFS
+}
+_CRYPTO_NAMES = {t: f"{COIN_NAMES.get(t, t.split('-')[0])}/USD" for t in D.CRYPTO}
+
 EURO_AREA = {"DE", "FR", "IT", "ES", "NL", "BE", "AT", "FI", "PT", "GR", "IE"}
 
 CROSSES = {
@@ -303,6 +316,8 @@ class DemoProvider:
             or ticker in _COMMODITY
             or ticker in _BOND
             or ticker in _ETF
+            or ticker in _FACTOR
+            or ticker in D.CRYPTO
             or ticker == "VIX.INDX"
         )
 
@@ -321,6 +336,10 @@ class DemoProvider:
             return _COMMODITY[ticker][1]
         if ticker in _ETF:
             return _ETF[ticker][0]
+        if ticker in _FACTOR:
+            return _FACTOR[ticker][1].name
+        if ticker in _CRYPTO_NAMES:
+            return _CRYPTO_NAMES[ticker]
         if ticker in _BOND:
             cc, tenor, _ = _BOND[ticker]
             return f"{_CURVES[cc][0] if cc in _CURVES else _WORLD_BOND_NAMES.get(cc, cc)} Staatsanleihe {tenor}"
@@ -329,8 +348,10 @@ class DemoProvider:
     def currency(self, ticker: str) -> Optional[str]:
         if ticker in _COMPANY:
             return D.EXCHANGE_INFO[_COMPANY[ticker][2]][0]
-        if ticker in _ETF:
+        if ticker in _ETF or ticker in _FACTOR:
             return D.EXCHANGE_INFO[ticker.rpartition(".")[2]][0]
+        if ticker in D.CRYPTO:
+            return "USD"
         if ticker in _FX_NAMES:
             return ticker[3:6] if ticker.endswith(".FOREX") else "USD"
         if ticker in _COMMODITY:
@@ -342,8 +363,10 @@ class DemoProvider:
     def session_group(self, ticker: str) -> str:
         if ticker in _COMPANY:
             return D.EXCHANGE_INFO[_COMPANY[ticker][2]][2]
-        if ticker in _ETF:
+        if ticker in _ETF or ticker in _FACTOR:
             return D.EXCHANGE_INFO[ticker.rpartition(".")[2]][2]
+        if ticker in D.CRYPTO:
+            return "fx"
         if ticker in D.INDEX_PARAMS:
             return D.INDEX_PARAMS[ticker][2]
         if ticker == "VIX.INDX" or ticker in _COMMODITY:
@@ -402,6 +425,51 @@ class DemoProvider:
                 te = 0.9 * te + 0.0004 * rng.gauss(0, 1)
                 closes.append((level or u["c"][0]) * factor * math.exp(-ter * k / 252 + te))
             day_sigma = 0.011
+        elif ticker in _FACTOR:
+            # Stil-ETF: Index mal Beta plus eigener Stil-Zyklus; derselbe Stil läuft in USA und Europa
+            # ähnlich (gemeinsames Rauschen), Wachstum spiegelt Value
+            region, fdef = _FACTOR[ticker]
+            index, target = D.FACTOR_ETFS[ticker]
+            beta, amp, period, phase, sd = D.FACTOR_STYLE[fdef.key]
+            u = self._daily(index)
+            umap = dict(zip(u["days"], u["c"]))
+            shared = _rng("factor-style", fdef.key)
+            mirror = _rng("factor-style", "value") if fdef.key == "growth" else None
+            s = sd / math.sqrt(252)
+            x, level, prev_level, raw = 0.0, u["c"][0], None, []
+            for k, d in enumerate(days):
+                level = umap.get(d, level)
+                r_idx = math.log(level / prev_level) if prev_level else 0.0
+                prev_level = level
+                z = shared.gauss(0, 1)
+                if mirror is not None:
+                    z = -0.6 * mirror.gauss(0, 1) + 0.8 * z
+                if fdef.key == "market":
+                    z = rng.gauss(0, 1)
+                elif region != "us":
+                    z = 0.6 * z + 0.8 * rng.gauss(0, 1)
+                x += beta * r_idx + amp * math.sin(2 * math.pi * k / (period * 252) + phase) / 252 + s * z
+                raw.append(x)
+            idx = max((i for i, d in enumerate(days) if d <= ANCHOR), default=len(days) - 1)
+            closes = [target * math.exp(v - raw[idx]) for v in raw]
+            day_sigma = 0.011
+        elif ticker in D.CRYPTO:
+            # Coin: Bitcoin mal Beta plus eigener Verlauf; Kursniveau am Stichtag, Handel ab Listing
+            target, vol, beta, trend, _supply, first = D.CRYPTO[ticker]
+            btc = self._daily("BTC-USD.CC")
+            bmap = dict(zip(btc["days"], btc["c"]))
+            own = math.sqrt(max(vol**2 - (beta * D.FX_PARAMS["BTC-USD.CC"][1]) ** 2, 0.25**2)) / math.sqrt(252)
+            x, level, raw = 0.0, btc["c"][0], []
+            for d in days:
+                level = bmap.get(d, level)
+                x += trend / 252 + own * rng.gauss(0, 1)
+                raw.append(beta * math.log(level) + x)
+            idx = max((i for i, d in enumerate(days) if d <= ANCHOR), default=len(days) - 1)
+            closes = [target * math.exp(v - raw[idx]) for v in raw]
+            start = dt.date.fromisoformat(first)
+            k0 = next((i for i, d in enumerate(days) if d >= start), 0)
+            days, closes = days[k0:], closes[k0:]
+            day_sigma = vol / math.sqrt(252)
         elif ticker in _COMPANY:
             _, _, _, sector, _, _ = _COMPANY[ticker]
             sp = D.SECTORS[sector]
@@ -540,7 +608,7 @@ class DemoProvider:
                 vols.append(round(shares * 0.004 * math.exp(rng.gauss(0, 0.35)) * (1 + 25 * r) * (2.5 if shock else 1.0)))
             elif ticker in D.INDEX_PARAMS:
                 vols.append(round(2.5e9 * math.exp(rng.gauss(0, 0.25))))
-            elif ticker in _ETF:
+            elif ticker in _ETF or ticker in _FACTOR:
                 vols.append(round(4e5 * math.exp(rng.gauss(0, 0.35))))
             else:
                 vols.append(None)
@@ -766,6 +834,14 @@ class DemoProvider:
         code, _, exch = ticker.rpartition(".")
         return SearchHit(ticker=ticker, name=self.name(ticker), exchange=exch, currency=self.currency(ticker))
 
+    async def crypto_info(self, ticker: str) -> dict[str, Any]:
+        """Umlaufende Menge eines Coins (Marktkapitalisierung = Menge × Kurs)."""
+        if ticker == "BTC-USD.CC":
+            return {"circulating_supply": D.BTC_SUPPLY, "max_supply": 21e6}
+        if ticker in D.CRYPTO:
+            return {"circulating_supply": D.CRYPTO[ticker][4], "max_supply": None}
+        raise NotFound(f"Keine Kryptodaten für {ticker}.")
+
     async def earnings_calendar(self, start: dt.date, end: dt.date) -> list[EarningsEvent]:
         out: list[EarningsEvent] = []
         for t in COMPANY_TICKERS:
@@ -823,6 +899,11 @@ class DemoProvider:
             consider(t, e[0], "ETF", ex, D.EXCHANGE_INFO[ex][1], D.EXCHANGE_INFO[ex][0])
         for t in _BOND:
             consider(t, self.name(t), "Bond", "GBOND", None, None)
+        for t, (_, f) in _FACTOR.items():
+            ex = t.rpartition(".")[2]
+            consider(t, f.name, "ETF", ex, D.EXCHANGE_INFO[ex][1], D.EXCHANGE_INFO[ex][0])
+        for t, name in _CRYPTO_NAMES.items():
+            consider(t, name, "Currency", "CC", None, "USD")
         hits.sort(key=lambda x: (x[0], x[1].ticker))
         return [h for _, h in hits[:limit]]
 
@@ -850,13 +931,13 @@ class DemoProvider:
                 Quote(
                     ticker=t,
                     name=self.name(t),
-                    last=round(last, 5),
-                    change=round(change, 5),
+                    last=_px(last),
+                    change=_px(change),
                     change_pct=round(pct(last, prev) or 0.0, 4) if e["kind"] == "price" else None,
-                    open=round(e["o"][-1], 5),
-                    high=round(e["h"][-1], 5),
-                    low=round(e["l"][-1], 5),
-                    prev_close=round(prev, 5),
+                    open=_px(e["o"][-1]),
+                    high=_px(e["h"][-1]),
+                    low=_px(e["l"][-1]),
+                    prev_close=_px(prev),
                     volume=round(e["v"][-1]) if e["v"][-1] is not None else None,
                     timestamp=ts.isoformat().replace("+00:00", "Z"),
                     delayed=False,
@@ -868,7 +949,7 @@ class DemoProvider:
     async def history(self, ticker: str) -> History:
         self._require(ticker)
         e = self._effective(ticker)
-        r = lambda xs: [None if x is None else round(x, 5) for x in xs]
+        r = lambda xs: [None if x is None else _px(x) for x in xs]
         return History(
             ticker=ticker,
             currency=self.currency(ticker),
@@ -898,10 +979,10 @@ class DemoProvider:
             bars = [b for b in self._minute_bars(ticker, i) if b[0] + 60 <= cutoff] if minute else self._visible_bars(ticker, i)
             for ts, bo, bh, bl, bc, bv in bars:
                 out.t.append(ts)
-                out.o.append(round(bo, 5))
-                out.h.append(round(bh, 5))
-                out.l.append(round(bl, 5))
-                out.c.append(round(bc, 5))
+                out.o.append(_px(bo))
+                out.h.append(_px(bh))
+                out.l.append(_px(bl))
+                out.c.append(_px(bc))
                 out.v.append(round(bv) if series["v"][i] is not None else None)
         if interval == "1h":
             from ..services.intraday import aggregate

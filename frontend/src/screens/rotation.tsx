@@ -33,13 +33,15 @@ const PALETTE = ["#ffa028", "#66b8ff", "#29d17d", "#c77dff", "#ff5252", "#f2c200
 const pct = (x: number | null | undefined) => (isNum(x) ? `${x >= 0 ? "+" : "−"}${fmt(Math.abs(x * 100), 1)} %` : "–");
 const tone = (x: number | null | undefined) => (isNum(x) ? (x > 0.0005 ? "up" : x < -0.0005 ? "down" : "") : "");
 
+const ROW_LABEL: Record<Universe, string> = { sectors: "Sektor", sector: "Firma", countries: "Land", currencies: "Währung", crypto: "Coin", factors: "Faktor" };
+
 export function RRG(_: ScreenProps) {
   const ws = useWorkspace();
-  const [universe, setUniverse] = usePersistentState<Universe>("rrg.universe", "sectors", isOneOf(["sectors", "sector", "countries", "currencies"] as const));
+  const [universe, setUniverse] = usePersistentState<Universe>("rrg.universe", "sectors", isOneOf(["sectors", "sector", "countries", "currencies", "crypto", "factors"] as const));
   const [region, setRegion] = usePersistentState<"us" | "eu" | "all">("rrg.region", "us", isOneOf(["us", "eu", "all"] as const));
   const [sector, setSector] = usePersistentState<string>("rrg.sector", "Technology", (x): x is string => typeof x === "string" && SECTORS.includes(x));
   const [ccy, setCcy] = usePersistentState<"eur" | "local">("rrg.ccy", "eur", isOneOf(["eur", "local"] as const));
-  const [bench, setBench] = usePersistentState<"basket" | "eur">("rrg.bench", "basket", isOneOf(["basket", "eur"] as const));
+  const [bench, setBench] = usePersistentState<"basket" | "eur" | "btc">("rrg.bench", "basket", isOneOf(["basket", "eur", "btc"] as const));
   const [tailLen, setTailLen] = usePersistentState<string>("rrg.tail", "8", isOneOf(["4", "8", "12", "20"] as const));
   const [end, setEnd] = useState<number | null>(null); // Woche, bis zu der gezeigt wird (null = aktuell)
   const [playing, setPlaying] = useState(false);
@@ -113,6 +115,8 @@ export function RRG(_: ScreenProps) {
             { value: "sector", label: "Im Sektor" },
             { value: "countries", label: "Länder" },
             { value: "currencies", label: "Währungen" },
+            { value: "crypto", label: "Krypto" },
+            { value: "factors", label: "Faktoren" },
           ]}
           onChange={setUniverse}
         />
@@ -151,12 +155,34 @@ export function RRG(_: ScreenProps) {
         {universe === "currencies" && (
           <Seg
             label="Maßstab"
-            value={bench}
+            value={bench === "btc" ? "basket" : bench}
             options={[
               { value: "basket", label: "gegen Korb" },
               { value: "eur", label: "gegen Euro" },
             ]}
             onChange={setBench}
+          />
+        )}
+        {universe === "crypto" && (
+          <Seg
+            label="Maßstab"
+            value={bench === "eur" ? "basket" : bench}
+            options={[
+              { value: "basket", label: "gegen Korb" },
+              { value: "btc", label: "gegen Bitcoin" },
+            ]}
+            onChange={setBench}
+          />
+        )}
+        {universe === "factors" && (
+          <Seg
+            label="Region"
+            value={region === "eu" ? "eu" : "us"}
+            options={[
+              { value: "us", label: "USA" },
+              { value: "eu", label: "Europa" },
+            ]}
+            onChange={setRegion}
           />
         )}
         <label className="small muted" title="Wie viele Wochen der Schweif zurückreicht">
@@ -318,7 +344,7 @@ function RrgTable({ r, at, len, focus, onFocus, onOpen }: { r: RotationResult; a
       <table className="t" data-export-title="Stand je Mitglied">
         <thead>
           <tr>
-            <th>{r.universe === "sectors" ? "Sektor" : r.universe === "sector" ? "Firma" : r.universe === "countries" ? "Land" : "Währung"}</th>
+            <th>{ROW_LABEL[r.universe]}</th>
             <th>Feld</th>
             <th className="num" title="Trend der relativen Stärke (über 100: besser als der Maßstab)">Trend</th>
             <th className="num" title="Schwung (über 100: der Trend nimmt zu)">Schwung</th>

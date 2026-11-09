@@ -1,10 +1,11 @@
-// Relative Rotation (RRG): Sektoren, Firmen im Sektor, Länderindizes und Währungen gegen einen Maßstab.
+// Relative Rotation (RRG): Sektoren, Firmen im Sektor, Länderindizes, Währungen, Kryptowährungen und Faktoren
+// (Stil-ETFs) gegen einen Maßstab.
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { IS_STATIC, qs, request } from "./api";
 import { fmt } from "./format";
 
-export type Universe = "sectors" | "sector" | "countries" | "currencies";
+export type Universe = "sectors" | "sector" | "countries" | "currencies" | "crypto" | "factors";
 export type Quadrant = "fuehrend" | "schwaecher" | "nachzuegler" | "erholend";
 
 export interface RotMember {
@@ -50,7 +51,7 @@ export interface RotationParams {
   region: "us" | "eu" | "all";
   sector?: string;
   ccy: "eur" | "local";
-  bench: "basket" | "eur";
+  bench: "basket" | "eur" | "btc";
 }
 
 export const useRotation = (p: RotationParams) =>

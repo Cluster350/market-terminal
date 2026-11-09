@@ -126,6 +126,8 @@ class Terminal:
         self.realtime: Any = None  # RealtimeHub (Echtzeit-Kurse), von main.py gesetzt
         self.forecast: Any = None  # ForecastService (Prognose), von main.py gesetzt
         self.valuation: Any = None  # ValuationService (Bewertungstrend), von main.py gesetzt
+        self.crypto: Any = None  # CryptoService (CRYP), von main.py gesetzt
+        self.factors: Any = None  # FactorService (FCTR), von main.py gesetzt
 
     # --- Infrastruktur ----------------------------------------------------------
 

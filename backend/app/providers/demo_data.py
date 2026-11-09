@@ -300,3 +300,51 @@ INDUSTRY_DE: dict[str, str] = {
     "Utilities—Regulated Electric": "Stromversorger",
     "Utilities—Renewable": "Erneuerbare Energien",
 }
+
+# Kryptowährungen außer Bitcoin (der steht bei den Devisen). Echte Namen, synthetische Kurse:
+# Ticker -> (Kurs am Stichtag, Volatilität p. a., Beta zu Bitcoin, Trend p. a. gegenüber Bitcoin,
+#            umlaufende Menge, erster Handelstag)
+CRYPTO: dict[str, tuple[float, float, float, float, float, str]] = {
+    "ETH-USD.CC": (3400.0, 0.72, 1.15, 0.04, 120.7e6, "2016-01-04"),
+    "XRP-USD.CC": (2.2, 0.90, 0.95, 0.02, 59e9, "2016-01-04"),
+    "BNB-USD.CC": (690.0, 0.62, 0.85, 0.08, 141e6, "2017-07-25"),
+    "SOL-USD.CC": (190.0, 0.95, 1.30, 0.12, 480e6, "2020-04-10"),
+    "DOGE-USD.CC": (0.32, 1.00, 1.20, -0.04, 147e9, "2016-01-04"),
+    "ADA-USD.CC": (0.9, 0.90, 1.15, -0.10, 35e9, "2017-10-02"),
+    "TRX-USD.CC": (0.25, 0.68, 0.75, 0.04, 87e9, "2017-09-13"),
+    "AVAX-USD.CC": (36.0, 1.00, 1.30, -0.10, 410e6, "2020-09-22"),
+    "LINK-USD.CC": (21.0, 0.90, 1.20, 0.00, 638e6, "2017-09-20"),
+    "XLM-USD.CC": (0.42, 0.90, 0.95, -0.05, 30e9, "2016-01-04"),
+    "BCH-USD.CC": (430.0, 0.78, 1.05, -0.08, 19.8e6, "2017-08-01"),
+    "LTC-USD.CC": (105.0, 0.75, 1.00, -0.10, 75e6, "2016-01-04"),
+    "DOT-USD.CC": (6.8, 0.95, 1.20, -0.15, 1.53e9, "2020-08-20"),
+    "HBAR-USD.CC": (0.27, 1.00, 1.15, 0.00, 38e9, "2019-09-17"),
+    "XMR-USD.CC": (210.0, 0.70, 0.80, 0.02, 18.4e6, "2016-01-04"),
+    "ETC-USD.CC": (26.0, 0.85, 1.05, -0.12, 150e6, "2016-07-25"),
+    "ATOM-USD.CC": (6.5, 0.90, 1.15, -0.15, 390e6, "2019-03-14"),
+    "NEAR-USD.CC": (5.2, 1.00, 1.25, -0.05, 1.2e9, "2020-10-14"),
+    "SHIB-USD.CC": (0.000021, 1.05, 1.20, -0.05, 589e12, "2021-05-10"),
+}
+BTC_SUPPLY = 19.9e6
+
+# Faktor-ETFs (echte Namen, synthetische Kurse): Ticker -> (Index, Kurs am Stichtag)
+FACTOR_ETFS: dict[str, tuple[str, float]] = {
+    "SPY.US": ("GSPC.INDX", 590.0), "VLUE.US": ("GSPC.INDX", 115.0), "IWF.US": ("GSPC.INDX", 420.0),
+    "MTUM.US": ("GSPC.INDX", 230.0), "QUAL.US": ("GSPC.INDX", 185.0), "IWM.US": ("GSPC.INDX", 225.0),
+    "USMV.US": ("GSPC.INDX", 92.0), "VYM.US": ("GSPC.INDX", 135.0), "RSP.US": ("GSPC.INDX", 185.0),
+    "EXSA.XETRA": ("STOXX50E.INDX", 55.0), "IEFV.XETRA": ("STOXX50E.INDX", 9.4), "IEFM.XETRA": ("STOXX50E.INDX", 78.0),
+    "IEFQ.XETRA": ("STOXX50E.INDX", 68.0), "IEFS.XETRA": ("STOXX50E.INDX", 52.0), "IEMV.XETRA": ("STOXX50E.INDX", 64.0),
+}
+# Verhalten je Stil: (Beta zum Index, Ausschlag des eigenen Zyklus p. a., Zykluslänge in Jahren, Phase,
+# eigene Schwankung p. a.) – Zyklen, damit Stile sich abwechseln wie in der Wirklichkeit
+FACTOR_STYLE: dict[str, tuple[float, float, float, float, float]] = {
+    "market": (1.0, 0.0, 1.0, 0.0, 0.006),
+    "value": (0.95, 0.07, 3.6, 0.0, 0.055),
+    "growth": (1.12, 0.06, 3.6, 3.14, 0.045),
+    "momentum": (1.05, 0.08, 2.2, 1.2, 0.065),
+    "quality": (0.95, 0.035, 2.8, 2.2, 0.03),
+    "size": (1.18, 0.07, 3.0, 4.1, 0.075),
+    "lowvol": (0.72, 0.045, 2.6, 5.0, 0.04),
+    "dividend": (0.85, 0.045, 3.3, 0.6, 0.04),
+    "equal": (1.0, 0.04, 3.0, 3.9, 0.03),
+}

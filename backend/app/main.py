@@ -21,6 +21,8 @@ from .ai.service import AIService
 from .alerts.service import AlertService
 from .api.ai_routes import router as ai_router
 from .api.alert_routes import router as alert_router
+from .api.crypto_routes import router as crypto_router
+from .api.factor_routes import router as factor_router
 from .api.forecast_routes import router as forecast_router
 from .api.forward_routes import router as forward_router
 from .api.option_routes import router as option_router
@@ -31,6 +33,8 @@ from .api.rotation_routes import router as rotation_router
 from .api.valuation_routes import router as valuation_router
 from .cache import TTLCache
 from .config import Settings, settings
+from .crypto.service import CryptoService
+from .factors.service import FactorService
 from .errors import TerminalError
 from .forecast.service import ForecastService
 from .portfolio.store import PortfolioStore
@@ -143,7 +147,11 @@ def create_app(
         app.state.forecast.start()
         app.state.valuation = ValuationService(app.state.terminal, cfg.portfolio_dir, prov.mode)
         app.state.terminal.valuation = app.state.valuation
-        app.state.rotation = RotationService(app.state.terminal, app.state.valuation)
+        app.state.crypto = CryptoService(app.state.terminal)
+        app.state.factors = FactorService(app.state.terminal, cfg.portfolio_dir, prov.mode)
+        app.state.terminal.crypto = app.state.crypto
+        app.state.terminal.factors = app.state.factors
+        app.state.rotation = RotationService(app.state.terminal, app.state.valuation, app.state.factors)
         if valuation_auto:
             app.state.valuation.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
@@ -203,6 +211,8 @@ def create_app(
     app.include_router(forecast_router)
     app.include_router(valuation_router)
     app.include_router(rotation_router)
+    app.include_router(crypto_router)
+    app.include_router(factor_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

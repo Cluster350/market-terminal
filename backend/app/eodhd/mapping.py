@@ -760,3 +760,26 @@ def option_contracts(data: Any) -> list[OptionContract]:
             if c.iv is not None:
                 c.iv = c.iv / 100
     return out
+
+
+def crypto_stats(data: Any) -> dict[str, Any]:
+    """/fundamentals/{COIN}-USD.CC: {"Statistics": {"MarketCapitalization", "CirculatingSupply", "MaxSupply",
+    "MarketCapDominance", ...}} – Feldnamen ohne Rücksicht auf Groß-/Kleinschreibung, fehlende Felder bleiben leer."""
+    stats = data.get("Statistics") if isinstance(data, dict) else None
+    if not isinstance(stats, dict):
+        return {}
+    low = {str(k).lower(): v for k, v in stats.items()}
+
+    def pick(*names: str) -> Optional[float]:
+        for n in names:
+            v = num(low.get(n.lower()))
+            if v is not None and v > 0:
+                return v
+        return None
+
+    return {
+        "market_cap": pick("MarketCapitalization", "MarketCap"),
+        "circulating_supply": pick("CirculatingSupply"),
+        "max_supply": pick("MaxSupply"),
+        "dominance": pick("MarketCapDominance", "Dominance"),
+    }

@@ -459,6 +459,65 @@ async def _bewertung(t: Terminal, a: dict) -> dict:
     }
 
 
+async def _krypto(t: Terminal, a: dict) -> dict:
+    """Kryptoübersicht: größte Coins mit Entwicklung, Schwankung, Abstand zum Hoch, Marktanteil, Gleichlauf mit Aktien."""
+    cs = getattr(t, "crypto", None)
+    if cs is None:
+        return {"fehler": "Kryptoübersicht ist nicht verfügbar."}
+    ccy = "eur" if str(a.get("waehrung") or "").strip().lower() == "eur" else "usd"
+    o = await cs.overview(ccy)
+    name = str(a.get("name") or "").strip().lower()
+    # genauer Treffer zuerst („Ethereum“ ohne „Ethereum Classic“), sonst Teiltreffer, sonst die zehn größten
+    exact = [r for r in o.rows if name and name in (r.name.lower(), r.symbol.lower())]
+    rows = exact or [r for r in o.rows if name and name in r.name.lower()] or o.rows[:10]
+    return {
+        "waehrung": ccy.upper(), "marktkap_gezeigt": _r(o.total_cap, 0), "anteil_bitcoin_prozent": _r(o.btc_share, 1),
+        "anteil_bezug": "gesamter Kryptomarkt" if o.share_basis == "market" else "gezeigte Coins ohne Stablecoins",
+        "coins_ueber_200_tage_linie": f"{o.breadth_up} von {o.breadth_n}",
+        "coins": [
+            {"name": r.name, "kuerzel": r.symbol, "kurs": _r(r.last, 6), "tag_prozent": _r(r.chg_1d, 2), "7_tage_prozent": _r(r.chg_7d, 1),
+             "30_tage_prozent": _r(r.chg_30d, 1), "1_jahr_prozent": _r(r.chg_1y, 1), "schwankung_30t_prozent": _r(r.vol_30d, 0),
+             "abstand_hoch_prozent": _r(r.from_high, 1), "korrelation_bitcoin_90t": _r(r.corr_btc, 2), "ueber_200_tage_linie": r.above_200d,
+             "marktkap": _r(r.market_cap, 0), "anteil_prozent": _r(r.share, 2)}
+            for r in rows
+        ],
+        "korrelation_bitcoin_90_boersentage": {c.label: _r(c.v[-1], 2) for c in o.corr if c.v},
+        "hinweis": " ".join(o.notes),
+    }
+
+
+async def _faktoren(t: Terminal, a: dict) -> dict:
+    """Stil-Faktoren (Value, Wachstum, Momentum, Qualität, kleine Firmen, niedrige Schwankung …) gegenüber dem Markt,
+    optional die Faktorlast des eigenen Depots."""
+    fs = getattr(t, "factors", None)
+    if fs is None:
+        return {"fehler": "Faktoren sind nicht verfügbar."}
+    region = "eu" if str(a.get("region") or "").strip().lower() in ("eu", "europa") else "us"
+    o = await fs.overview(region)
+    out: dict = {
+        "region": o.label, "markt": f"{o.bench.label} ({display(o.bench.ticker)})",
+        "markt_entwicklung_prozent": {k: _r(v, 1) for k, v in o.bench.abs.items()},
+        "faktoren_gegenueber_markt_prozent": [
+            {"faktor": r.label, "etf": display(r.ticker), **{k: _r(v, 1) for k, v in r.rel.items()},
+             "trend_gegenueber_200_tage_schnitt_prozent": _r(r.rel_vs_avg, 1)}
+            for r in o.rows
+        ],
+        "hinweis": " ".join(o.notes),
+    }
+    if a.get("depot") and t.portfolio_source is not None:
+        try:
+            e = await fs.exposure(await t.portfolio_source(), "auto")
+            out["depot_faktorlast"] = {
+                "region": e.label, "wochen": e.weeks, "erklaert_prozent": None if e.r2 is None else round(e.r2 * 100),
+                "markt_beta": _r(e.market.beta if e.market else None, 2),
+                "stile": [{"faktor": f.label, "last": _r(f.beta, 2), "t_wert": _r(f.t, 1)} for f in e.factors],
+                "lesart": "Last 0,3 = wie zusätzlich 30 % in diesem Stil; |t| ab 2 deutlich, unter 1 Zufall möglich.",
+            }
+        except TerminalError as exc:
+            out["depot_faktorlast"] = {"fehler": exc.message}
+    return out
+
+
 def _obj(props: dict, required: tuple[str, ...] = ()) -> dict:
     return {"type": "object", "properties": props, "required": list(required)}
 
@@ -499,6 +558,13 @@ TOOLS: list[Tool] = [
          "Lage gegenüber dem 10-Jahres-Durchschnitt und wie sich die Gewinnschätzungen der Analysten in 90 Tagen verändert haben. "
          "art: 'sektor' oder 'land'; region (nur Sektoren): 'usa', 'europa' oder leer für beide; name optional, z. B. 'Technologie' oder 'Deutschland'.",
          _obj({"art": {"type": "string", "enum": ["sektor", "land"]}, "region": {"type": "string"}, "name": {"type": "string"}}), _bewertung),
+    Tool("krypto", "Kryptowährungen (Bitcoin, Ethereum und weitere Coins ohne Stablecoins): Kurs, Entwicklung 1 Tag bis 1 Jahr, Schwankung, "
+         "Abstand zum Hoch, Korrelation zu Bitcoin, Marktanteil, Gleichlauf von Bitcoin mit Nasdaq, S&P 500 und Gold. name optional (z. B. 'Ethereum'), waehrung 'usd' oder 'eur'.",
+         _obj({"name": {"type": "string"}, "waehrung": {"type": "string", "enum": ["usd", "eur"]}}), _krypto),
+    Tool("faktoren", "Anlagestile (Faktoren) gegenüber dem Markt, gemessen mit Stil-ETFs: Value, Wachstum, Momentum, Qualität, kleine Firmen, "
+         "niedrige Schwankung, Dividende, Gleichgewichtet – Entwicklung 1 Tag bis 5 Jahre relativ zum Markt und Trend. region 'usa' oder 'europa'; "
+         "depot=true ergänzt die Faktorlast des eigenen Depots (welchem Stil es folgt).",
+         _obj({"region": {"type": "string", "enum": ["usa", "europa"]}, "depot": {"type": "boolean"}}), _faktoren),
     Tool("alarme", "Kursalarme und Kursmarken des Nutzers mit Status, Abstand zum Kurs und zuletzt ausgelöste Alarme.", _obj({}), _alarme),
     Tool("depot", "Das eigene Depot des Nutzers: Wert, Ergebnis heute und seit Kauf, Positionen mit Gewicht und Risikoanteil, "
          "Volatilität, Beta, Drawdown, Value at Risk, Sektoren.", _obj({}), _depot),
@@ -534,6 +600,7 @@ def summarize(name: str, args: dict, result: dict) -> str:
         "earnings": "Quartalszahlen", "news": "Nachrichten", "kalender": "Wirtschaftskalender", "earnings_kalender": "Earnings-Kalender",
         "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot", "alarme": "Alarme", "optionen": "Optionen",
         "bewegungen": "Größte Bewegungen", "zinsen": "Zinskurve", "devisentermin": "Devisentermine", "prognose": "Prognose", "bewertung": "Bewertungstrend",
+        "krypto": "Kryptowährungen", "faktoren": "Faktoren",
     }.get(name, name)
     subject = result.get("ticker") or args.get("ticker") or args.get("text") or ""
     if isinstance(subject, str) and "." in subject:

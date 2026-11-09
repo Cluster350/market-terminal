@@ -3,7 +3,9 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
-import { Empty, ErrorState, Loading, Table, TickerLink, type Column } from "../components/ui";
+import { Empty, ErrorState, Loading, Seg, Table, TickerLink, type Column } from "../components/ui";
+import { loadingText, strength, usePortfolioFactors, type Loading as FactorLoading } from "../lib/factors";
+import { isOneOf, usePersistentState } from "../lib/persist";
 import { api, ApiError, IS_STATIC } from "../lib/api";
 import { normalizeTicker } from "../lib/commands";
 import { explain } from "../lib/glossary";
@@ -555,6 +557,95 @@ function CorrelationTable({ a }: { a: Analytics }) {
   );
 }
 
+/** Faktorlast: Regression der Wochenrenditen des Depots auf Markt und Stil-ETFs (siehe FCTR). */
+function FactorBox({ version }: { version: number | undefined }) {
+  const [region, setRegion] = usePersistentState<"auto" | "us" | "eu">("risk.factorRegion", "auto", isOneOf(["auto", "us", "eu"] as const));
+  const q = usePortfolioFactors(region, version, true);
+  const e = q.data;
+  const rows: FactorLoading[] = e ? [...(e.market ? [e.market] : []), ...e.factors] : [];
+  const bar = (b: number | null) => {
+    if (!isNum(b)) return null;
+    const w = Math.min(1, Math.abs(b)) * 50;
+    return <span style={{ left: b >= 0 ? "50%" : `${50 - w}%`, width: `${w}%`, background: b >= 0 ? "var(--up)" : "var(--down)" }} />;
+  };
+  return (
+    <div className="factor-box">
+      <div className="toolbar" style={{ padding: 0, border: 0 }}>
+        <span
+          className="section-title"
+          title="Wie stark das Depot einem Anlagestil folgt: Regression der Wochenrenditen (heutige Stückzahlen, drei Jahre) auf den Markt und die Überrenditen der Stil-ETFs aus FCTR."
+        >
+          Faktorlast – welchem Anlagestil folgt das Depot?
+        </span>
+        <Seg
+          label="Faktoren"
+          value={region}
+          options={[
+            { value: "auto", label: "Automatisch" },
+            { value: "us", label: "USA" },
+            { value: "eu", label: "Europa" },
+          ]}
+          onChange={setRegion}
+        />
+        {e && (
+          <span className="small muted">
+            {e.label}
+            {e.auto ? ` (US-Anteil ${fmt(e.usShare, 0)} %)` : ""} · {e.weeks} Wochen{e.start ? ` ab ${fmtDate(e.start)}` : ""}
+          </span>
+        )}
+      </div>
+      {q.isPending ? (
+        <Loading rows={3} />
+      ) : q.isError ? (
+        <div className="small muted">{q.error instanceof Error ? q.error.message : "Faktorlast nicht verfügbar."}</div>
+      ) : e ? (
+        <>
+          <table className="t" data-export-title={`Faktorlast des Depots (${e.label})`}>
+            <thead>
+              <tr>
+                <th>Faktor</th>
+                <th className="num" title="Markt: Beta. Stile: zusätzliche Neigung gegenüber dem Markt (0,3 = als hielte das Depot zusätzlich 30 % in diesem Stil).">Last</th>
+                <th>−1 · 0 · +1</th>
+                <th className="num" title="t-Wert: ab 2 deutlich, unter 1 kann es Zufall sein">t-Wert</th>
+                <th>Einschätzung</th>
+                <th className="col-opt1">ETF</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((l) => (
+                <tr key={l.key}>
+                  <td><b>{l.label}</b></td>
+                  <td className={`num ${l.key === "market" ? "" : tone(l.beta, 2)}`}>{isNum(l.beta) ? `${l.key !== "market" && l.beta > 0 ? "+" : ""}${fmt(l.beta, 2)}` : "–"}</td>
+                  <td data-csv=""><span className="factor-bar">{bar(l.key === "market" ? (l.beta ?? 0) - 1 : l.beta)}</span></td>
+                  <td className="num">{isNum(l.t) ? fmt(l.t, 1) : "–"}</td>
+                  <td className="small">
+                    {l.key === "market"
+                      ? isNum(l.beta)
+                        ? l.beta > 1.1
+                          ? "schwankt stärker als der Markt"
+                          : l.beta < 0.9
+                            ? "schwankt weniger als der Markt"
+                            : "schwankt etwa wie der Markt"
+                        : "–"
+                      : strength(l.t) === "kaum"
+                        ? <span className="muted">keine erkennbare Neigung</span>
+                        : loadingText(l).split(": ")[1]}
+                  </td>
+                  <td className="col-opt1 muted">{displayTicker(l.ticker)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="xs dim" style={{ marginTop: 4 }}>
+            Markt und Stile erklären {isNum(e.r2) ? `${fmt(e.r2 * 100, 0)} %` : "–"} der Wochenschwankung des Depots; der Rest kommt von den
+            einzelnen Werten. {e.notes.filter((n) => !n.startsWith("Regression")).join(" ")}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function RISK(_: ScreenProps) {
   const pq = usePortfolio();
   const p = pq.data;
@@ -665,6 +756,7 @@ export function RISK(_: ScreenProps) {
               <div className="section-title" title={explain("Korrelation")}>Korrelation der Tagesrenditen (größte Positionen)</div>
             </div>
             <CorrelationTable a={a} />
+            <FactorBox version={p.version} />
           </>
         )}
         <div className="notes">

@@ -6,7 +6,7 @@ import { countryCode } from "./intents";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG" | "CRYP" | "FCTR";
 
 export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "Depot" | "System";
 
@@ -35,6 +35,8 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "BRIEF", title: "Morgenbriefing", group: "KI", needsTicker: false, desc: "KI-Zusammenfassung: Märkte, Ihre Werte, Termine heute, Zinsen und Devisen – mit Quellen" },
   { code: "ASK", title: "KI-Assistent", group: "KI", needsTicker: false, desc: "Fragen an die KI; sie liest nur Terminal-Daten und zeigt, welche Daten sie genutzt hat" },
   { code: "RRG", title: "Relative Rotation", group: "Makro", needsTicker: false, desc: "Wer läuft besser als der Maßstab und nimmt das zu oder ab? Sektoren, Firmen im Sektor, Länderindizes und Währungen mit Schweifen der letzten Wochen" },
+  { code: "CRYP", title: "Kryptowährungen", group: "Makro", needsTicker: false, desc: "Bitcoin, Ethereum und weitere Coins: Entwicklung, Schwankung, Abstand zum Hoch, Marktanteile, Gleichlauf mit Aktien und Gold" },
+  { code: "FCTR", title: "Faktoren", group: "Makro", needsTicker: false, desc: "Value, Wachstum, Momentum, Qualität, kleine Firmen, niedrige Schwankung: wie die Stile gegenüber dem Markt laufen (USA, Europa)" },
   { code: "BWT", title: "Bewertungstrend", group: "Makro", needsTicker: false, desc: "KGVs von Sektoren und Ländern über die Jahre, Analystenschätzungen für dieses und nächstes Jahr und wie sich die Schätzungen verändern" },
   { code: "WMAP", title: "Weltkarte", group: "Makro", needsTicker: false, desc: "Länder eingefärbt nach Aktienmarkt, Zinsen oder Konjunktur, mit Rangliste" },
   { code: "FWD", title: "Terminkurse", group: "Makro", needsTicker: false, desc: "Devisen-Terminkurse, Kosten der Währungsabsicherung und eingepreiste künftige Zinsen (berechnet)" },
@@ -82,6 +84,10 @@ const ALIASES: Record<string, FnCode> = {
   OPTIONEN: "OMON", OPTIONS: "OMON", OPTION: "OMON", OPT: "OMON", OV: "OMON", OVDV: "OMON", KETTE: "OMON", OPTIONSKETTE: "OMON",
   MP: "TPO", MKTP: "TPO", MARKETPROFILE: "TPO", MARKTPROFIL: "TPO", VOLUMENPROFIL: "TPO", VOLUMEPROFILE: "TPO", VPRO: "TPO",
   ALARM: "ALRT", ALARME: "ALRT", ALERT: "ALRT", ALERTS: "ALRT", KURSALARM: "ALRT", MARKEN: "ALRT", KURSMARKEN: "ALRT",
+  KRYPTO: "CRYP", CRYPTO: "CRYP", KRYPTOS: "CRYP", KRYPTOWAEHRUNGEN: "CRYP", "KRYPTOWÄHRUNGEN": "CRYP", COINS: "CRYP",
+  BITCOIN: "CRYP", XBT: "CRYP", CRYPTOS: "CRYP",
+  FAKTOR: "FCTR", FAKTOREN: "FCTR", FACTOR: "FCTR", FACTORS: "FCTR", STIL: "FCTR", STILE: "FCTR", STYLE: "FCTR", STYLES: "FCTR",
+  SMARTBETA: "FCTR", VALUE: "FCTR", MOMENTUM: "FCTR", FCT: "FCTR",
   BRIEFING: "BRIEF", MORGEN: "BRIEF", MORGENBRIEFING: "BRIEF", MORNING: "BRIEF", BRIEFUNG: "BRIEF",
 };
 

@@ -283,6 +283,8 @@ dem Prinzip der Relative Rotation Graphs (Julius de Kempenaer), auf Wochenbasis.
 | **Im Sektor** | die Firmen eines Sektors | Sektorindex (Börsenwert-gewichtet) |
 | **Länder** | Leitindizes, **in Euro** oder in Landeswährung | Durchschnitt aller Länder |
 | **Währungen** | Dollar, Euro, Pfund, Yen, Franken, Renminbi, Austral-, Kanada-, Neuseeland-Dollar … | Währungskorb oder Euro |
+| **Krypto** | die 20 Coins aus CRYP | Korb aller Coins oder Bitcoin |
+| **Faktoren** | Stil-ETFs aus FCTR (USA oder Europa) | Markt-ETF der Region |
 
 - **Waagerecht: Trend** der relativen Stärke (über 100 = besser als der Maßstab), **senkrecht: Schwung**
   (über 100 = der Vorsprung wächst). Vier Felder: **führend** (oben rechts), **schwächer werdend** (unten rechts),
@@ -299,6 +301,59 @@ Rechnung: offene Näherung, nicht die geschützte Originalformel. Relative Stär
 geglättet); Trend = deren Abstand zu den letzten 20 Wochen, Schwung = Abstand des Trends zu seinen letzten 10
 Wochen (je als z-Wert um 100). Grenzen: nur relativ – „führend“ kann auch heißen „fällt weniger als der Markt“.
 Länder ohne Devisenkurs (in Euro) werden genannt und weggelassen. Sektoren brauchen die tägliche Berechnung von BWT.
+
+## Kryptowährungen (CRYP)
+
+`CRYP` (oder „Krypto“, „Bitcoin“) zeigt die 20 größten Kryptowährungen ohne Stablecoins, wahlweise in **Dollar
+oder Euro**:
+
+- **Tabelle:** Kurs, Veränderung Tag (seit 0 Uhr UTC), 7 und 30 Tage, seit Jahresbeginn, 1 Jahr, Schwankung
+  (30 Tage, auf ein Jahr hochgerechnet), Abstand zum Hoch, Gleichlauf mit Bitcoin (Korrelation 90 Tage), über
+  oder unter der 200-Tage-Linie, Marktkapitalisierung und Anteil. Klick auf einen Coin öffnet den Kurschart.
+- **Kopfzeile:** Marktkapitalisierung, Anteil von Bitcoin und Ethereum, **Breite** (wie viele Coins über ihrer
+  200-Tage-Linie stehen).
+- **Diagramme:** Bitcoin und Ethereum gegen Nasdaq 100, S&P 500 und Gold (Start = 100, ab 3 Jahren
+  logarithmisch) und der **Gleichlauf** von Bitcoin mit Aktien und Gold über die Zeit (Korrelation 90 Börsentage).
+
+Mit EODHD: Kurse aus den Krypto-Kursdaten (`BTC-USD.CC` …), umlaufende Menge und Marktanteil aus den
+Krypto-Fundamentaldaten (einmal täglich). Liefert die Quelle keinen Anteil am gesamten Kryptomarkt, bezieht sich
+der Anteil auf die gezeigten Coins (steht so in der Anzeige). Jeder Coin geht auch in GP, Watchlist, Alarmen und
+Depot, z. B. `ETH-USD Curncy`. Liste der Coins: `backend/app/crypto/universe.py`.
+
+## Faktoren (FCTR) und Faktorlast im Depot
+
+`FCTR` (oder „Faktoren“, „Stile“) zeigt, **welcher Anlagestil gerade läuft** – gemessen mit Stil-ETFs:
+
+| Faktor | USA | Europa |
+|---|---|---|
+| Markt (Maßstab) | SPY (S&P 500) | iShares STOXX Europe 600 |
+| Value (günstig bewertet) | VLUE | iShares Edge MSCI Europe Value |
+| Wachstum | IWF | – |
+| Momentum (Gewinner der letzten Monate) | MTUM | iShares Edge MSCI Europe Momentum |
+| Qualität | QUAL | iShares Edge MSCI Europe Quality |
+| Kleine Firmen | IWM (Russell 2000) | iShares Edge MSCI Europe Size |
+| Niedrige Schwankung | USMV | iShares Edge MSCI Europe Minimum Volatility |
+| Dividende | VYM | – |
+| Gleichgewichtet (Marktbreite) | RSP | – |
+
+- **Tabelle:** Entwicklung von 1 Tag bis 5 Jahre, **gegenüber dem Markt** (Faktor-ETF geteilt durch Markt-ETF)
+  oder absolut; Schwankung, Beta und **Trend** (läuft der Stil derzeit besser als im Schnitt der letzten 200 Tage?).
+- **Diagramm:** Faktor ÷ Markt (Start = 100): steigt die Linie, schlägt der Stil den Markt.
+- **Wie ähnlich laufen die Stile?** Korrelation der wöchentlichen Überrenditen der letzten drei Jahre
+  (z. B. Value und Wachstum laufen meist gegeneinander).
+- **RRG → Faktoren** zeigt dieselben Stile als Rotation (führend, schwächer werdend …).
+
+**Faktorlast im Depot (RISK, unten):** Wie stark folgt das eigene Depot einem Stil? Gerechnet wird eine Regression
+der Wochenrenditen der letzten drei Jahre (heutige Stückzahlen rückwirkend) auf den Markt und die Überrenditen der
+Stil-ETFs. **Last +0,3** heißt: Das Depot verhält sich, als hielte es zusätzlich 30 % in diesem Stil; negativ heißt
+das Gegenteil (z. B. bei „Kleine Firmen“ eher große Firmen). **t-Wert ab 2 = deutlich, unter 1 = kann Zufall
+sein.** Die Region wählt sich nach dem US-Anteil des Depots (umschaltbar). Der KI-Assistent ASK kann beides über
+die Werkzeuge „krypto“ und „faktoren“ abfragen.
+
+Grenzen: ETFs sind keine reinen Faktoren (sie enthalten auch Markt und Branchen); Kurse ohne Ausschüttungen, wenn
+die Quelle nur Schlusskurse liefert. Europa: Die Börsenkürzel der UCITS-ETFs werden im EODHD-Modus über die ISIN
+gesucht (Xetra in Euro bevorzugt) und in `faktor-kuerzel-eodhd.json` gemerkt; die Liste steht in
+`backend/app/factors/universe.py` und lässt sich dort anpassen.
 
 ## CSV-Export (für Excel)
 

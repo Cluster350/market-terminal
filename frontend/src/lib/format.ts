@@ -37,6 +37,8 @@ export function fmt(x: number | null | undefined, digits = 2): string {
 export function priceDigits(x: number, ticker?: string | null): number {
   const a = Math.abs(x);
   if (ticker && ticker.endsWith(".FOREX")) return a >= 20 ? 3 : 5;
+  // Kleinstkurse (z. B. Shiba Inu 0,0000213): vier gültige Stellen statt „0,0000“
+  if (a > 0 && a < 0.01) return Math.min(10, Math.ceil(-Math.log10(a)) + 3);
   return a >= 1 ? 2 : 4;
 }
 

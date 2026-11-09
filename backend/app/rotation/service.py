@@ -11,6 +11,8 @@ from ..errors import BadRequest, NotFound, TerminalError
 from ..models import Model
 from ..providers.base import WORLD
 from ..services.tickers import display
+from ..crypto.universe import COINS
+from ..factors.universe import FACTOR_HELP, REGIONS as FACTOR_REGIONS
 from ..valuation.service import SECTOR_DE, SECTORS, ValuationService
 from .calc import HISTORY_WEEKS, Series, backtest, heading, quadrant, rrg_lines, to_weekly
 
@@ -98,9 +100,10 @@ def _chain_mean(values: list[list[Optional[float]]], weights: Optional[list[floa
 
 
 class RotationService:
-    def __init__(self, terminal: Any, valuation: ValuationService):
+    def __init__(self, terminal: Any, valuation: ValuationService, factors: Any = None):
         self.t = terminal
         self.v = valuation
+        self.f = factors  # FactorService (Kürzel der europäischen Faktor-ETFs)
         self._cache: dict[tuple, tuple[float, RotationResult]] = {}
 
     async def rotation(self, universe: str, region: str = "us", sector: Optional[str] = None, ccy: str = "eur",
@@ -117,6 +120,10 @@ class RotationService:
             res = await self._countries(ccy)
         elif universe == "currencies":
             res = await self._currencies(bench)
+        elif universe == "crypto":
+            res = await self._crypto(bench)
+        elif universe == "factors":
+            res = await self._factors(region)
         else:
             raise BadRequest(f"Unbekannter Bereich „{universe}“.")
         if res.state == "ready":
@@ -288,3 +295,49 @@ class RotationService:
             for c in order
         ]
         return self._compute("currencies", "Währungen", bench_label, weeks, bench, series, skipped)
+
+    # --- Kryptowährungen ------------------------------------------------------------------
+
+    async def _crypto(self, bench_mode: str) -> RotationResult:
+        names = dict(COINS)
+        weekly = await self._weekly_histories(list(names))
+        weeks = self._weeks(list(weekly.values()))
+        aligned = _align(weekly, weeks)
+        skipped = [f"{names[t]} (keine Kurse)" for t in names if t not in aligned]
+        if bench_mode == "btc":
+            if "BTC-USD.CC" not in aligned:
+                raise NotFound("Keine Bitcoin-Kurse verfügbar.")
+            bench = aligned["BTC-USD.CC"]
+            members = [t for t in names if t in aligned and t != "BTC-USD.CC"]
+            bench_label = "Bitcoin"
+        else:
+            members = [t for t in names if t in aligned]
+            bench = _chain_mean([aligned[t] for t in members])
+            bench_label = "Korb aller gezeigten Coins (gleich gewichtet)"
+        series = [Series(key=t, label=names[t], ticker=t, values=aligned[t], extra={"detail": display(t)}) for t in members]
+        return self._compute("crypto", "Kryptowährungen", bench_label, weeks, bench, series, skipped)
+
+    # --- Faktoren (Stil-ETFs) ---------------------------------------------------------------
+
+    async def _factors(self, region: str) -> RotationResult:
+        reg = FACTOR_REGIONS.get("eu" if region == "eu" else "us")
+        assert reg is not None
+        if self.f is not None:
+            found, missing = await self.f.members(reg)  # gleiche Kürzelauflösung wie FCTR
+        else:
+            found, missing = [(f, f.ticker) for f in (reg.bench, *reg.factors)], []
+        tick = {f.key: t for f, t in found}
+        if "market" not in tick:
+            raise NotFound(f"Für {reg.label} fehlt der Markt-ETF.")
+        weekly = await self._weekly_histories(list(tick.values()))
+        weeks = self._weeks(list(weekly.values()))
+        aligned = _align(weekly, weeks)
+        if tick["market"] not in aligned:
+            raise NotFound(f"Keine Kurse für den Markt-ETF {reg.bench.name}.")
+        skipped = list(missing) + [f"{f.label} (keine Kurse)" for f, t in found if t not in aligned]
+        series = [
+            Series(key=f.key, label=f.label, ticker=tick[f.key], values=aligned[tick[f.key]],
+                   extra={"detail": f"{display(tick[f.key])} · {FACTOR_HELP.get(f.key, '')}"})
+            for f in reg.factors if f.key in tick and tick[f.key] in aligned
+        ]
+        return self._compute("factors", f"Faktoren · {reg.label}", reg.bench.label, weeks, aligned[tick["market"]], series, skipped)
