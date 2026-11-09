@@ -415,10 +415,10 @@ Auswahl **„Trend-Scan“** im Kurschart (Tages- und Intraday-Charts):
 
 | Einstellung | Was gezeigt wird |
 |---|---|
-| Rückblick 20 / 60 | welcher Trend auf jeden Balken **folgte** (5–19 bzw. 5–59 folgende Balken). Nutzt spätere Kurse, also nur zum Verstehen der Vergangenheit, **kein Signal**. Die letzten 19 bzw. 59 Balken sind noch offen (ohne Punkt). |
+| Rückblick 20 / 60 | welcher Trend auf jeden Balken **folgte** (5–19 bzw. 5–59 folgende Balken). Nutzt spätere Kurse, also nur zum Verstehen der Vergangenheit, **kein Signal**. Die letzten 19 bzw. 59 Balken sind noch offen (grauer Ring). |
 | laufend 20 / 60 | welcher Trend zu jedem Balken **hinführte** (5–19 bzw. 5–59 vorherige Balken). Nutzt nur frühere Kurse und gilt auch für heute. |
 
-**Darstellung wie im Buch: ein Punkt je Balken auf dem Schlusskurs.**
+**Darstellung wie im Buch: an jedem Balken ein Punkt auf dem Schlusskurs** (grauer Ring = noch kein Ergebnis).
 - **Farbe = Richtung:** grün aufwärts, rot abwärts.
 - **Größe = Stärke im Vergleich zum Zufall:** kleiner grauer Punkt = im Zufallsbereich, dann schwach,
   mittel, deutlich (stärker als 90 % der Zufallskurse), sehr deutlich (stärker als 99 %).

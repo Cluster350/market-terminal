@@ -95,7 +95,7 @@ export const SCAN_LABEL: Record<ScanMode, string> = {
 };
 
 const DOTS =
-  " Punkte auf dem Schlusskurs: grün aufwärts, rot abwärts; je größer, desto stärker im Vergleich zu reinem Zufall (kleiner grauer Punkt = im Zufallsbereich).";
+  " Punkte auf dem Schlusskurs: grün aufwärts, rot abwärts; je größer, desto stärker im Vergleich zu reinem Zufall (kleiner grauer Punkt = im Zufallsbereich, grauer Ring = noch offen).";
 
 export const SCAN_INFO: Record<ScanMode, string> = {
   off: "Trend-Scanning (López de Prado; mlfinlab von Hudson & Thames): Punkte auf dem Kurs nach dem gefundenen Trend.",
@@ -177,11 +177,11 @@ export function randomQuantile(q: number, window = 20, minLen = 5, step = 1): nu
 }
 
 /**
- * Darstellung als Punkt auf dem Schlusskurs: Farbe = Richtung (grün auf, rot ab), Größe = Stärke im Vergleich zum
- * Zufall. Stufe 0 (schwächer als ein typischer Zufallskurs) = kleiner grauer Punkt.
+ * Darstellung als Punkt auf dem Schlusskurs – an jedem Balken: Farbe = Richtung (grün auf, rot ab), Größe = Stärke im
+ * Vergleich zum Zufall. Stufe 0 (schwächer als ein typischer Zufallskurs) = kleiner grauer Punkt.
  */
 export const DOT_TIERS = [
-  { from: 0, radius: 1.5, alpha: 0.5, text: "im Zufallsbereich" },
+  { from: 0, radius: 2, alpha: 0.95, text: "im Zufallsbereich" },
   { from: 0.5, radius: 2.5, alpha: 0.6, text: "schwach" },
   { from: 0.75, radius: 3.5, alpha: 0.8, text: "mittel" },
   { from: 0.9, radius: 4.5, alpha: 0.95, text: "deutlich" },
@@ -196,7 +196,7 @@ export function dotTier(rank: number): number {
 }
 
 export function dotColor(t: number, tier: number): string {
-  if (tier <= 0) return "rgba(150,150,150,0.5)";
+  if (tier <= 0) return "rgba(150,150,150,0.95)";
   const a = DOT_TIERS[Math.min(tier, DOT_TIERS.length - 1)].alpha.toFixed(2);
   return t > 0 ? `rgba(41,209,125,${a})` : `rgba(255,82,82,${a})`;
 }
@@ -210,6 +210,12 @@ export const DOT_SERIES: { tier: number; up: boolean; radius: number; color: str
     ? [{ tier, up: true, radius: d.radius, color: dotColor(0, 0) }]
     : [true, false].map((up) => ({ tier, up, radius: d.radius, color: dotColor(up ? 1 : -1, tier) })),
 );
+
+/** Noch ohne Ergebnis (Rückblick: die letzten Balken; laufend: zu wenig Verlauf): grauer Ring statt Punkt. */
+export const OPEN_RING = [
+  { radius: 2.5, color: "rgba(150,150,150,0.8)" },
+  { radius: 1.2, color: "#0a0a0a" },
+] as const;
 
 /** Index in DOT_SERIES für einen t-Wert und seine Stufe. */
 export function dotSeriesIndex(t: number, tier: number): number {

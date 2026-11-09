@@ -40,7 +40,7 @@ import {
   type Oscillator,
   type Overlay,
 } from "../lib/ehlers";
-import { DOT_SERIES, DOT_TIERS, dotSeriesIndex, dotTier, randomRank, SCAN_INFO, SCAN_LABEL, SCAN_MODES, scanParams, trendScan, tscanLevels, type ScanMode } from "../lib/trendscan";
+import { DOT_SERIES, DOT_TIERS, dotSeriesIndex, dotTier, OPEN_RING, randomRank, SCAN_INFO, SCAN_LABEL, SCAN_MODES, scanParams, trendScan, tscanLevels, type ScanMode } from "../lib/trendscan";
 import { INTERVAL_LABEL, INTERVAL_SECONDS, INTERVALS, type Interval } from "../lib/intervals";
 import { retry, useEarnings, useHistory, useIntraday } from "../lib/queries";
 import { live, useLiveStatus } from "../lib/realtime";
@@ -567,6 +567,7 @@ export default function GP({ ticker }: ScreenProps) {
     ehl: ISeriesApi<"Line">[];
     scan: ISeriesApi<"Line">[];
     scanHalo: ISeriesApi<"Line">[];
+    scanOpen: ISeriesApi<"Line">[];
     cone: ISeriesApi<"Line">[];
     band: ISeriesApi<"Line">[];
   } | null>(null);
@@ -612,7 +613,7 @@ export default function GP({ ticker }: ScreenProps) {
       },
     });
     chartRef.current = chart;
-    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], scan: [], scanHalo: [], cone: [], band: [] };
+    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], scan: [], scanHalo: [], scanOpen: [], cone: [], band: [] };
     if (comparing) {
       for (let i = 0; i < compare.length + 1; i++) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
@@ -677,6 +678,13 @@ export default function GP({ ticker }: ScreenProps) {
             lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
           }));
         }
+        // noch offene Balken: grauer Ring (äußerer grauer Punkt, innen dunkel)
+        for (const d of OPEN_RING) {
+          refs.scanOpen.push(chart.addLineSeries({
+            color: d.color, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: d.radius,
+            lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+          }));
+        }
         for (const d of DOT_SERIES) {
           refs.scan.push(chart.addLineSeries({
             color: d.color, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: d.radius,
@@ -699,6 +707,7 @@ export default function GP({ ticker }: ScreenProps) {
         lastF = f;
         refs.scan.forEach((series, i) => series.applyOptions({ pointMarkersRadius: DOT_SERIES[i].radius * f }));
         refs.scanHalo.forEach((series, k) => series.applyOptions({ pointMarkersRadius: (DOT_TIERS[k + 1].radius + 1.5) * f }));
+        refs.scanOpen.forEach((series, k) => series.applyOptions({ pointMarkersRadius: OPEN_RING[k].radius * f }));
       };
       chart.timeScale().subscribeVisibleLogicalRangeChange(fitDots);
       syncers.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(fitDots));
@@ -826,11 +835,14 @@ export default function GP({ ticker }: ScreenProps) {
     s.ehl.forEach((ser, i) => ser.setData((ehlLines[i]?.data ?? []) as never));
     // ohne Ergebnis (Rand, „noch offen“) ganz blass grau, schwacher Trend ohne Farbe
     if (s.scan.length) {
+      // an jedem Balken eine Markierung: Punkt (Ergebnis) oder Ring (noch offen)
       const perSeries: { time: Time; value: number }[][] = DOT_SERIES.map(() => []);
+      const open: { time: Time; value: number }[] = [];
       for (const r of scanRows) {
-        if (r.t === null || r.rank === null) continue;
-        perSeries[dotSeriesIndex(r.t, dotTier(r.rank))].push({ time: r.time, value: r.close });
+        if (r.t === null || r.rank === null) open.push({ time: r.time, value: r.close });
+        else perSeries[dotSeriesIndex(r.t, dotTier(r.rank))].push({ time: r.time, value: r.close });
       }
+      s.scanOpen.forEach((series) => series.setData(open));
       s.scan.forEach((series, k) => series.setData(perSeries[k]));
       // Rand je Stufe: Punkte beider Richtungen, zeitlich sortiert
       s.scanHalo.forEach((series, k) =>
