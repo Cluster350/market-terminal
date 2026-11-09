@@ -216,7 +216,7 @@ def unverified_numbers(answer: str, results: list[dict], question: str = "") -> 
 
 def suggestions_from(trace: list[ToolTrace]) -> list[Suggestion]:
     """Passende Terminal-Funktionen zu den abgefragten Daten (öffnen erst per Klick)."""
-    fn_for = {"kurs": "GP", "wertentwicklung": "GP", "kennzahlen": "DES", "finanzen": "FA", "earnings": "ERN", "news": "CN", "peers": "RV", "kalender": "ECO", "earnings_kalender": "EVTS", "maerkte": "WEI", "screener": "EQS", "depot": "PORT", "alarme": "ALRT", "optionen": "OMON", "bewegungen": "MOST", "zinsen": "GC", "devisentermin": "FWD"}
+    fn_for = {"kurs": "GP", "wertentwicklung": "GP", "kennzahlen": "DES", "finanzen": "FA", "earnings": "ERN", "news": "CN", "peers": "RV", "kalender": "ECO", "earnings_kalender": "EVTS", "maerkte": "WEI", "screener": "EQS", "depot": "PORT", "alarme": "ALRT", "optionen": "OMON", "bewegungen": "MOST", "zinsen": "GC", "devisentermin": "FWD", "innerer_wert": "DCF"}
     out: list[Suggestion] = []
     seen: set[tuple[Optional[str], Optional[str]]] = set()
     for t in trace:

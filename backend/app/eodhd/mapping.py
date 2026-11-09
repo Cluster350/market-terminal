@@ -307,6 +307,8 @@ BALANCE_ROWS = [
 ]
 CASHFLOW_ROWS = [
     ("totalCashFromOperatingActivities", "Operativer Cashflow", True, ()),
+    ("depreciation", "Abschreibungen", False, ("depreciationAndAmortization",)),
+    ("stockBasedCompensation", "Aktienbasierte Vergütung", False, ()),
     ("capitalExpenditures", "Investitionen (Capex)", False, ()),
     ("freeCashFlow", "Free Cashflow", True, ()),
     ("totalCashflowsFromInvestingActivities", "Cashflow aus Investitionen", False, ()),

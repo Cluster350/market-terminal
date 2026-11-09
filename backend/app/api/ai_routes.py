@@ -6,6 +6,8 @@ from fastapi import APIRouter, Request
 
 from ..ai.models import AiStatus, AskRequest, AskResult, Brief, BriefRequest, NewsInsightResult, NewsRequest
 from ..ai.service import AIService
+from ..ai.valuation_coach import CoachRequest, CoachResult
+from ..services.tickers import normalize
 from .portfolio_routes import current_portfolio
 
 router = APIRouter(prefix="/api/ai")
@@ -38,3 +40,9 @@ async def brief(request: Request, body: BriefRequest):
 @router.post("/ask", response_model=AskResult)
 async def ask(request: Request, body: AskRequest):
     return await AI(request).ask(body)
+
+
+@router.post("/valuation/{ticker}", response_model=CoachResult)
+async def valuation_coach(request: Request, ticker: str, body: CoachRequest):
+    """„Damodaran (KI-Persona)“ zur Bewertung in DCF – nur lesend, Hebel werden nur vorgeschlagen."""
+    return await AI(request).valuation(request.app.state.intrinsic, normalize(ticker), body)

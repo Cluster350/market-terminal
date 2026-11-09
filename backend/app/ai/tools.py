@@ -465,6 +465,25 @@ async def _bewertung(t: Terminal, a: dict) -> dict:
     }
 
 
+async def _innerer_wert(t: Terminal, a: dict) -> dict:
+    """Innerer Wert je Aktie nach Damodarans Methode (Funktion DCF) mit den Startwerten der Story-Hebel."""
+    svc = getattr(t, "intrinsic", None)
+    if svc is None:
+        return {"fehler": "Die Bewertung (DCF) ist nicht verfügbar."}
+    from .valuation_coach import dossier
+
+    ticker = await resolve_ticker(t, a.get("ticker"))
+    res = await svc.value(ticker, simulate=True)
+    if res.state != "ok":
+        return {"hinweis": res.message or "Für diesen Wert gibt es keine Bewertung."}
+    d = dossier(res)
+    d.pop("historie", None)
+    d.pop("bereinigung_mrd", None)
+    d["hinweis_methode"] = ("Gerechnet vom Rechenkern (FCFF-DCF, F&E aktiviert, Kapitalkosten aus Branchenbeta). "
+                            "Startwerte der Story-Hebel – in DCF änderbar. Keine Anlageberatung.")
+    return d
+
+
 async def _krypto(t: Terminal, a: dict) -> dict:
     """Kryptoübersicht: größte Coins mit Entwicklung, Schwankung, Abstand zum Hoch, Marktanteil, Gleichlauf mit Aktien."""
     cs = getattr(t, "crypto", None)
@@ -564,6 +583,10 @@ TOOLS: list[Tool] = [
          "Lage gegenüber dem 10-Jahres-Durchschnitt und wie sich die Gewinnschätzungen der Analysten in 90 Tagen verändert haben. "
          "art: 'sektor' oder 'land'; region (nur Sektoren): 'usa', 'europa' oder leer für beide; name optional, z. B. 'Technologie' oder 'Deutschland'.",
          _obj({"art": {"type": "string", "enum": ["sektor", "land"]}, "region": {"type": "string"}, "name": {"type": "string"}}), _bewertung),
+    Tool("innerer_wert", "Innerer Wert je Aktie nach Aswath Damodarans Methode (DCF auf den freien Cashflow): Wert gegen Kurs, Bandbreite "
+         "(P10–P90), Kapitalkosten-Aufbau, Story-Hebel (Wachstum, Zielmarge, Reinvestition), Wachstumsqualität (Rendite auf neues "
+         "Kapital gegen Kapitalkosten), Rückwärts-DCF (welches Wachstum der Kurs unterstellt) und Lebenszyklus. Nicht für Banken und Versicherungen.",
+         _obj({"ticker": TICKER}, ("ticker",)), _innerer_wert),
     Tool("krypto", "Kryptowährungen (Bitcoin, Ethereum und weitere Coins ohne Stablecoins): Kurs, Entwicklung 1 Tag bis 1 Jahr, Schwankung, "
          "Abstand zum Hoch, Korrelation zu Bitcoin, Marktanteil, Gleichlauf von Bitcoin mit Nasdaq, S&P 500 und Gold. name optional (z. B. 'Ethereum'), waehrung 'usd' oder 'eur'.",
          _obj({"name": {"type": "string"}, "waehrung": {"type": "string", "enum": ["usd", "eur"]}}), _krypto),
@@ -606,7 +629,7 @@ def summarize(name: str, args: dict, result: dict) -> str:
         "earnings": "Quartalszahlen", "news": "Nachrichten", "kalender": "Wirtschaftskalender", "earnings_kalender": "Earnings-Kalender",
         "peers": "Peer-Vergleich", "maerkte": "Marktüberblick", "screener": "Screener", "suche": "Suche", "depot": "Depot", "alarme": "Alarme", "optionen": "Optionen",
         "bewegungen": "Größte Bewegungen", "zinsen": "Zinskurve", "devisentermin": "Devisentermine", "prognose": "Prognose", "bewertung": "Bewertungstrend",
-        "krypto": "Kryptowährungen", "faktoren": "Faktoren",
+        "krypto": "Kryptowährungen", "faktoren": "Faktoren", "innerer_wert": "Innerer Wert (DCF)",
     }.get(name, name)
     subject = result.get("ticker") or args.get("ticker") or args.get("text") or ""
     if isinstance(subject, str) and "." in subject:

@@ -1300,8 +1300,11 @@ class DemoProvider:
             cfo = inc["netIncome"] + inc["_da"] + inc["totalRevenue"] * r.gauss(0.01, 0.015)
             capex = inc["totalRevenue"] * capex_share
             buyback = -max(inc["netIncome"], 0) * r.uniform(0.0, 0.35)
+            # Aktienvergütung: in der Technologie deutlich höher (feste Anteile, ändert keine Zufallsfolge)
+            sbc = inc["totalRevenue"] * (0.035 if sector == "Technology" else 0.012 if sector == "Healthcare" else 0.006)
             return {
-                "totalCashFromOperatingActivities": cfo, "capitalExpenditures": capex,
+                "totalCashFromOperatingActivities": cfo, "depreciation": inc["_da"], "stockBasedCompensation": sbc,
+                "capitalExpenditures": capex,
                 "freeCashFlow": cfo - capex, "totalCashflowsFromInvestingActivities": -capex * r.uniform(1.0, 1.4),
                 "totalCashFromFinancingActivities": -divs + buyback + inc["totalRevenue"] * r.gauss(0, 0.02),
                 "dividendsPaid": -divs, "salePurchaseOfStock": buyback,

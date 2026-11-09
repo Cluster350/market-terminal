@@ -12,7 +12,7 @@ from typing import Optional
 import httpx
 
 from ..config import Settings
-from ..errors import TerminalError
+from ..errors import BadRequest, TerminalError
 from ..services.terminal import Terminal
 from ..services.tickers import normalize
 from . import demo
@@ -201,6 +201,25 @@ class AIService:
             return result
 
     # --- Fragen ---------------------------------------------------------------
+
+    async def valuation(self, intrinsic, ticker: str, req):
+        """„Damodaran (KI-Persona)“: Bewertung einordnen, Story in Hebel übersetzen, Rückfragen beantworten."""
+        from . import valuation_coach
+
+        engine = await self._require()
+        res = await intrinsic.value(ticker, req.levers, simulate=True)
+        if res.state != "ok":
+            raise BadRequest(res.message or "Für diesen Wert gibt es keine Bewertung.")
+        if engine == "demo" or self.client is None:
+            return await valuation_coach.demo(intrinsic, ticker, req, res)
+        self._foreground += 1
+        try:
+            return await valuation_coach.run(self.client, intrinsic, ticker, req, res, valuation_coach.dossier(res))
+        except AIUnavailable:
+            self._mark_offline()
+            raise
+        finally:
+            self._foreground -= 1
 
     async def ask(self, req: AskRequest) -> AskResult:
         engine = await self._require()

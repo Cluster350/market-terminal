@@ -25,6 +25,8 @@ from .api.crypto_routes import router as crypto_router
 from .api.factor_routes import router as factor_router
 from .api.forecast_routes import router as forecast_router
 from .api.forward_routes import router as forward_router
+from .api.intrinsic_routes import router as intrinsic_router
+from .intrinsic.service import IntrinsicService
 from .api.option_routes import router as option_router
 from .api.portfolio_routes import current_portfolio, router as portfolio_router
 from .api.routes import router
@@ -152,6 +154,9 @@ def create_app(
         app.state.terminal.crypto = app.state.crypto
         app.state.terminal.factors = app.state.factors
         app.state.rotation = RotationService(app.state.terminal, app.state.valuation, app.state.factors)
+        app.state.intrinsic = IntrinsicService(app.state.terminal, cfg.portfolio_dir)
+        app.state.intrinsic.start(prov.mode)
+        app.state.terminal.intrinsic = app.state.intrinsic
         if valuation_auto:
             app.state.valuation.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
@@ -213,6 +218,7 @@ def create_app(
     app.include_router(rotation_router)
     app.include_router(crypto_router)
     app.include_router(factor_router)
+    app.include_router(intrinsic_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

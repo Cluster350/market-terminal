@@ -127,6 +127,7 @@ class Terminal:
         self.forecast: Any = None  # ForecastService (Prognose), von main.py gesetzt
         self.valuation: Any = None  # ValuationService (Bewertungstrend), von main.py gesetzt
         self.crypto: Any = None  # CryptoService (CRYP), von main.py gesetzt
+        self.intrinsic: Any = None  # IntrinsicService (DCF), von main.py gesetzt
         self.factors: Any = None  # FactorService (FCTR), von main.py gesetzt
 
     # --- Infrastruktur ----------------------------------------------------------

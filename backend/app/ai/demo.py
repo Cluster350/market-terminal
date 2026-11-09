@@ -324,6 +324,7 @@ _ABOUT_SECURITY = re.compile(r"aktie|\bwert\b|papier|titel|kurs|bewert|kgv|news|
 _CAL = re.compile(r"termin|kalender|konjunktur|notenbank|\bfed\b|\bezb\b|zinsentscheid|inflation|arbeitsmarkt")
 _MARKETS = re.compile(r"märkte|marktüberblick|indizes|wie läuft der markt|wie laufen die märkte|börse heute")
 _ALERTS = re.compile(r"alarm|kursmarke|marken\b|benachrichtig")
+_INTRINSIC = re.compile(r"innere[rnm]? wert|\bdcf\b|damodaran|fair value|fairer wert|unterbewertet|überbewertet|was ist .{1,40} wert\b")
 _DEPOT = re.compile(r"depot|portfolio|meine positionen|meine werte|mein risiko|klumpenrisiko")
 _EARN_CAL = re.compile(r"(wer|welche).*(quartalszahlen|berichtet|earnings)|earnings.?kalender|berichtssaison")
 _MOVERS = re.compile(r"bewegen sich|am stärksten|größten? (gewinner|verlierer|bewegung)|top.?(gewinner|verlierer)|tagesgewinner|tagesverlierer|movers")
@@ -408,6 +409,25 @@ async def ask(t: Terminal, req: AskRequest) -> AskResult:
                 lines.append(f"- {p['zeit'][:10]}: {de(p['median'], 1)}{unit} (80-%-Band {de(lo, 1)} bis {de(hi, 1)})")
             lines.append(f"- {res['urteil']}")
             lines.append("- Nur aus dem bisherigen Verlauf gerechnet, ohne Wissen über Politik oder Ereignisse – keine Empfehlung.")
+    elif _INTRINSIC.search(q):
+        ticker = await _find_ticker(t, req.question, req.ticker) or req.ticker
+        res = await call("innerer_wert", {"ticker": ticker}) if ticker else {"fehler": "Für welches Wertpapier? Bitte Kürzel nennen, z. B. QBIT US."}
+        if "wert_je_aktie" not in res:
+            lines.append(res.get("fehler") or res.get("hinweis") or "Keine Bewertung verfügbar.")
+        else:
+            cur = res.get("waehrung") or ""
+            lines.append(f"{res['firma']}: innerer Wert {de(res['wert_je_aktie'], 2)} {cur} je Aktie gegen einen Kurs von "
+                         f"{de(res['kurs'], 2)} {cur} ({pct(res['wert_zu_kurs_pct'])}) – Methode nach Damodaran (DCF).")
+            b = res.get("bandbreite_je_aktie") or {}
+            if b.get("p10") is not None:
+                lines.append(f"- Bandbreite (P10 bis P90): {de(b['p10'], 2)} bis {de(b['p90'], 2)} {cur}.")
+            rv = res.get("rueckwaerts_dcf") or {}
+            if rv.get("umsatzwachstum_pa_jahre_1_bis_5_pct") is not None:
+                lines.append(f"- Der Kurs unterstellt rund {de(rv['umsatzwachstum_pa_jahre_1_bis_5_pct'], 1)} % Umsatzwachstum pro Jahr in den Jahren 1–5.")
+            wq = res.get("wachstumsqualitaet") or {}
+            if wq.get("urteil"):
+                lines.append(f"- {wq['urteil']}")
+            lines.append("- Story-Hebel, Bandbreite und die KI-Persona „Damodaran“ in DCF. Keine Anlageberatung.")
     elif _ALERTS.search(q):
         res = await call("alarme", {})
         rows = res.get("alarme") or []
