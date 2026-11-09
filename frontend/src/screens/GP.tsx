@@ -458,6 +458,8 @@ export default function GP({ ticker }: ScreenProps) {
 
   const { bars, maLines, base, prevDay, bands, oscLines, ehlLines, scanRows } = view;
   const scanOn = scan !== "off" && !comparing;
+  // Beim Trend-Scan zeigt der Chart den Kurs nur als Punkte (wie im Buch) – keine Kerzen, keine Linie
+  const drawKind: Kind | "dots" = scanOn ? "dots" : kind;
 
   // Vergleich: Wertentwicklung in % ab Periodenbeginn, je Serie auf ihren Schluss vor dem Start normiert
   const compareLines = useMemo(() => {
@@ -619,7 +621,10 @@ export default function GP({ ticker }: ScreenProps) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
       }
     } else {
-      if (kind === "candle") {
+      if (drawKind === "dots") {
+        // unsichtbare Kurslinie: trägt Fadenkreuz, Kursmarke, Ereignisse (E) und Alarme – gezeichnet werden nur die Punkte
+        refs.main = chart.addLineSeries({ color: "#ececec", lineVisible: false, priceLineColor: "#ffa028", crosshairMarkerBorderColor: "#0a0a0a" });
+      } else if (kind === "candle") {
         refs.main = chart.addCandlestickSeries({
           upColor: "#29d17d", downColor: "#ff5252", borderUpColor: "#29d17d", borderDownColor: "#ff5252",
           wickUpColor: "#29d17d", wickDownColor: "#ff5252", priceLineColor: "#ffa028",
@@ -671,7 +676,7 @@ export default function GP({ ticker }: ScreenProps) {
       if (scanOn) {
         // Trend-Scan als Punkte auf dem Schlusskurs (wie im Buch von López de Prado): Farbe = Richtung, Größe = Stärke
         // im Vergleich zum Zufall – je Stufe und Richtung eine Reihe ohne Linie, zuletzt angelegt, damit sie über den Kerzen liegt
-        // dunkler Rand unter den farbigen Punkten (Stufe 1–4), damit grüne Punkte auf grünen Kerzen sichtbar bleiben
+        // dunkler Rand unter den farbigen Punkten (Stufe 1–4), damit eng liegende Punkte unterscheidbar bleiben
         for (const d of DOT_TIERS.slice(1)) {
           refs.scanHalo.push(chart.addLineSeries({
             color: "#0a0a0a", lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: d.radius + 1.5,
@@ -774,7 +779,7 @@ export default function GP({ ticker }: ScreenProps) {
       seriesRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasData, kind, intradayRange, isYield, maKey, boll, osc, ehlers, scanOn, cmpKey, showVwap, coneOn, bandOn]);
+  }, [hasData, kind, drawKind, intradayRange, isYield, maKey, boll, osc, ehlers, scanOn, cmpKey, showVwap, coneOn, bandOn]);
 
   useEffect(() => {
     const s = seriesRef.current;
@@ -785,7 +790,7 @@ export default function GP({ ticker }: ScreenProps) {
       // Achsenschritte passend zum Instrument (EUR/USD in Pips statt 0,01)
       const digits = isYield ? 3 : priceDigits(bars[bars.length - 1].close, ticker);
       s.main.applyOptions({ priceFormat: { type: "price", precision: digits, minMove: 10 ** -digits } });
-      if (kind === "candle") {
+      if (drawKind === "candle") {
         (s.main as ISeriesApi<"Candlestick">).setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
       } else {
         (s.main as ISeriesApi<"Line">).setData(bars.map((b) => ({ time: b.time, value: b.close })));
@@ -861,7 +866,7 @@ export default function GP({ ticker }: ScreenProps) {
       rsiChartRef.current?.timeScale().fitContent();
       fitKey.current = key;
     }
-  }, [bars, maLines, bands, oscLines, ehlLines, scanRows, compareLines, comparing, kind, range, ticker, maKey, cmpKey, osc, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen, shownBands]);
+  }, [bars, maLines, bands, oscLines, ehlLines, scanRows, compareLines, comparing, kind, drawKind, range, ticker, maKey, cmpKey, osc, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen, shownBands]);
 
   // Laufende Kerze: Ticks des Echtzeit-Stroms (US-Werte, Devisen, Krypto) bzw. verzögerte Kurse
   // (übrige Börsen) schreiben die letzte Kerze fort, ohne den ganzen Chart neu zu zeichnen
@@ -897,7 +902,7 @@ export default function GP({ ticker }: ScreenProps) {
         }
         liveBar.current = bar;
         try {
-          if (kind === "candle") (s.main as ISeriesApi<"Candlestick">).update({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close });
+          if (drawKind === "candle") (s.main as ISeriesApi<"Candlestick">).update({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close });
           else (s.main as ISeriesApi<"Line">).update({ time: bar.time, value: bar.close });
           if (s.vol && isNum(bar.volume)) {
             s.vol.update({ time: bar.time, value: bar.volume, color: bar.close >= bar.open ? "rgba(41,209,125,0.35)" : "rgba(255,82,82,0.35)" });
@@ -911,7 +916,7 @@ export default function GP({ ticker }: ScreenProps) {
       off();
       release();
     };
-  }, [ticker, interval, intradayRange, kind, comparing, chartGen]);
+  }, [ticker, interval, intradayRange, kind, drawKind, comparing, chartGen]);
 
   // Volumenprofil des gezeigten Zeitraums (1T/5T aus 5-Minuten-Kerzen, sonst aus Tageskerzen geschätzt)
   const vp = useMemo(
@@ -1195,7 +1200,12 @@ export default function GP({ ticker }: ScreenProps) {
           </span>
         )}
         <span className="sep" />
-        {!comparing && (
+        {!comparing && scanOn && (
+          <span className="small dim" title="Beim Trend-Scan zeigt der Chart den Kurs nur als Punkte (wie im Buch von López de Prado). Trend-Scan auf „aus“ stellen, um wieder Kerzen, Linie oder Fläche zu sehen.">
+            Darstellung: Punkte
+          </span>
+        )}
+        {!comparing && !scanOn && (
           <Seg
             label="Darstellung"
             value={kind}

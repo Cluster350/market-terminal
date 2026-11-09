@@ -419,6 +419,9 @@ Auswahl **„Trend-Scan“** im Kurschart (Tages- und Intraday-Charts):
 | laufend 20 / 60 | welcher Trend zu jedem Balken **hinführte** (5–19 bzw. 5–59 vorherige Balken). Nutzt nur frühere Kurse und gilt auch für heute. |
 
 **Darstellung wie im Buch: an jedem Balken ein Punkt auf dem Schlusskurs** (grauer Ring = noch kein Ergebnis).
+Solange der Trend-Scan an ist, zeichnet der Chart den Kurs **nur als Punkte**, ohne Kerzen und ohne Linie. In der
+Leiste steht dann „Darstellung: Punkte“. Stellt man den Trend-Scan auf „aus“, kommt die vorher gewählte Darstellung
+(Kerzen, Linie oder Fläche) zurück. Durchschnitte, Ehlers-Linie, Volumen, Ereignisse und Alarme bleiben sichtbar.
 - **Farbe = Richtung:** grün aufwärts, rot abwärts.
 - **Größe = Stärke im Vergleich zum Zufall:** kleiner grauer Punkt = im Zufallsbereich, dann schwach,
   mittel, deutlich (stärker als 90 % der Zufallskurse), sehr deutlich (stärker als 99 %).
