@@ -415,22 +415,39 @@ Auswahl **„Trend-Scan“** im Kurschart (Tages- und Intraday-Charts):
 
 | Einstellung | Was gezeigt wird |
 |---|---|
-| Rückblick 20 / 60 | welcher Trend auf jeden Balken **folgte** (5–19 bzw. 5–59 folgende Balken). Nutzt spätere Kurse, also nur zum Verstehen der Vergangenheit, **kein Signal**. Die letzten 19 bzw. 59 Balken sind noch offen (grauer Ring). |
-| laufend 20 / 60 | welcher Trend zu jedem Balken **hinführte** (5–19 bzw. 5–59 vorherige Balken). Nutzt nur frühere Kurse und gilt auch für heute. |
+| Rückblick 20 / 60 | welcher Trend auf jeden Balken **folgte** (5–19 bzw. 5–59 folgende Balken). Nutzt spätere Kurse und zeigt deshalb Hochs und Tiefs im Nachhinein perfekt – nur zum Verstehen der Vergangenheit, **kein Signal**. **Hohle Punkte**, oranger Warnhinweis, wird nach dem Neuladen nicht wieder eingestellt. Die letzten 19 bzw. 59 Balken sind noch offen. |
+| laufend 20 / 60 | welcher Trend zu jedem Balken **hinführte** (5–19 bzw. 5–59 vorherige Balken). Nutzt nur frühere Kurse. Beschreibt den bisherigen Verlauf, **keine Prognose**; wechselt erst einige Balken nach einem Wendepunkt die Farbe. |
 
-**Darstellung wie im Buch: an jedem Balken ein Punkt auf dem Schlusskurs** (grauer Ring = noch kein Ergebnis).
-Solange der Trend-Scan an ist, zeichnet der Chart den Kurs **nur als Punkte**, ohne Kerzen und ohne Linie. In der
-Leiste steht dann „Darstellung: Punkte“. Stellt man den Trend-Scan auf „aus“, kommt die vorher gewählte Darstellung
-(Kerzen, Linie oder Fläche) zurück. Durchschnitte, Ehlers-Linie, Volumen, Ereignisse und Alarme bleiben sichtbar.
-- **Farbe = Richtung:** grün aufwärts, rot abwärts.
-- **Größe = Stärke im Vergleich zum Zufall:** kleiner grauer Punkt = im Zufallsbereich, dann schwach,
-  mittel, deutlich (stärker als 90 % der Zufallskurse), sehr deutlich (stärker als 99 %).
-- Die Punktgröße folgt dem Zoom, damit in langen Ansichten (5J, MAX) die Kerzen sichtbar bleiben.
-- Über dem Chart steht für den Balken unter dem Fadenkreuz zum Beispiel „Trend bisher ▲ 15 Balken seit 20.10.
-  · t +15,5 · deutlich, stärker als 95 % Zufall · +18,1 %“ (bzw. „Trend danach … bis …“).
-- Im **Unterfenster** gibt es zusätzlich „Trend-Scan t-Wert (laufend 20)“ als Linie. Die Hilfslinien liegen beim
-  typischen Zufallskurs (grau) und bei „stärker als 90 % Zufall“ (grün/rot).
-- Der CSV-Export enthält t-Wert, „stärker als Zufall [%]“, gewählte Länge, Veränderung und das andere Trendende.
+**Darstellung wie im Buch: an jedem Balken ein Punkt auf dem Schlusskurs.** Solange der Trend-Scan an ist, zeichnet
+der Chart den Kurs **nur als Punkte**, ohne Kerzen und ohne Linie („Darstellung: Punkte“). Stellt man ihn auf „aus“,
+kommt die vorher gewählte Darstellung zurück. Durchschnitte, Ehlers-Linie, Volumen und Alarme bleiben sichtbar;
+Quartalszahlen („E“) erscheinen dann als orange Quadrate, damit sie nicht wie Trendpunkte aussehen.
+
+| Punkt | Bedeutung |
+|---|---|
+| grau | im Zufallsbereich – so gerade wie viele reine Zufallskurse (Zufallsrang unter 90 %) |
+| grün / rot, mittel | „deutlich“: gerader als 90 von 100 Zufallskursen, Richtung auf- bzw. abwärts |
+| grün / rot, groß | „sehr deutlich“: gerader als 99 von 100 Zufallskursen |
+| klein, dunkelgrau | noch kein Ergebnis |
+
+- **Unter 90 % bleibt grau,** weil reiner Zufall sonst die Hälfte aller Punkte färben würde.
+- **Gerade beim Fadenkreuz:** Für den Balken unter dem Fadenkreuz wird die gefundene Gerade gestrichelt eingezeichnet.
+  So sieht man Länge, Steigung (Beta) und im Rückblick, wie weit die Rechnung in spätere Kurse greift.
+- **Zeile über dem Chart,** z. B. „Trend bisher ▲ 15 Balken seit 20.10.2026 · t +15,1 · deutlich: so gerade wie nur
+  5 von 100 Zufallskursen · Steigung +1,25 % je Balken · gesamt +17,7 % · vorläufig“.
+  - Erreicht die gewählte Länge die Fenstergrenze, steht „≥ 19 Balken (Fenstergrenze)“ statt eines Datums, denn
+    der Trend kann länger sein.
+  - „vorläufig“: Der heutige Balken ist noch nicht abgeschlossen.
+  - Bei Renditen (Anleihen) werden Steigung und Veränderung in Basispunkten angegeben.
+- **Leiste:** „36 von 251 Punkten deutlich · reiner Zufall ≈ 25“. Bei reinem Zufall wären etwa 10 % der Balken
+  „deutlich“. Benachbarte Punkte hängen stark zusammen (eine Strecke von 15 großen Punkten ist kaum mehr als ein bis
+  zwei unabhängige Beobachtungen). Deshalb schwankt die Zahl auch bei Zufall stark.
+- **Unterfenster** „Trend-Scan t-Wert“: folgt der gewählten Einstellung. Die Hilfslinien liegen beim typischen
+  Zufallskurs (grau) und bei „gerader als 90 % Zufall“ (grün/rot).
+- **1-Tages-Chart:** Er rechnet mit den Vortagen als Vorlauf, damit schon der Tagesbeginn ein Ergebnis hat. Das gilt
+  auch für Unterfenster und Ehlers-Linie.
+- **CSV-Export:** t-Wert, „stärker als Zufall [%]“, Länge, Steigung je Balken, Veränderung (bei Renditen in bp) und
+  das andere Trendende. Im Rückblick steht dort ausdrücklich „nutzt spätere Kurse“.
 
 **Warum der Vergleich mit dem Zufall:** Bei Kursen ist der t-Wert fast immer groß. Kurse hängen am Vortag, und von
 allen Längen wird die beste genommen. Selbst ein reiner Zufallskurs ohne jeden Trend erreicht typisch |t| ≈ 6
@@ -443,6 +460,13 @@ jeder t-Wert mit 20.000 Zufallskursen verglichen (Irrfahrt mit festem Startwert,
 | 60 | 11,4 | 16,0 | 21,3 | 33,9 |
 
 Der Vergleich hängt nicht von Kursniveau oder Schwankung ab und gilt vorwärts wie rückwärts.
+
+**Geprüft von einem Agenten aus Sicht von López de Prado (Perspektivübung):**
+- Die Rechnung stimmt mit einer unabhängigen Matrix-Nachrechnung überein (Abweichung höchstens 6·10⁻¹⁴).
+- Der Zufallsvergleich bleibt bei Kursausreißern, Phasen hoher Schwankung, Nachtlücken und leichter
+  Autokorrelation brauchbar: 7–13 % statt der 10 % „deutlichen“ Punkte, die bei Zufall zu erwarten sind.
+- Seine Hinweise (Mehrfachtest über viele Balken, Rückblick-Gefahr, Wortlaut, Renditen, Intraday-Vorlauf) sind in
+  die Darstellung oben eingeflossen.
 
 **Woher die Darstellung kommt:** López de Prado zeigt im Buch (Bild 5.1 und 5.2) die Kurspunkte farbig: einmal
 nur nach Richtung, einmal fließend nach t-Wert. Die mlfinlab-Anleitung von Hudson & Thames verwendet dasselbe Bild.

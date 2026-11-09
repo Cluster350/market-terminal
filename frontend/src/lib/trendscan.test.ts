@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DOT_SERIES, dotColor, dotSeriesIndex, dotTier, randomBaseline, randomQuantile, randomRank, scanParams, T_CAP, trendScan, tscanLevels } from "./trendscan";
+import { DOT_SERIES, DOT_TIERS, dotColor, dotSeriesIndex, dotTier, HOLLOW_INNER, RANDOM_SHARE_STRONG, vsRandomText, randomBaseline, randomQuantile, randomRank, scanParams, T_CAP, trendScan, tscanLevels } from "./trendscan";
 
 // Prüfreihe ohne Zufall: 40-Balken-Welle + 7-Balken-Welle + leichter Anstieg
 const series = Array.from({ length: 300 }, (_, i) => 100 + 10 * Math.sin((2 * Math.PI * i) / 40) + 0.02 * i + 1.5 * Math.sin((2 * Math.PI * i) / 7));
@@ -85,30 +85,70 @@ describe("Trend-Scanning (wie mlfinlab trend_scanning_labels)", () => {
     expect(randomRank(null, 20)).toBeNull();
   });
 
-  it("Punkte: Größe nach Stärke, Farbe nach Richtung, grau im Zufallsbereich", () => {
+  it("Punkte: grau im Zufallsbereich, Farbe erst ab „deutlich“ (90 %), größer ab 99 %", () => {
     expect(dotTier(0.3)).toBe(0);
-    expect(dotTier(0.5)).toBe(1);
-    expect(dotTier(0.8)).toBe(2);
-    expect(dotTier(0.95)).toBe(3);
-    expect(dotTier(0.995)).toBe(4);
-    expect(dotTier(1)).toBe(4);
+    expect(dotTier(0.5)).toBe(0);
+    expect(dotTier(0.89)).toBe(0);
+    expect(dotTier(0.9)).toBe(1);
+    expect(dotTier(0.95)).toBe(1);
+    expect(dotTier(0.995)).toBe(2);
+    expect(dotTier(1)).toBe(2);
+    expect(RANDOM_SHARE_STRONG).toBeCloseTo(0.1, 12);
+    expect(DOT_TIERS[2].radius).toBeGreaterThan(DOT_TIERS[1].radius);
+    expect(HOLLOW_INNER.every((r, k) => r < DOT_TIERS[k].radius)).toBe(true);
     expect(dotColor(5, 0)).toMatch(/^rgba\(150,150,150/);
     expect(dotColor(-5, 0)).toMatch(/^rgba\(150,150,150/);
-    expect(dotColor(9, 3)).toMatch(/^rgba\(41,209,125,0\.95\)/);
-    expect(dotColor(-9, 4)).toMatch(/^rgba\(255,82,82,1\.00\)/);
+    expect(dotColor(9, 1)).toMatch(/^rgba\(41,209,125,0\.95\)/);
+    expect(dotColor(-9, 2)).toMatch(/^rgba\(255,82,82,1\.00\)/);
     // je Stufe und Richtung eine Reihe mit fester Farbe
-    expect(DOT_SERIES).toHaveLength(9);
+    expect(DOT_SERIES).toHaveLength(5);
     expect(DOT_SERIES[dotSeriesIndex(3, 0)].color).toBe(dotColor(3, 0));
     expect(DOT_SERIES[dotSeriesIndex(-3, 0)].color).toBe(dotColor(-3, 0));
-    for (const tier of [1, 2, 3, 4]) {
+    for (const tier of [1, 2]) {
       for (const t of [7, -7]) {
         const d = DOT_SERIES[dotSeriesIndex(t, tier)];
         expect(d.color).toBe(dotColor(t, tier));
         expect(d.tier).toBe(tier);
       }
     }
+    // ehrlicher Wortlaut statt „zu x % sicher“
+    expect(vsRandomText(0.92)).toBe("so gerade wie nur 8 von 100 Zufallskursen");
+    expect(vsRandomText(0.991)).toBe("so gerade wie nur 1 von 100 Zufallskursen");
+    expect(vsRandomText(0.999)).toBe("gerader als 99 von 100 Zufallskursen");
     const lv = tscanLevels(20);
     expect(lv.map((l) => l.value)).toEqual([randomQuantile(0.9, 20), randomQuantile(0.5, 20), 0, -randomQuantile(0.5, 20), -randomQuantile(0.9, 20)]);
     expect(lv.filter((l) => l.label)).toHaveLength(2);
+  });
+
+  it("liefert Steigung und Gerade zum Einzeichnen; keine Prozent-Veränderung um null (Renditen)", () => {
+    // exakte Gerade mit Steigung 0,5: Gerade trifft die Kurse an beiden Enden
+    const y = Array.from({ length: 40 }, (_, i) => 10 + 0.5 * i);
+    const f = trendScan(y, "forward", 20)[3];
+    expect(f.slope!).toBeCloseTo(0.5, 10);
+    expect(f.fitAt!).toBeCloseTo(y[3], 10);
+    expect(f.fitOther!).toBeCloseTo(y[f.other!], 10);
+    expect(f.diff!).toBeCloseTo(y[f.other!] - y[3], 10);
+    const b = trendScan(y, "backward", 20)[30];
+    expect(b.slope!).toBeCloseTo(0.5, 10);
+    expect(b.fitAt!).toBeCloseTo(y[30], 10);
+    expect(b.fitOther!).toBeCloseTo(y[b.other!], 10);
+    expect(b.diff!).toBeCloseTo(y[30] - y[b.other!], 10);
+    // verrauschte Reihe: Gerade = OLS-Anpassung, Steigung gleich der Matrix-Rechnung über das gewählte Fenster
+    const p = trendScan(series, "forward", 20)[50];
+    const xs = Array.from({ length: p.len! }, (_, k) => k);
+    const ys = xs.map((k) => series[50 + k]);
+    const mx = xs.reduce((a, v) => a + v, 0) / xs.length;
+    const my = ys.reduce((a, v) => a + v, 0) / ys.length;
+    const beta = xs.reduce((a, v, k) => a + (v - mx) * (ys[k] - my), 0) / xs.reduce((a, v) => a + (v - mx) ** 2, 0);
+    expect(p.slope!).toBeCloseTo(beta, 10);
+    expect(p.fitAt!).toBeCloseTo(my - beta * mx, 10);
+    expect(p.fitOther!).toBeCloseTo(my + beta * (p.len! - 1 - mx), 10);
+    // Rendite um null: Veränderung nur als Differenz, nicht in Prozent
+    const yld = Array.from({ length: 40 }, (_, i) => -0.5 + 0.05 * i + (i % 2 ? 0.01 : -0.01));
+    const r = trendScan(yld, "backward", 20);
+    const crossing = r.map((q, i) => ({ q, i })).filter(({ q, i }) => q.other !== null && (yld[i] <= 0 || yld[q.other] <= 0));
+    expect(crossing.length).toBeGreaterThan(5);
+    expect(crossing.every(({ q }) => q.ret === null && q.diff !== null)).toBe(true);
+    expect(r[39].diff!).toBeGreaterThan(0);
   });
 });

@@ -40,7 +40,7 @@ import {
   type Oscillator,
   type Overlay,
 } from "../lib/ehlers";
-import { DOT_SERIES, DOT_TIERS, dotSeriesIndex, dotTier, OPEN_RING, randomRank, SCAN_INFO, SCAN_LABEL, SCAN_MODES, scanParams, trendScan, tscanLevels, type ScanMode } from "../lib/trendscan";
+import { DOT_SERIES, DOT_TIERS, dotSeriesIndex, dotTier, HOLLOW_INNER, OPEN_MARK, RANDOM_SHARE_STRONG, randomRank, SCAN_INFO, SCAN_LABEL, SCAN_MODES_KEPT, scanParams, trendScan, tscanLevels, vsRandomText, type ScanMode } from "../lib/trendscan";
 import { INTERVAL_LABEL, INTERVAL_SECONDS, INTERVALS, type Interval } from "../lib/intervals";
 import { retry, useEarnings, useHistory, useIntraday } from "../lib/queries";
 import { live, useLiveStatus } from "../lib/realtime";
@@ -326,7 +326,7 @@ export default function GP({ ticker }: ScreenProps) {
   const showRsi = osc !== "off";
   const [ehlers, setEhlers] = usePersistentState<Overlay>("gp.ehlers", "off", isOneOf(OVERLAYS));
   // Trend-Scanning als Hintergrundfarbe (Rückblick = folgender Trend, laufend = bisheriger Trend)
-  const [scan, setScan] = usePersistentState<ScanMode>("gp.scan", "off", isOneOf(SCAN_MODES));
+  const [scan, setScan] = usePersistentState<ScanMode>("gp.scan", "off", isOneOf(SCAN_MODES_KEPT)); // Rückblick wird bewusst nicht gemerkt
   const [showVwap, setShowVwap] = usePersistentState("gp.vwap", true, isBool);
   const [showVp, setShowVp] = usePersistentState("gp.vp", false, isBool);
   const [showCone, setShowCone] = usePersistentState("gp.cone", false, isBool);
@@ -346,6 +346,8 @@ export default function GP({ ticker }: ScreenProps) {
   const hist = useHistory(ticker);
   const [interval, setInterval_] = usePersistentState<Interval>("gp.interval", "5m", isOneOf(INTERVALS));
   const intra = useIntraday(ticker, range === "1T" ? 1 : 5, intradayRange, interval);
+  // 1T: die Vortage als Vorlauf für Unterfenster, Ehlers-Linie und Trend-Scan (sonst stünde der halbe Tag in der Anlaufphase)
+  const intraWarm = useIntraday(ticker, 5, range === "1T" && (osc !== "off" || ehlers !== "off" || scan !== "off"), interval);
   const liveStatus = useLiveStatus();
   const isLive = !!ticker && !!liveStatus?.live.includes(ticker);
   const isYield = ticker?.endsWith(".GBOND") ?? false;
@@ -380,10 +382,14 @@ export default function GP({ ticker }: ScreenProps) {
     type Gap = Line | { time: Time };
     type OscLine = { name: string; color: string; data: Gap[] };
     type EhlLine = { name: string; color: string; data: Line[] };
-    type ScanRow = { time: Time; close: number; t: number | null; rank: number | null; len: number | null; ret: number | null; other: Bar | null };
+    type ScanRow = {
+      time: Time; close: number; t: number | null; rank: number | null; len: number | null; ret: number | null; diff: number | null;
+      slope: number | null; fitAt: number | null; fitOther: number | null; other: Bar | null;
+    };
     const empty = { bars: [] as Bar[], maLines: [] as { n: number; color: string; data: Line[] }[], base: null as number | null, prevDay: null as number | null, bands: null as null | { upper: Line[]; lower: Line[] }, oscLines: [] as OscLine[], ehlLines: [] as EhlLine[], scanRows: [] as ScanRow[], start: "" };
     // Unterfenster (RSI oder Ehlers-Oszillator) und Ehlers-Linie: über alle geladenen Balken gerechnet (keine
     // Anlaufphase im sichtbaren Bereich), gezeigt ab ``from``
+    const tscanMode: ScanMode = scan !== "off" && !comparing ? scan : "live20";
     const indicators = (src: Bar[], from: number) => {
       const closes = src.map((b) => b.close);
       const raw =
@@ -392,7 +398,11 @@ export default function GP({ ticker }: ScreenProps) {
           : osc === "rsi"
             ? [{ name: "RSI 14", color: "#c77dff", values: rsiSeries(closes) }]
             : osc === "tscan"
-              ? [{ name: "Trend-Scan laufend 20 t-Wert", color: "#c77dff", values: trendScan(closes, "backward", 20).map((p) => p.t) }]
+              ? (() => {
+                  // folgt der Trend-Scan-Auswahl oben (sonst laufend 20)
+                  const tp = scanParams(tscanMode)!;
+                  return [{ name: `Trend-Scan ${SCAN_LABEL[tscanMode]} t-Wert`, color: "#c77dff", values: trendScan(closes, tp.direction, tp.window).map((p) => p.t) }];
+                })()
               : oscillatorLines(osc, src).lines;
       const oscLines: OscLine[] = raw.map((l) => ({
         name: l.name,
@@ -409,7 +419,10 @@ export default function GP({ ticker }: ScreenProps) {
       const scanRows: ScanRow[] = sp
         ? src.slice(from).map((b, k) => {
             const p = pts[from + k];
-            return { time: b.time, close: b.close, t: p.t, rank: randomRank(p.t, sp.window), len: p.len, ret: p.ret, other: p.other !== null ? src[p.other] : null };
+            return {
+              time: b.time, close: b.close, t: p.t, rank: randomRank(p.t, sp.window), len: p.len, ret: p.ret, diff: p.diff,
+              slope: p.slope, fitAt: p.fitAt, fitOther: p.fitOther, other: p.other !== null ? src[p.other] : null,
+            };
           })
         : [];
       return { oscLines, ehlLines, scanRows };
@@ -418,6 +431,7 @@ export default function GP({ ticker }: ScreenProps) {
       const d = intra.data;
       if (!d || !d.t.length) return empty;
       const bars = intradayBars(d);
+      const warm = range === "1T" && intraWarm.data?.t.length && bars.length ? intradayBars(intraWarm.data).filter((b) => (b.time as number) < (bars[0].time as number)) : [];
       const firstDay = new Date(d.t[0] * 1000).toISOString().slice(0, 10);
       const lastDay = new Date(d.t[d.t.length - 1] * 1000).toISOString().slice(0, 10);
       // base: Bezug der Veränderung über den Zeitraum (Schluss vor dem ersten Tag);
@@ -427,7 +441,7 @@ export default function GP({ ticker }: ScreenProps) {
         bars,
         base: closeBefore(hist.data, firstDay) ?? bars[0]?.open ?? null,
         prevDay: closeBefore(hist.data, lastDay),
-        ...indicators(bars, 0),
+        ...indicators([...warm, ...bars], warm.length),
       };
     }
     const h = hist.data;
@@ -454,9 +468,15 @@ export default function GP({ ticker }: ScreenProps) {
       }
     }
     return { bars: all.slice(from), maLines: lines, base: periodBase(all, from), prevDay: null, bands, ...indicators(all, from), start };
-  }, [hist.data, intra.data, range, mas, intradayRange, boll, osc, ehlers, scan]);
+  }, [hist.data, intra.data, intraWarm.data, range, mas, intradayRange, boll, osc, ehlers, scan, comparing]);
 
   const { bars, maLines, base, prevDay, bands, oscLines, ehlLines, scanRows } = view;
+  // Trend-Scan: wie viele Punkte im Zeitraum mindestens „deutlich“ sind – und wie viele reiner Zufall etwa ergäbe
+  const scanStats = useMemo(() => {
+    const done = scanRows.filter((r) => r.rank !== null);
+    if (!done.length) return null;
+    return { n: done.length, strong: done.filter((r) => dotTier(r.rank!) >= 1).length, expected: Math.round(done.length * RANDOM_SHARE_STRONG) };
+  }, [scanRows]);
   const scanOn = scan !== "off" && !comparing;
   // Beim Trend-Scan zeigt der Chart den Kurs nur als Punkte (wie im Buch) – keine Kerzen, keine Linie
   const drawKind: Kind | "dots" = scanOn ? "dots" : kind;
@@ -508,7 +528,14 @@ export default function GP({ ticker }: ScreenProps) {
           ...ehlLines.map((l) => `Ehlers ${l.name}`),
           ...oscLines.map((l) => l.name),
           ...(scanOn
-            ? [`Trend-Scan ${SCAN_LABEL[scan]} t-Wert`, "Trend-Scan stärker als Zufall [%]", "Trend-Scan Länge (Balken)", "Trend-Scan Veränderung [%]", scanBack ? "Trend-Scan bis" : "Trend-Scan ab"]
+            ? [
+                `Trend-Scan ${SCAN_LABEL[scan]} t-Wert${scanBack ? " (nutzt spätere Kurse)" : ""}`,
+                "Trend-Scan stärker als Zufall [%]",
+                "Trend-Scan Länge (Balken)",
+                isYield ? "Trend-Scan Steigung je Balken [bp]" : "Trend-Scan Steigung je Balken [%]",
+                isYield ? "Trend-Scan Veränderung [bp]" : "Trend-Scan Veränderung [%]",
+                scanBack ? "Trend-Scan nutzt Kurse bis" : "Trend-Scan ab",
+              ]
             : []),
         ],
         rows: bars.map((b) => {
@@ -520,7 +547,11 @@ export default function GP({ ticker }: ScreenProps) {
             ...(scanOn
               ? (() => {
                   const r = scanMap.get(k);
-                  return [r?.t ?? null, isNum(r?.rank) ? r!.rank! * 100 : null, r?.len ?? null, isNum(r?.ret) ? r!.ret! * 100 : null, r?.other ? label(r.other.time) : null];
+                  if (!r || r.t === null) return [null, null, null, null, null, null];
+                  // Renditen: Basispunkte statt Prozent (eine prozentuale Veränderung um null herum ist sinnlos)
+                  const slope = isNum(r.slope) ? (isYield ? r.slope * 100 : r.close > 0 ? (r.slope / r.close) * 100 : null) : null;
+                  const chg = isYield ? (isNum(r.diff) ? r.diff * 100 : null) : isNum(r.ret) ? r.ret * 100 : null;
+                  return [r.t, isNum(r.rank) ? r.rank * 100 : null, r.len, slope, chg, r.other ? label(r.other.time) : null];
                 })()
               : []),
           ];
@@ -570,6 +601,9 @@ export default function GP({ ticker }: ScreenProps) {
     scan: ISeriesApi<"Line">[];
     scanHalo: ISeriesApi<"Line">[];
     scanOpen: ISeriesApi<"Line">[];
+    scanInner: ISeriesApi<"Line">[];
+    scanFit: ISeriesApi<"Line"> | null;
+    scanScale: [ISeriesApi<"Line">, number][];
     cone: ISeriesApi<"Line">[];
     band: ISeriesApi<"Line">[];
   } | null>(null);
@@ -615,7 +649,7 @@ export default function GP({ ticker }: ScreenProps) {
       },
     });
     chartRef.current = chart;
-    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], scan: [], scanHalo: [], scanOpen: [], cone: [], band: [] };
+    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], scan: [], scanHalo: [], scanOpen: [], scanInner: [], scanFit: null, scanScale: [], cone: [], band: [] };
     if (comparing) {
       for (let i = 0; i < compare.length + 1; i++) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
@@ -674,28 +708,24 @@ export default function GP({ ticker }: ScreenProps) {
         }
       }
       if (scanOn) {
-        // Trend-Scan als Punkte auf dem Schlusskurs (wie im Buch von López de Prado): Farbe = Richtung, Größe = Stärke
-        // im Vergleich zum Zufall – je Stufe und Richtung eine Reihe ohne Linie, zuletzt angelegt, damit sie über den Kerzen liegt
-        // dunkler Rand unter den farbigen Punkten (Stufe 1–4), damit eng liegende Punkte unterscheidbar bleiben
-        for (const d of DOT_TIERS.slice(1)) {
-          refs.scanHalo.push(chart.addLineSeries({
-            color: "#0a0a0a", lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: d.radius + 1.5,
+        // Trend-Scan als Punkte auf dem Schlusskurs (wie im Buch von López de Prado): grau = Zufallsbereich, farbig erst ab
+        // „deutlich“ (Farbe = Richtung, Größe = Stärke); Rückblick hohl. Je Stufe/Richtung eine Reihe mit fester Farbe,
+        // zuletzt angelegt, damit sie oben liegen.
+        const dot = (color: string, radius: number) => {
+          const series = chart.addLineSeries({
+            color, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: radius,
             lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
-          }));
-        }
-        // noch offene Balken: grauer Ring (äußerer grauer Punkt, innen dunkel)
-        for (const d of OPEN_RING) {
-          refs.scanOpen.push(chart.addLineSeries({
-            color: d.color, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: d.radius,
-            lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
-          }));
-        }
-        for (const d of DOT_SERIES) {
-          refs.scan.push(chart.addLineSeries({
-            color: d.color, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: d.radius,
-            lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
-          }));
-        }
+          });
+          refs.scanScale.push([series, radius]);
+          return series;
+        };
+        // gefundene Gerade zum Balken unter dem Fadenkreuz (Länge, Steigung, im Rückblick der Griff in die Zukunft)
+        refs.scanFit = chart.addLineSeries({ color: "#ffa028", lineWidth: 2, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
+        // dunkler Rand unter den farbigen Punkten, damit eng liegende Punkte unterscheidbar bleiben
+        for (const d of DOT_TIERS.slice(1)) refs.scanHalo.push(dot("#0a0a0a", d.radius + 1.5));
+        refs.scanOpen.push(dot(OPEN_MARK.color, OPEN_MARK.radius));
+        for (const d of DOT_SERIES) refs.scan.push(dot(d.color, d.radius));
+        if (scan.startsWith("back")) for (const r of HOLLOW_INNER) refs.scanInner.push(dot("#0a0a0a", r));
       }
     }
     let rsiChart: IChartApi | null = null;
@@ -710,9 +740,7 @@ export default function GP({ ticker }: ScreenProps) {
         const f = Math.round(Math.max(0.4, Math.min(1, w / Math.max(1, r.to - r.from) / 6)) * 20) / 20;
         if (f === lastF) return;
         lastF = f;
-        refs.scan.forEach((series, i) => series.applyOptions({ pointMarkersRadius: DOT_SERIES[i].radius * f }));
-        refs.scanHalo.forEach((series, k) => series.applyOptions({ pointMarkersRadius: (DOT_TIERS[k + 1].radius + 1.5) * f }));
-        refs.scanOpen.forEach((series, k) => series.applyOptions({ pointMarkersRadius: OPEN_RING[k].radius * f }));
+        refs.scanScale.forEach(([series, radius]) => series.applyOptions({ pointMarkersRadius: radius * f }));
       };
       chart.timeScale().subscribeVisibleLogicalRangeChange(fitDots);
       syncers.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(fitDots));
@@ -731,7 +759,8 @@ export default function GP({ ticker }: ScreenProps) {
       rsiChartRef.current = rsiChart;
       os.colors.forEach((color, i) => refs.osc.push(rsiChart!.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: i === 0 })));
       // Trend-Scan: Hilfslinien an den Zufallsgrenzen (typischer Zufall, stärker als 90 % Zufall) statt fester Werte
-      for (const lv of osc === "tscan" ? tscanLevels(20) : os.levels.map((l) => ({ ...l, label: l.value !== 0 }))) {
+      const tscanWindow = scanOn && scan.endsWith("60") ? 60 : 20;
+      for (const lv of osc === "tscan" ? tscanLevels(tscanWindow) : os.levels.map((l) => ({ ...l, label: l.value !== 0 }))) {
         refs.osc[0]?.createPriceLine({ price: lv.value, color: lv.color, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: lv.label, title: "" });
       }
       // Zeitachsen koppeln: Zoom und Scrollen im Kurschart bewegen den RSI mit
@@ -779,7 +808,7 @@ export default function GP({ ticker }: ScreenProps) {
       seriesRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasData, kind, drawKind, intradayRange, isYield, maKey, boll, osc, ehlers, scanOn, cmpKey, showVwap, coneOn, bandOn]);
+  }, [hasData, kind, drawKind, intradayRange, isYield, maKey, boll, osc, ehlers, scanOn, scan, cmpKey, showVwap, coneOn, bandOn]);
 
   useEffect(() => {
     const s = seriesRef.current;
@@ -810,7 +839,9 @@ export default function GP({ ticker }: ScreenProps) {
         intradayRange && isNum(prevDay)
           ? s.main.createPriceLine({ price: prevDay, color: "#777", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Vortag" })
           : null;
-      s.main.setMarkers(!intradayRange && earn.data ? earningsMarkers(earn.data.history, bars) : []);
+      const em = !intradayRange && earn.data ? earningsMarkers(earn.data.history, bars) : [];
+      // im Punkte-Modus (Trend-Scan) orange Quadrate, damit „E“ nicht wie ein Trendpunkt aussieht
+      s.main.setMarkers(drawKind === "dots" ? em.map((m) => ({ ...m, color: "#ffa028", shape: "square" as const })) : em);
     }
     if (bands && s.bands.length === 2) {
       s.bands[0].setData(bands.upper);
@@ -840,21 +871,24 @@ export default function GP({ ticker }: ScreenProps) {
     s.ehl.forEach((ser, i) => ser.setData((ehlLines[i]?.data ?? []) as never));
     // ohne Ergebnis (Rand, „noch offen“) ganz blass grau, schwacher Trend ohne Farbe
     if (s.scan.length) {
-      // an jedem Balken eine Markierung: Punkt (Ergebnis) oder Ring (noch offen)
+      // an jedem Balken eine Markierung: Punkt (Ergebnis) oder kleiner dunkler Punkt (noch offen)
       const perSeries: { time: Time; value: number }[][] = DOT_SERIES.map(() => []);
+      const perTier: { time: Time; value: number }[][] = DOT_TIERS.map(() => []);
       const open: { time: Time; value: number }[] = [];
       for (const r of scanRows) {
-        if (r.t === null || r.rank === null) open.push({ time: r.time, value: r.close });
-        else perSeries[dotSeriesIndex(r.t, dotTier(r.rank))].push({ time: r.time, value: r.close });
+        const p = { time: r.time, value: r.close };
+        if (r.t === null || r.rank === null) {
+          open.push(p);
+          continue;
+        }
+        const k = dotTier(r.rank);
+        perSeries[dotSeriesIndex(r.t, k)].push(p);
+        perTier[k].push(p);
       }
       s.scanOpen.forEach((series) => series.setData(open));
       s.scan.forEach((series, k) => series.setData(perSeries[k]));
-      // Rand je Stufe: Punkte beider Richtungen, zeitlich sortiert
-      s.scanHalo.forEach((series, k) =>
-        series.setData(
-          DOT_SERIES.flatMap((d, i) => (d.tier === k + 1 ? perSeries[i] : [])).sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)),
-        ),
-      );
+      s.scanHalo.forEach((series, k) => series.setData(perTier[k + 1]));
+      s.scanInner.forEach((series, k) => series.setData(perTier[k]));
     }
     s.osc.forEach((ser, i) => {
       const d = oscLines[i]?.data ?? [];
@@ -1167,6 +1201,24 @@ export default function GP({ ticker }: ScreenProps) {
   const error = intradayRange ? intra.error : hist.error;
   const last = bars[bars.length - 1];
   const shown = hover ?? last;
+  // Trend-Scan: gefundene Gerade zum Balken unter dem Fadenkreuz einzeichnen (Länge, Steigung, im Rückblick der Griff
+  // in spätere Kurse)
+  const scanFitKey = scanOn && shown ? String(shown.time) : "";
+  useEffect(() => {
+    const series = seriesRef.current?.scanFit;
+    if (!series) return;
+    const r = scanFitKey ? scanRows.find((x) => String(x.time) === scanFitKey) : undefined;
+    if (!r || r.t === null || !r.other || !isNum(r.fitAt) || !isNum(r.fitOther)) {
+      series.setData([]);
+      return;
+    }
+    const strong = r.rank !== null && dotTier(r.rank) > 0;
+    series.applyOptions({ color: strong ? "#ffa028" : "rgba(150,150,150,0.8)" });
+    const a = { time: r.time, value: r.fitAt };
+    const b = { time: r.other.time, value: r.fitOther };
+    const aFirst = typeof a.time === "number" && typeof b.time === "number" ? a.time < b.time : String(a.time) < String(b.time);
+    series.setData(aFirst ? [a, b] : [b, a]);
+  }, [scanFitKey, scanRows, chartGen]);
   const shownIdx = shown ? bars.indexOf(shown) : -1;
   const prevClose = shownIdx > 0 ? bars[shownIdx - 1].close : shownIdx === 0 ? base : null;
   const rangeChg = bars.length && isNum(base) && base !== 0 ? (last.close / base - 1) * 100 : null;
@@ -1339,7 +1391,19 @@ export default function GP({ ticker }: ScreenProps) {
             </select>
           </label>
         )}
-        {scanOn && scan.startsWith("back") && <span className="small dim" title={SCAN_INFO[scan]}>Rückblick: nutzt spätere Kurse, kein Signal</span>}
+        {scanOn && scan.startsWith("back") && (
+          <span className="small" style={{ color: "#ffa028" }} title={SCAN_INFO[scan]}>
+            ⚠ Rückblick: nutzt spätere Kurse – kein Signal
+          </span>
+        )}
+        {scanOn && scanStats && (
+          <span
+            className="small dim"
+            title={`Bei reinem Zufall wären etwa ${Math.round(RANDOM_SHARE_STRONG * 100)} % der Balken mindestens „deutlich“. Benachbarte Punkte hängen stark zusammen, deshalb schwankt die Zahl auch bei reinem Zufall stark, und ganze Strecken deutlicher Punkte kommen auch dort vor. Erst weit mehr als erwartet spricht für echte, anhaltende Trends.`}
+          >
+            {scanStats.strong} von {scanStats.n} Punkten deutlich · reiner Zufall ≈ {scanStats.expected}
+          </span>
+        )}
         <label className="small muted" style={{ color: showRsi ? "#c77dff" : undefined }} title={OSC_INFO[osc]}>
           Unterfenster{" "}
           <select className="field" aria-label="Unterfenster" value={osc} onChange={(e) => setOsc(e.target.value as Oscillator)}>
@@ -1477,22 +1541,47 @@ export default function GP({ ticker }: ScreenProps) {
                 {scanOn && (() => {
                   const r = scanRows.find((x) => x.time === shown.time);
                   const back = scan.startsWith("back");
-                  // Intraday: Uhrzeit, bei anderem Tag (5T-Chart) mit Datum davor
+                  const maxLen = (scan.endsWith("60") ? 60 : 20) - 1;
+                  const head = back ? "Trend danach" : "Trend bisher";
+                  // Intraday: Uhrzeit, bei anderem Tag mit Datum davor
                   const when = (b: Bar | null) =>
                     !b
                       ? ""
                       : intradayRange && b.ts !== undefined
                         ? (shown.ts !== undefined && fmtShortDate(b.ts) !== fmtShortDate(shown.ts) ? `${fmtShortDate(b.ts)} ` : "") + fmtTime(b.ts)
                         : fmtDate(b.time as string);
+                  // der heutige Balken ist noch nicht abgeschlossen: Punkt und t-Wert können sich bis Handelsschluss ändern
+                  const provisional =
+                    !back && !!last && shown.time === last.time && (intradayRange || String(last.time) >= new Date().toISOString().slice(0, 10));
+                  const vorl = provisional ? (
+                    <span className="dim" title="Der heutige Balken ist noch nicht abgeschlossen: Punkt und t-Wert können sich bis Handelsschluss ändern (Stand: letzter Abruf).">
+                      {" "}· vorläufig
+                    </span>
+                  ) : null;
                   if (!r || r.t === null) return <span className="dim">{back ? "Trend danach: noch offen" : "Trend bisher: zu wenig Verlauf"}</span>;
                   const tier = r.rank === null ? 0 : dotTier(r.rank);
                   const tTxt = `${r.t > 0 ? "+" : r.t < 0 ? "−" : ""}${fmt(Math.abs(r.t), 1)}`;
-                  if (tier === 0) return <span className="dim" title={SCAN_INFO[scan]}>{back ? "Trend danach" : "Trend bisher"}: kein Trend erkennbar (t {tTxt}, im Zufallsbereich)</span>;
-                  const vsRandom = `stärker als ${Math.min(99, Math.floor((r.rank ?? 0) * 100))} % Zufall`;
+                  if (tier === 0)
+                    return (
+                      <span className="dim" title={SCAN_INFO[scan]}>
+                        {head}: kein Trend erkennbar (t {tTxt}, im Zufallsbereich){vorl}
+                      </span>
+                    );
+                  // an der Fenstergrenze ist die Länge nur das Maximum, kein echter Trendbeginn/-ende
+                  const lenTxt = r.len === maxLen ? `≥ ${r.len} Balken (Fenstergrenze)` : `${r.len} Balken ${back ? "bis" : "seit"} ${when(r.other)}`;
+                  const slopeTxt = isNum(r.slope)
+                    ? isYield
+                      ? `${fmtBp(r.slope)} je Balken`
+                      : r.close > 0
+                        ? `${fmtPct((r.slope / r.close) * 100, 2)} je Balken`
+                        : ""
+                    : "";
+                  const chgTxt = isYield ? fmtBp(r.diff) : fmtPct(isNum(r.ret) ? r.ret * 100 : null, 1);
                   return (
                     <span className={r.t > 0 ? "up" : "down"} title={SCAN_INFO[scan]}>
-                      {back ? "Trend danach" : "Trend bisher"} {r.t > 0 ? "▲" : "▼"} {r.len} Balken {back ? `bis ${when(r.other)}` : `seit ${when(r.other)}`} · t{" "}
-                      <b>{tTxt}</b> · {DOT_TIERS[tier].text}, {vsRandom} · {fmtPct(isNum(r.ret) ? r.ret * 100 : null, 1)}
+                      {head} {r.t > 0 ? "▲" : "▼"} {lenTxt} · t <b>{tTxt}</b> · {DOT_TIERS[tier].text}: {vsRandomText(r.rank ?? 0)}
+                      {slopeTxt && ` · Steigung ${slopeTxt}`} · gesamt {chgTxt}
+                      {vorl}
                     </span>
                   );
                 })()}
@@ -1531,7 +1620,7 @@ export default function GP({ ticker }: ScreenProps) {
             {showRsi && (
               <div style={{ position: "relative", flex: "0 0 26%", minHeight: 70, borderTop: "1px solid var(--rule)" }}>
                 <span className="xs gp-osc-label" title={OSC_INFO[osc]}>
-                  <span style={{ color: "#c77dff" }}>{OSC_LABEL[osc]}</span>
+                  <span style={{ color: "#c77dff" }}>{osc === "tscan" ? `Trend-Scan t-Wert (${SCAN_LABEL[scanOn ? scan : "live20"]})` : OSC_LABEL[osc]}</span>
                   {oscLines.map((l) => {
                     const t = (hover ?? bars[bars.length - 1])?.time;
                     const at = l.data.find((p) => p.time === t);

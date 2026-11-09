@@ -449,6 +449,11 @@ table.t { width: 100%; border-collapse: collapse; }
   left: 8px;
   top: 4px;
   z-index: 3;
+  /* eigener Hintergrund: bricht die Zeile im schmalen Fenster um, bleibt sie lesbar und verdeckt nichts Unlesbares */
+  background: rgba(10, 10, 10, 0.85);
+  padding: 1px 6px;
+  border-radius: 2px;
+  max-width: calc(100% - 90px);
   font-size: var(--fs-s);
   color: var(--muted);
   pointer-events: none;

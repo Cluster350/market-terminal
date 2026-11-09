@@ -4,7 +4,8 @@
 //
 // - vorwärts (Rückblick): der Trend, der auf den Balken FOLGTE – nutzt spätere Kurse, nur zur Darstellung
 //   der Vergangenheit; die letzten ``window − 1`` Balken haben noch kein Ergebnis.
-// - rückwärts (laufend): der Trend, der zum Balken HINFÜHRTE – nur frühere Kurse, auch heute gültig.
+// - rückwärts (laufend): der Trend, der zum Balken HINFÜHRTE – nur frühere Kurse; beschreibt den bisherigen
+//   Verlauf (läuft Wendepunkten hinterher), keine Prognose.
 //
 // Parameter wie mlfinlab: ``window`` (look_forward_window, Standard 20), ``minLen`` (min_sample_length, 5),
 // ``step`` (1). Geprüft werden die Längen minLen, minLen+step, … < window (wie np.arange in mlfinlab).
@@ -18,12 +19,19 @@ export interface ScanPoint {
   ret: number | null;
   /** Index des anderen Fensterendes: vorwärts das Trendende (t1), rückwärts der Trendbeginn */
   other: number | null;
+  /** Steigung der gewählten Geraden (Beta) in Kurseinheiten je Balken */
+  slope: number | null;
+  /** Veränderung über das Fenster in Kurseinheiten (für Renditen: Prozentpunkte) */
+  diff: number | null;
+  /** Wert der gewählten Geraden am Balken selbst und am anderen Fensterende (zum Einzeichnen) */
+  fitAt: number | null;
+  fitOther: number | null;
 }
 
 /** Größter angezeigter |t|-Wert (eine perfekte Gerade hätte unendlich). */
 export const T_CAP = 999;
 
-const EMPTY: ScanPoint = { t: null, len: null, ret: null, other: null };
+const EMPTY: ScanPoint = { t: null, len: null, ret: null, other: null, slope: null, diff: null, fitAt: null, fitOther: null };
 
 /**
  * Trend-Scanning über eine Kursreihe (älteste zuerst).
@@ -46,6 +54,8 @@ export function trendScan(y: number[], direction: "forward" | "backward", window
     let best = -1;
     let bestT = 0;
     let bestLen = 0;
+    let bestB = 0;
+    let bestA = 0;
     for (let k = 0; k < window - 1; k++) {
       // vorwärts: Punkt i+k bei x = k; rückwärts: Punkt i−k bei x = −k (Zeit läuft in beiden Fällen nach rechts)
       const idx = direction === "forward" ? i + k : i - k;
@@ -70,6 +80,8 @@ export function trendScan(y: number[], direction: "forward" | "backward", window
         best = Math.abs(t);
         bestT = t;
         bestLen = l;
+        bestB = Number.isFinite(b) ? b : 0;
+        bestA = sz / l - bestB * (sx / l); // Achsenabschnitt bei x = 0 (am Balken selbst), relativ zu y[i]
       }
     }
     if (best < 0) {
@@ -78,7 +90,18 @@ export function trendScan(y: number[], direction: "forward" | "backward", window
     }
     const other = direction === "forward" ? i + bestLen - 1 : i - bestLen + 1;
     const ret = direction === "forward" ? y[other] / y[i] - 1 : y[i] / y[other] - 1;
-    out[i] = { t: Math.max(-T_CAP, Math.min(T_CAP, bestT)), len: bestLen, ret: Number.isFinite(ret) ? ret : null, other };
+    const xOther = direction === "forward" ? bestLen - 1 : -(bestLen - 1);
+    out[i] = {
+      t: Math.max(-T_CAP, Math.min(T_CAP, bestT)),
+      len: bestLen,
+      // bei Werten um oder unter null (Renditen) ist eine prozentuale Veränderung sinnlos
+      ret: Number.isFinite(ret) && y[i] > 0 && y[other] > 0 ? ret : null,
+      other,
+      slope: bestB,
+      diff: direction === "forward" ? y[other] - y[i] : y[i] - y[other],
+      fitAt: y[i] + bestA,
+      fitOther: y[i] + bestA + bestB * xOther,
+    };
   }
   return out;
 }
@@ -95,19 +118,32 @@ export const SCAN_LABEL: Record<ScanMode, string> = {
 };
 
 const DOTS =
-  " Punkte auf dem Schlusskurs: grün aufwärts, rot abwärts; je größer, desto stärker im Vergleich zu reinem Zufall (kleiner grauer Punkt = im Zufallsbereich, grauer Ring = noch offen).";
+  " Punkte auf dem Schlusskurs: grau = im Zufallsbereich (so gerade wie viele reine Zufallskurse); farbig erst ab „deutlich“ (gerader als 90 von 100 Zufallskursen), grün aufwärts, rot abwärts, größer = „sehr deutlich“ (gerader als 99 von 100). Kleiner dunkler Punkt = noch kein Ergebnis. Beim Fadenkreuz wird die gefundene Gerade eingezeichnet.";
+const MANY =
+  " Achtung: Benachbarte Punkte hängen stark zusammen; auch reiner Zufall erzeugt etwa 10 % „deutliche“ Punkte und ganze Strecken davon.";
 
 export const SCAN_INFO: Record<ScanMode, string> = {
   off: "Trend-Scanning (López de Prado; mlfinlab von Hudson & Thames): Punkte auf dem Kurs nach dem gefundenen Trend.",
   back20:
-    "Rückblick: welcher Trend auf jeden Balken FOLGTE (Geraden über 5 bis 19 folgende Balken, die mit dem größten t-Wert gewinnt). Nutzt spätere Kurse – nur zum Verstehen der Vergangenheit, kein Signal. Die letzten 19 Balken sind noch offen." +
-    DOTS,
+    "RÜCKBLICK (hohle Punkte): welcher Trend auf jeden Balken FOLGTE (Geraden über 5 bis 19 folgende Balken, die mit dem größten t-Wert gewinnt). Nutzt spätere Kurse – zeigt deshalb Hochs und Tiefs im Nachhinein perfekt. Nur zum Verstehen der Vergangenheit, kein Signal. Die letzten 19 Balken sind noch offen. Wird nicht gespeichert." +
+    DOTS +
+    MANY,
   back60:
-    "Rückblick über bis zu 59 folgende Balken (längere Trends). Nutzt spätere Kurse – nur zum Verstehen der Vergangenheit, kein Signal. Die letzten 59 Balken sind noch offen." +
-    DOTS,
-  live20: "Laufend: welcher Trend zu jedem Balken HINFÜHRTE (Geraden über die 5 bis 19 vorherigen Balken). Nutzt nur frühere Kurse und gilt auch für heute." + DOTS,
-  live60: "Laufend über bis zu 59 vorherige Balken (längere Trends). Nutzt nur frühere Kurse und gilt auch für heute." + DOTS,
+    "RÜCKBLICK (hohle Punkte) über bis zu 59 folgende Balken. Nutzt spätere Kurse – zeigt Hochs und Tiefs im Nachhinein perfekt. Nur zum Verstehen der Vergangenheit, kein Signal. Die letzten 59 Balken sind noch offen. Wird nicht gespeichert." +
+    DOTS +
+    MANY,
+  live20:
+    "Laufend: welcher Trend zu jedem Balken HINFÜHRTE (Geraden über die 5 bis 19 vorherigen Balken). Nutzt nur frühere Kurse. Beschreibt den bisherigen Verlauf, keine Prognose; wechselt erst einige Balken nach einem Wendepunkt die Farbe." +
+    DOTS +
+    MANY,
+  live60:
+    "Laufend über bis zu 59 vorherige Balken (längere Trends). Nutzt nur frühere Kurse. Beschreibt den bisherigen Verlauf, keine Prognose; läuft Wendepunkten deutlich hinterher." +
+    DOTS +
+    MANY,
 };
+
+/** Rückblick-Auswahl wird nicht gespeichert: nach dem Neuladen gilt sie als „aus“. */
+export const SCAN_MODES_KEPT = ["off", "live20", "live60"] as const;
 
 export const scanParams = (m: ScanMode): { direction: "forward" | "backward"; window: number } | null =>
   m === "off" ? null : { direction: m.startsWith("back") ? "forward" : "backward", window: m.endsWith("60") ? 60 : 20 };
@@ -177,18 +213,20 @@ export function randomQuantile(q: number, window = 20, minLen = 5, step = 1): nu
 }
 
 /**
- * Darstellung als Punkt auf dem Schlusskurs – an jedem Balken: Farbe = Richtung (grün auf, rot ab), Größe = Stärke im
- * Vergleich zum Zufall. Stufe 0 (schwächer als ein typischer Zufallskurs) = kleiner grauer Punkt.
+ * Darstellung als Punkt auf dem Schlusskurs – an jedem Balken. Grau = im Zufallsbereich (Zufallsrang unter 90 %);
+ * erst darüber Farbe = Richtung (grün auf, rot ab) und Größe = Stärke: „deutlich“ ab 90 %, „sehr deutlich“ ab 99 %.
+ * Unter 90 % bleibt grau, weil reiner Zufall dort die Hälfte aller Punkte färben würde.
  */
 export const DOT_TIERS = [
   { from: 0, radius: 2, alpha: 0.95, text: "im Zufallsbereich" },
-  { from: 0.5, radius: 2.5, alpha: 0.6, text: "schwach" },
-  { from: 0.75, radius: 3.5, alpha: 0.8, text: "mittel" },
-  { from: 0.9, radius: 4.5, alpha: 0.95, text: "deutlich" },
+  { from: 0.9, radius: 4, alpha: 0.95, text: "deutlich" },
   { from: 0.99, radius: 6, alpha: 1, text: "sehr deutlich" },
 ] as const;
 
-/** Stufe 0 … 4 zum Zufallsrang. */
+/** Anteil der Balken, die bei reinem Zufall mindestens „deutlich“ wären. */
+export const RANDOM_SHARE_STRONG = 1 - DOT_TIERS[1].from;
+
+/** Stufe 0 … 2 zum Zufallsrang. */
 export function dotTier(rank: number): number {
   let k = 0;
   for (let i = 1; i < DOT_TIERS.length; i++) if (rank >= DOT_TIERS[i].from) k = i;
@@ -202,8 +240,8 @@ export function dotColor(t: number, tier: number): string {
 }
 
 /**
- * Reihen für die Punkte: Stufe 0 grau, Stufen 1–4 je einmal grün (aufwärts) und rot (abwärts). Jede Reihe hat EINE
- * Farbe – die Chart-Bibliothek (4.2) zeichnet Punkte mit wechselnder Farbe innerhalb einer Reihe nicht vollständig.
+ * Reihen für die Punkte: Stufe 0 grau, die übrigen Stufen je einmal grün (aufwärts) und rot (abwärts). Jede Reihe hat
+ * EINE Farbe – die Chart-Bibliothek (4.2) zeichnet Punkte mit wechselnder Farbe innerhalb einer Reihe nicht vollständig.
  */
 export const DOT_SERIES: { tier: number; up: boolean; radius: number; color: string }[] = DOT_TIERS.flatMap((d, tier) =>
   tier === 0
@@ -211,15 +249,22 @@ export const DOT_SERIES: { tier: number; up: boolean; radius: number; color: str
     : [true, false].map((up) => ({ tier, up, radius: d.radius, color: dotColor(up ? 1 : -1, tier) })),
 );
 
-/** Noch ohne Ergebnis (Rückblick: die letzten Balken; laufend: zu wenig Verlauf): grauer Ring statt Punkt. */
-export const OPEN_RING = [
-  { radius: 2.5, color: "rgba(150,150,150,0.8)" },
-  { radius: 1.2, color: "#0a0a0a" },
-] as const;
+/** Noch ohne Ergebnis (Rückblick: die letzten Balken; laufend: zu wenig Verlauf): kleiner dunkelgrauer Punkt. */
+export const OPEN_MARK = { radius: 1.5, color: "#4a4a4a" } as const;
+
+/** Rückblick: hohle Punkte – innen dunkel (Radius je Stufe), damit man ihn nicht mit „laufend“ verwechselt. */
+export const HOLLOW_INNER = DOT_TIERS.map((d) => Math.max(0.9, d.radius - 1.6));
 
 /** Index in DOT_SERIES für einen t-Wert und seine Stufe. */
 export function dotSeriesIndex(t: number, tier: number): number {
   return tier <= 0 ? 0 : 1 + (Math.min(tier, DOT_TIERS.length - 1) - 1) * 2 + (t > 0 ? 0 : 1);
+}
+
+/** Ehrlicher Wortlaut zum Zufallsrang (kein „zu x % sicher“). */
+export function vsRandomText(rank: number): string {
+  if (rank >= 0.995) return "gerader als 99 von 100 Zufallskursen";
+  const n = Math.max(1, Math.round((1 - rank) * 100));
+  return `so gerade wie nur ${n} von 100 Zufallskursen`;
 }
 
 /** Hilfslinien fürs Unterfenster „Trend-Scan t-Wert“: typischer Zufall (grau) und stärker als 90 % Zufall (grün/rot). */
