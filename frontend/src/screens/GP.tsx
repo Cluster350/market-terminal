@@ -298,6 +298,59 @@ export function alignRsi(rsi: RsiPoint[], lines: { data: { time: Time }[] }[]): 
     .map((t) => by.get(t) ?? { time: t as Time });
 }
 
+/**
+ * Zeitspalte im CSV: Tagesdatum wie gezeigt; Intraday die Originalzeit in UTC aus ``ts`` (Spalte „Zeit (UTC)“).
+ * ``time`` ist dort für die Achse auf Ortszeit verschoben – damit stand vorher Ortszeit unter „UTC“.
+ */
+export function csvTime(time: Time, ts?: number): string {
+  if (ts !== undefined) return new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
+  return typeof time === "number" ? new Date(time * 1000).toISOString().slice(0, 16).replace("T", " ") : String(time);
+}
+
+/**
+ * Monatswerte (KGV-Band) auf den letzten Handelstag am oder vor ihrem Datum legen; Punkte vor dem ersten Balken
+ * fallen weg. Monatsenden am Wochenende oder Feiertag (31.10.2026 = Samstag) fügten der Zeitachse sonst einen
+ * Zeitpunkt ohne Kurs hinzu: Lücke zwischen den Kerzen, und das über den logischen Bereich gekoppelte
+ * Unterfenster lief ab dort um einen Balken versetzt. ``points`` und ``barTimes`` aufsteigend.
+ */
+export function snapToBars<T extends { time: string }>(points: T[], barTimes: string[]): T[] {
+  const out: T[] = [];
+  let j = 0;
+  for (const p of points) {
+    while (j + 1 < barTimes.length && barTimes[j + 1] <= p.time) j++;
+    if (!barTimes.length || barTimes[j] > p.time) continue;
+    const q = { ...p, time: barTimes[j] };
+    if (out.length && out[out.length - 1].time === q.time) out[out.length - 1] = q;
+    else out.push(q);
+  }
+  return out;
+}
+
+type FitRow = { time: Time; t: number | null; slope: number | null; fitAt: number | null; fitOther: number | null; other: { time: Time } | null };
+
+/**
+ * Trend-Scan: gefundene Gerade zum Balken ``rows[idx]`` als zwei Punkte für die Linienreihe. Liegt das andere
+ * Trendende außerhalb der gezeigten Balken (laufend: Trendbeginn vor dem Zeitraum oder im 1T-Vorlauf), wird die
+ * Gerade am ersten bzw. letzten gezeigten Balken abgeschnitten. Ein Punkt außerhalb fügte der Zeitachse einen
+ * fremden Zeitpunkt direkt neben dem ersten Balken hinzu – die Gerade war dann auf eine Balkenbreite gestaucht.
+ */
+export function scanFitPoints(rows: FitRow[], idx: number): { time: Time; value: number }[] {
+  const r = rows[idx];
+  if (!r || r.t === null || !r.other || !isNum(r.fitAt) || !isNum(r.fitOther)) return [];
+  const before = (x: Time, y: Time) => (typeof x === "number" && typeof y === "number" ? x < y : String(x) < String(y));
+  const a = { time: r.time, value: r.fitAt };
+  let b = { time: r.other.time, value: r.fitOther };
+  const lastIdx = rows.length - 1;
+  if (before(b.time, rows[0].time)) {
+    if (idx === 0 || !isNum(r.slope)) return [];
+    b = { time: rows[0].time, value: r.fitAt - r.slope * idx };
+  } else if (before(rows[lastIdx].time, b.time)) {
+    if (idx === lastIdx || !isNum(r.slope)) return [];
+    b = { time: rows[lastIdx].time, value: r.fitAt + r.slope * (lastIdx - idx) };
+  }
+  return before(a.time, b.time) ? [a, b] : [b, a];
+}
+
 // Stabile Referenz: useQueries liefert ohne combine bei jedem Render ein neues Array, wodurch
 // der Daten-Effekt bei jeder Mausbewegung (Hover) alle Serien neu gesetzt hätte.
 const combineCompare = (results: { data?: History; isError: boolean }[]) => results.map((r) => ({ data: r.data, isError: r.isError }));
@@ -506,7 +559,6 @@ export default function GP({ ticker }: ScreenProps) {
   useCsvExport(() => {
     if (!bars.length) return [];
     const name = ticker ? displayTicker(ticker) : "";
-    const label = (t: Time) => (typeof t === "number" ? new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ") : String(t));
     const maMaps = maLines.map((m) => new Map(m.data.map((p) => [String(p.time), p.value])));
     const bollUp = new Map((bands?.upper ?? []).map((p) => [String(p.time), p.value]));
     const bollLo = new Map((bands?.lower ?? []).map((p) => [String(p.time), p.value]));
@@ -542,7 +594,7 @@ export default function GP({ ticker }: ScreenProps) {
         rows: bars.map((b) => {
           const k = String(b.time);
           return [
-            label(b.time), b.open, b.high, b.low, b.close, b.volume, ...maMaps.map((mm) => mm.get(k) ?? null),
+            csvTime(b.time, b.ts), b.open, b.high, b.low, b.close, b.volume, ...maMaps.map((mm) => mm.get(k) ?? null),
             ...(bands ? [bollUp.get(k) ?? null, bollLo.get(k) ?? null] : []),
             ...ehlMaps.map((mm) => mm.get(k) ?? null), ...oscMaps.map((mm) => mm.get(k) ?? null),
             ...(scanOn
@@ -552,7 +604,7 @@ export default function GP({ ticker }: ScreenProps) {
                   // Renditen: Basispunkte statt Prozent (eine prozentuale Veränderung um null herum ist sinnlos)
                   const slope = isNum(r.slope) ? (isYield ? r.slope * 100 : r.close > 0 ? (r.slope / r.close) * 100 : null) : null;
                   const chg = isYield ? (isNum(r.diff) ? r.diff * 100 : null) : isNum(r.ret) ? r.ret * 100 : null;
-                  return [r.t, isNum(r.rank) ? r.rank * 100 : null, r.len, slope, chg, r.other ? label(r.other.time) : null];
+                  return [r.t, isNum(r.rank) ? r.rank * 100 : null, r.len, slope, chg, r.other ? csvTime(r.other.time, r.other.ts) : null];
                 })()
               : []),
           ];
@@ -823,10 +875,13 @@ export default function GP({ ticker }: ScreenProps) {
     }
     if (s.band.length === 10) {
       const b = shownBands;
-      const first = String(bars[0].time);
+      // Monatsenden (und „heute“ als Anschluss) auf den letzten Handelstag davor legen – siehe snapToBars
+      const times = bars.map((x) => String(x.time));
+      const today = b?.t[b.t.length - 1] ?? "";
       BAND_KEYS.forEach((k, i) => {
-        const past = b ? b.t.map((t, j) => ({ time: t, value: b.lines[k][j] })).filter((p) => p.time >= first && isNum(p.value)) : [];
-        const fut = b ? b.futureT.map((t, j) => ({ time: t, value: b.future[k][j] })).filter((p) => isNum(p.value)) : [];
+        const past = b ? snapToBars(b.t.map((t, j) => ({ time: t, value: b.lines[k][j] })).filter((p) => isNum(p.value)), times) : [];
+        const futAll = b ? b.futureT.map((t, j) => ({ time: t, value: b.future[k][j] })).filter((p) => isNum(p.value)) : [];
+        const fut = [...snapToBars(futAll.filter((p) => p.time <= today), times), ...futAll.filter((p) => p.time > today)];
         s.band[i].setData(past as never);
         s.band[i + 5].setData(fut as never);
       });
@@ -1166,17 +1221,16 @@ export default function GP({ ticker }: ScreenProps) {
   useEffect(() => {
     const series = seriesRef.current?.scanFit;
     if (!series) return;
-    const r = scanFitKey ? scanRows.find((x) => String(x.time) === scanFitKey) : undefined;
-    if (!r || r.t === null || !r.other || !isNum(r.fitAt) || !isNum(r.fitOther)) {
+    const idx = scanFitKey ? scanRows.findIndex((x) => String(x.time) === scanFitKey) : -1;
+    const pts = scanFitPoints(scanRows, idx);
+    if (!pts.length) {
       series.setData([]);
       return;
     }
+    const r = scanRows[idx];
     const strong = r.rank !== null && dotTier(r.rank) >= STRONG_TIER;
     series.applyOptions({ color: strong ? "#ffa028" : "rgba(150,150,150,0.8)" });
-    const a = { time: r.time, value: r.fitAt };
-    const b = { time: r.other.time, value: r.fitOther };
-    const aFirst = typeof a.time === "number" && typeof b.time === "number" ? a.time < b.time : String(a.time) < String(b.time);
-    series.setData(aFirst ? [a, b] : [b, a]);
+    series.setData(pts);
   }, [scanFitKey, scanRows, chartGen]);
   const shownIdx = shown ? bars.indexOf(shown) : -1;
   const prevClose = shownIdx > 0 ? bars[shownIdx - 1].close : shownIdx === 0 ? base : null;
@@ -1528,14 +1582,17 @@ export default function GP({ ticker }: ScreenProps) {
                     );
                   // an der Fenstergrenze ist die Länge nur das Maximum, kein echter Trendbeginn/-ende
                   const lenTxt = r.len === maxLen ? `≥ ${r.len} Balken (Fenstergrenze)` : `${r.len} Balken ${back ? "bis" : "seit"} ${when(r.other)}`;
+                  // kleine Werte (Anleihen intraday, Devisen) nicht auf 0 runden: mehr Nachkommastellen
+                  const slopePct = isNum(r.slope) && !isYield && r.close > 0 ? (r.slope / r.close) * 100 : null;
                   const slopeTxt = isNum(r.slope)
                     ? isYield
-                      ? `${fmtBp(r.slope)} je Balken`
-                      : r.close > 0
-                        ? `${fmtPct((r.slope / r.close) * 100, 2)} je Balken`
+                      ? `${r.slope >= 0 ? "+" : "−"}${fmt(Math.abs(r.slope * 100), Math.abs(r.slope * 100) < 10 ? 1 : 0)} bp je Balken`
+                      : isNum(slopePct)
+                        ? `${fmtPct(slopePct, Math.abs(slopePct) < 0.1 ? 3 : 2)} je Balken`
                         : ""
                     : "";
-                  const chgTxt = isYield ? fmtBp(r.diff) : fmtPct(isNum(r.ret) ? r.ret * 100 : null, 1);
+                  const retPct = isNum(r.ret) ? r.ret * 100 : null;
+                  const chgTxt = isYield ? fmtBp(r.diff) : fmtPct(retPct, isNum(retPct) && Math.abs(retPct) < 1 ? 2 : 1);
                   return (
                     <span className={r.t > 0 ? "up" : "down"} style={tier < STRONG_TIER ? { opacity: 0.75 } : undefined} title={SCAN_INFO[scan]}>
                       {head} {r.t > 0 ? "▲" : "▼"} {lenTxt} · t <b>{tTxt}</b> · {DOT_TIERS[tier].text}: {vsRandomText(r.rank ?? 0)}

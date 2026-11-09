@@ -459,7 +459,7 @@ export const OSC_LABEL: Record<Oscillator, string> = {
   reflex: "Reflex / Trendflex 20",
   cti: "Correlation Trend 20",
   cycle: "Zykluslänge (MESA)",
-  tscan: "Trend-Scan t-Wert (laufend 20)",
+  tscan: "Trend-Scan t-Wert",
 };
 
 export const OSC_INFO: Record<Oscillator, string> = {
@@ -475,7 +475,7 @@ export const OSC_INFO: Record<Oscillator, string> = {
   cti: "Correlation Trend Indicator (Ehlers 2020): wie gerade der Kurs der letzten 20 Balken steigt (+1) oder fällt (−1); um 0 kein Trend.",
   cycle: "Dominanter Zyklus (Ehlers, Homodyne-Diskriminator der MESA-Rechnung): Länge der aktuell vorherrschenden Kursschwingung in Balken (6 bis 50).",
   tscan:
-    "Trend-Scanning laufend (López de Prado; mlfinlab von Hudson & Thames): t-Wert des saubersten Trends der letzten 5 bis 19 Balken; je größer, desto gerader. Hilfslinien: grau = typischer reiner Zufallskurs, grün/rot = stärker als 90 % der Zufallskurse (erst darüber ein deutlicher Trend). Nutzt nur frühere Kurse.",
+    "Trend-Scanning (López de Prado; mlfinlab von Hudson & Thames): t-Wert des saubersten Trends; je größer, desto gerader. Folgt der Auswahl bei „Trend-Scan“; ist dort „aus“ gewählt: laufend 20 (die letzten 5 bis 19 Balken, nur frühere Kurse). Im Rückblick nutzt er spätere Kurse – kein Signal. Hilfslinien: grau = typischer reiner Zufallskurs, grün/rot = stärker als 90 % der Zufallskurse (erst darüber ein deutlicher Trend).",
 };
 
 /** Linienfarben, Hilfslinien und Nachkommastellen je Unterfenster (für den Chartaufbau). */

@@ -37,9 +37,12 @@ export function fmt(x: number | null | undefined, digits = 2): string {
 export function priceDigits(x: number, ticker?: string | null): number {
   const a = Math.abs(x);
   if (ticker && ticker.endsWith(".FOREX")) return a >= 20 ? 3 : 5;
+  // Renditen (Staatsanleihen) mit drei Stellen wie in HP, Kopfzeile, Chartachse und den Alarmmeldungen des Servers –
+  // mit zwei Stellen zeigte die Werte-Zeile im Kurschart E = H = T = S, und Marken bei 2,515 standen als „2,52“ da
+  if (ticker && ticker.endsWith(".GBOND")) return 3;
   // Kleinstkurse (z. B. Shiba Inu 0,0000213): vier gültige Stellen statt „0,0000“
   if (a > 0 && a < 0.01) return Math.min(10, Math.ceil(-Math.log10(a)) + 3);
-  return a >= 1 ? 2 : 4;
+  return a >= 1 || a === 0 ? 2 : 4; // null wie die Nachbarn an der Achse („0,00“ statt „0,0000“)
 }
 
 export function fmtPrice(x: number | null | undefined, ticker?: string | null): string {

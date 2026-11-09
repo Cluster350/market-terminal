@@ -29,6 +29,10 @@ describe("Zahlenformate (de-DE)", () => {
     expect(fmtPrice(1.23456)).toBe("1,23");
     expect(fmtPrice(1.234567, "EURUSD.FOREX")).toBe("1,23457");
     expect(fmtPrice(156.7891, "USDJPY.FOREX")).toBe("156,789");
+    // Renditen mit drei Stellen wie HP, Kopfzeile und Server (Regression: Werte-Zeile in GP zeigte 2,52 statt 2,508)
+    expect(fmtPrice(2.508, "DE10Y.GBOND")).toBe("2,508");
+    expect(fmtPrice(0.4, "JP2Y.GBOND")).toBe("0,400");
+    expect(fmtPrice(0)).toBe("0,00"); // Achsenbeschriftung bei null (vorher „0,0000“ neben „50,00“)
     expect(fmtPrice(0.8123)).toBe("0,8123");
     expect(fmtPrice(18250.5)).toBe("18.250,50");
     expect(fmtInt(1234.4)).toBe("1.234");

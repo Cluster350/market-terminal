@@ -184,6 +184,11 @@ class RotationService:
             res = await self._factors(region, tk)
         else:
             raise BadRequest(f"Unbekannter Bereich „{universe}“.")
+        # Wochen tragen den Freitag als Schlüssel; die laufende Woche reicht aber nur bis heute – sonst stand
+        # montags „bis 13.11.“ (ein Datum in der Zukunft) über dem Diagramm und im CSV
+        today = self.t.now().date().isoformat()
+        if res.weeks and res.weeks[-1] > today:
+            res.weeks[-1] = today
         if res.state == "ready":
             if len(self._cache) > 100:
                 self._cache.clear()
