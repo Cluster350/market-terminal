@@ -49,10 +49,14 @@ function cell(v: CsvCell): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "number") {
     if (!Number.isFinite(v)) return "";
-    // etwa 10 gültige Stellen, höchstens 6 Nachkommastellen (kein Rauschen wie 1046197699227,0001)
-    const intDigits = Math.max(1, Math.floor(Math.log10(Math.abs(v) || 1)) + 1);
-    const d = Math.max(0, Math.min(6, 10 - intDigits));
-    return String(Number(v.toFixed(d))).replace(".", ",");
+    // etwa 10 gültige Stellen, höchstens 6 Nachkommastellen (kein Rauschen wie 1046197699227,0001);
+    // Kleinstwerte unter 0,01 (Kurs von Shiba Inu 0,00003656) mit sechs gültigen Stellen statt 0,000037
+    const a = Math.abs(v);
+    const intDigits = Math.max(1, Math.floor(Math.log10(a || 1)) + 1);
+    const d = a > 0 && a < 0.01 ? Math.min(20, 5 - Math.floor(Math.log10(a))) : Math.max(0, Math.min(6, 10 - intDigits));
+    let s = v.toFixed(d); // ohne Exponentenschreibweise (String(1e-7) wäre „1e-7“)
+    if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
+    return (s === "-0" ? "0" : s).replace(".", ",");
   }
   let s = String(v).replace(/[\r\n]+/g, " ").trim();
   // Fremdtexte, die mit = + - @ beginnen, würde Excel als Formel ausführen (CSV-Injection)

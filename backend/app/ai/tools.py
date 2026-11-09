@@ -17,10 +17,16 @@ from ..providers.base import ScreenFilter
 from ..services import metrics
 from ..services.terminal import Terminal
 from ..services.tickers import display, normalize
+from ..services.util import round_price
 
 
 def _r(x: Optional[float], digits: int = 2) -> Optional[float]:
     return None if x is None else round(float(x), digits)
+
+
+def _px(x: Optional[float], digits: int = 4) -> Optional[float]:
+    """Kurs: feste Nachkommastellen, Kleinstkurse (Shiba Inu 0,0000213) mit gültigen Stellen statt 0,0."""
+    return None if x is None else round_price(float(x), digits)
 
 
 def _pct(share: Optional[float]) -> Optional[float]:
@@ -61,9 +67,9 @@ async def _kurs(t: Terminal, a: dict) -> dict:
     ticker = await resolve_ticker(t, a.get("ticker"))
     q = (await t.quotes([ticker]))[0]
     return {
-        "ticker": ticker, "name": q.name, "kurs": _r(q.last, 4), "waehrung": q.currency,
-        "veraenderung": _r(q.change, 4), "veraenderung_prozent": _r(q.change_pct),
-        "eroeffnung": _r(q.open, 4), "hoch": _r(q.high, 4), "tief": _r(q.low, 4), "vortag": _r(q.prev_close, 4),
+        "ticker": ticker, "name": q.name, "kurs": _px(q.last), "waehrung": q.currency,
+        "veraenderung": _px(q.change), "veraenderung_prozent": _r(q.change_pct),
+        "eroeffnung": _px(q.open), "hoch": _px(q.high), "tief": _px(q.low), "vortag": _px(q.prev_close),
         "volumen": q.volume, "stand": q.timestamp,
     }
 
@@ -87,9 +93,9 @@ async def _wertentwicklung(t: Terminal, a: dict) -> dict:
 
     hi, lo = metrics.window_high_low(h.t, h.h, h.l)
     out = {
-        "ticker": ticker, "einheit": "Basispunkte" if yield_like else "Prozent", "letzter_schluss": _r(h.c[-1], 4) if h.c else None,
+        "ticker": ticker, "einheit": "Basispunkte" if yield_like else "Prozent", "letzter_schluss": _px(h.c[-1]) if h.c else None,
         "datum": h.t[-1] if h.t else None, "1_woche": chg(days=7), "1_monat": chg(months=1), "3_monate": chg(months=3),
-        "1_jahr": chg(months=12), "hoch_52w": _r(hi, 4), "tief_52w": _r(lo, 4),
+        "1_jahr": chg(months=12), "hoch_52w": _px(hi), "tief_52w": _px(lo),
     }
     if not yield_like:
         out["volatilitaet_1j_prozent"] = _r(metrics.annual_vol_dated(h.t, h.c))
@@ -199,7 +205,7 @@ async def _maerkte(t: Terminal, a: dict) -> dict:
     idx, fx, curves = await t.indices(), await t.fx(), await t.curves(["US", "DE"])
 
     def mrow(r) -> dict:
-        return {"name": r.name, "ticker": r.ticker, "kurs": _r(r.last, 4), "tag_prozent": _r(r.change_pct), "ytd_prozent": _r(r.chg_ytd)}
+        return {"name": r.name, "ticker": r.ticker, "kurs": _px(r.last), "tag_prozent": _r(r.change_pct), "ytd_prozent": _r(r.chg_ytd)}
 
     ten = []
     for c in curves:
@@ -309,7 +315,7 @@ async def _alarme(t: Terminal, a: dict) -> dict:
     status = lambda x: "Marke ohne Alarm" if not x.alarm else "scharf" if x.active else f"ausgelöst {x.triggered_at}"  # noqa: E731
     return {
         "alarme": [
-            {"ticker": x.ticker, "bedingung": condition_text(x), "status": status(x), "kurs": _r(x.price, 4), "abstand_prozent": _r(x.distance_pct), "notiz": x.note or None}
+            {"ticker": x.ticker, "bedingung": condition_text(x), "status": status(x), "kurs": _px(x.price), "abstand_prozent": _r(x.distance_pct), "notiz": x.note or None}
             for x in res.alerts[:40]
         ],
         "zuletzt_ausgeloest": [{"zeit": e.at, "meldung": e.message} for e in res.events[:10]],
@@ -475,7 +481,7 @@ async def _krypto(t: Terminal, a: dict) -> dict:
         "anteil_bezug": "gesamter Kryptomarkt" if o.share_basis == "market" else "gezeigte Coins ohne Stablecoins",
         "coins_ueber_200_tage_linie": f"{o.breadth_up} von {o.breadth_n}",
         "coins": [
-            {"name": r.name, "kuerzel": r.symbol, "kurs": _r(r.last, 6), "tag_prozent": _r(r.chg_1d, 2), "7_tage_prozent": _r(r.chg_7d, 1),
+            {"name": r.name, "kuerzel": r.symbol, "kurs": _px(r.last, 6), "tag_prozent": _r(r.chg_1d, 2), "7_tage_prozent": _r(r.chg_7d, 1),
              "30_tage_prozent": _r(r.chg_30d, 1), "1_jahr_prozent": _r(r.chg_1y, 1), "schwankung_30t_prozent": _r(r.vol_30d, 0),
              "abstand_hoch_prozent": _r(r.from_high, 1), "korrelation_bitcoin_90t": _r(r.corr_btc, 2), "ueber_200_tage_linie": r.above_200d,
              "marktkap": _r(r.market_cap, 0), "anteil_prozent": _r(r.share, 2)}

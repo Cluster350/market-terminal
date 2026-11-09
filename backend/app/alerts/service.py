@@ -10,6 +10,7 @@ import asyncio
 import datetime as dt
 import json
 import logging
+import math
 import os
 import secrets
 from pathlib import Path
@@ -42,6 +43,8 @@ def _digits(ticker: str, x: float) -> int:
         return 3 if abs(x) >= 20 else 5
     if ticker.endswith(".GBOND"):
         return 3
+    if 0 < abs(x) < 0.01:  # Kleinstkurse (Shiba Inu 0,0000213): vier gültige Stellen wie im Frontend, nicht „0,0000“
+        return min(10, math.ceil(-math.log10(abs(x))) + 3)
     return 2 if abs(x) >= 1 else 4
 
 

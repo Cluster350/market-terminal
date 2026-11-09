@@ -20,6 +20,7 @@ from typing import Any, Awaitable, Callable, Optional, Protocol
 
 from ..errors import TerminalError
 from ..models import Quote
+from ..services.util import round_price
 
 log = logging.getLogger("terminal.realtime")
 
@@ -45,7 +46,7 @@ class Tick:
     delayed: bool = False  # aus verzögerten Kursen (nicht Echtzeit)
 
     def as_dict(self) -> dict:
-        d: dict[str, Any] = {"t": self.ticker, "p": round(self.price, 6), "ts": self.ts}
+        d: dict[str, Any] = {"t": self.ticker, "p": round_price(self.price), "ts": self.ts}  # Kleinstkurse mit gültigen Stellen
         if self.volume:
             d["v"] = self.volume
         if self.delayed:

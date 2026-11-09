@@ -318,7 +318,7 @@ export function PORT(_: ScreenProps) {
       const last = await api.quotes([position.ticker]).then((qs) => qs[0]?.last ?? null, () => null);
       if (last && (position.cost / last > 4 || position.cost / last < 0.25)) {
         const ok = window.confirm(
-          `Einstandskurs ${fmt(position.cost, 2)} weicht stark vom aktuellen Kurs ${fmt(last, 2)} ab (Faktor ${fmt(Math.max(position.cost / last, last / position.cost), 1)}). ` +
+          `Einstandskurs ${fmtPrice(position.cost, position.ticker)} weicht stark vom aktuellen Kurs ${fmtPrice(last, position.ticker)} ab (Faktor ${fmt(Math.max(position.cost / last, last / position.cost), 1)}). ` +
             "Stimmt das? (Häufige Ursachen: Tippfehler, Pence statt Pfund, Kurs vor einem Aktiensplit.)",
         );
         if (!ok) return;

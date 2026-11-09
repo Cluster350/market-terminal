@@ -6,7 +6,7 @@ import datetime as dt
 import math
 from typing import Optional, Sequence
 
-from .util import pct
+from .util import pct, round_price
 
 TRADING_DAYS = {"1w": 5, "1m": 21, "3m": 63, "6m": 126, "12m": 252}
 
@@ -98,7 +98,7 @@ def dist_from_high(closes: Sequence[Optional[float]], highs: Sequence[Optional[f
 
 
 def last_n(values: Sequence[Optional[float]], n: int) -> list[float]:
-    return [round(v, 6) for v in _clean(values)[-n:]]
+    return [round_price(v) for v in _clean(values)[-n:]]  # Kleinstkurse mit gültigen Stellen
 
 
 # --- Kalenderbasierte Fenster ------------------------------------------------------

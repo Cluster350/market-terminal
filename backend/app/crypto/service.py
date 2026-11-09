@@ -9,7 +9,7 @@ import logging
 import time
 from typing import Any, Optional
 
-from ..errors import NotFound, TerminalError
+from ..errors import NotFound, PlanNotIncluded, TerminalError
 from ..models import Model
 from ..services import metrics
 from . import calc
@@ -19,6 +19,7 @@ log = logging.getLogger("terminal")
 
 CACHE_SECONDS = 60
 INFO_SECONDS = 24 * 3600
+INFO_RETRY_SECONDS = 900  # Stammdaten nach einem vorübergehenden Fehler (Netz, Limit) nach 15 Minuten neu abrufen
 INTRA_SECONDS = 1800  # 5-Minuten-Balken für die 24-Stunden-Veränderung (ältere Balken ändern sich nicht)
 CROSS_YEARS = 5
 
@@ -76,7 +77,7 @@ class CryptoService:
     def __init__(self, terminal: Any):
         self.t = terminal
         self._cache: dict[str, tuple[float, CryptoOverview]] = {}
-        self._info: dict[str, tuple[float, dict]] = {}
+        self._info: dict[str, tuple[float, dict]] = {}  # Ticker -> (gültig bis, Stammdaten)
         self._intra: dict[str, tuple[float, list[tuple[int, float, float, float]]]] = {}
         self._corr_memo: dict[str, dict] = {}  # gleitende Korrelation je Vergleichswert (siehe calc.rolling_corr)
         self._lock = asyncio.Lock()
@@ -97,27 +98,37 @@ class CryptoService:
 
     async def _crypto_info(self, ticker: str) -> dict:
         hit = self._info.get(ticker)
-        if hit and time.time() - hit[0] < INFO_SECONDS:
+        if hit and time.time() < hit[0]:
             return hit[1]
         fn = getattr(self.t.p, "crypto_info", None)
         info: dict = {}
+        ttl = INFO_SECONDS
         if fn is not None:
             try:
                 info = await fn(ticker) or {}
-            except TerminalError:
-                info = {}
+            except (NotFound, PlanNotIncluded):
+                info = {}  # gibt es nicht: einen Tag lang nicht erneut fragen
+            except TerminalError as exc:
+                # vorübergehend (Zeitüberschreitung, Limit): nicht einen ganzen Tag ohne Marktkapitalisierung
+                log.info("Krypto-Stammdaten %s: %s", ticker, exc.message)
+                info, ttl = {}, INFO_RETRY_SECONDS
             except Exception as exc:  # noqa: BLE001 – fehlende Stammdaten sollen die Übersicht nicht verhindern
                 log.info("Krypto-Stammdaten %s: %s", ticker, exc)
-        self._info[ticker] = (time.time(), info)
+                info, ttl = {}, INFO_RETRY_SECONDS
+        self._info[ticker] = (time.time() + ttl, info)
         return info
 
     async def _bars(self, ticker: str) -> list[tuple[int, float, float, float]]:
-        """5-Minuten-Balken der letzten zwei Tage (Zeitstempel, Hoch, Tief, Schluss), 30 Minuten gemerkt."""
+        """5-Minuten-Balken der letzten zwei Tage (Zeitstempel, Hoch, Tief, Schluss), 30 Minuten gemerkt.
+
+        Devisen: drei Handelstage – montags sind die letzten zwei Sonntagabend und Montag, „vor 24 Stunden“
+        (Sonntag) läge sonst vor dem ersten Balken, und der Euro-Wert der 24 Stunden nähme den Kurs von jetzt
+        statt des Freitagsschlusses."""
         hit = self._intra.get(ticker)
         if hit and time.time() - hit[0] < INTRA_SECONDS:
             return hit[1]
         try:
-            d = await self.t.intraday(ticker, 2, "5m")
+            d = await self.t.intraday(ticker, 3 if ticker.endswith(".FOREX") else 2, "5m")
             bars = [(int(ts), h or c, l or c, c) for ts, h, l, c in zip(d.t, d.h, d.l, d.c) if c]
         except TerminalError as exc:
             log.info("Krypto: keine Intraday-Kurse für %s (%s)", ticker, exc.message)

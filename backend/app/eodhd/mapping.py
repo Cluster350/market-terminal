@@ -40,7 +40,7 @@ from ..models import (
     Technicals,
     Valuation,
 )
-from ..services.util import integer, num, pct, safe_div, text
+from ..services.util import integer, num, pct, round_price, safe_div, text
 
 
 def _as_list(data: Any) -> list[dict]:
@@ -130,7 +130,7 @@ def history(data: Any, ticker: str) -> History:
 
         def scaled(key: str) -> Optional[float]:
             val = num(r.get(key))
-            return None if val is None else round(val * factor, 6)
+            return None if val is None else round_price(val * factor)
 
         if t and t[-1] == date[:10]:
             # Doppelter Tag (Datenkorrektur der Quelle): letzter Eintrag gilt – Charts brauchen
@@ -141,7 +141,7 @@ def history(data: Any, ticker: str) -> History:
         o.append(scaled("open"))
         h.append(scaled("high"))
         l.append(scaled("low"))
-        c.append(round(adj, 6) if adj is not None else None)
+        c.append(round_price(adj))  # Kleinstkurse (Shiba Inu) mit gültigen Stellen statt 0,000012
         v.append(num(r.get("volume")))
     return History(ticker=ticker, t=t, o=o, h=h, l=l, c=c, v=v)
 

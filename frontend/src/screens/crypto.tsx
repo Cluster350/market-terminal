@@ -8,7 +8,7 @@ import { monthsBack, normalized, useCrypto, type CryptoOverview, type CryptoRow 
 import { useCsvExport } from "../lib/exporter";
 import { DASH, fmt, fmtBig, fmtDate, fmtPrice, isNum } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
-import { intradayNormalized, useIntradaySet, windowStart } from "../lib/intradayLines";
+import { inEur, intradayNormalized, useIntradaySet, windowStart } from "../lib/intradayLines";
 import type { Intraday } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
@@ -116,8 +116,12 @@ export function CRYP(_: ScreenProps) {
   const months = intraday ? 12 : Number(range);
   const crossKeys = useMemo(() => (o ? o.cross.map((c) => c.key) : []), [o]);
   const iq = useIntradaySet(crossKeys, range === "h24" ? 2 : 8, range === "h24" ? "5m" : "1h", intraday);
-  const iData = iq.map((x) => x.data);
-  const iStamp = iq.map((x) => x.dataUpdatedAt).join(",");
+  // Euro-Ansicht: Intraday-Kurse kommen in US-Dollar – mit EUR/USD zum selben Zeitpunkt umrechnen (ein Tag mehr
+  // für den Freitagsschluss am Wochenende), sonst zeigte das Diagramm die Dollar-Entwicklung
+  const eur = ccy === "eur";
+  const fq = useIntradaySet(["EURUSD.FOREX"], range === "h24" ? 3 : 9, range === "h24" ? "5m" : "1h", intraday && eur);
+  const iData = iq.map((x) => (eur ? inEur(x.data, fq[0]?.data) : x.data));
+  const iStamp = [ccy, fq[0]?.dataUpdatedAt, ...iq.map((x) => x.dataUpdatedAt)].join(",");
   const cross = useMemo(
     () => (o ? (intraday ? intradayCrossOption(o, iData, range === "h24" ? 24 : 7 * 24) : crossOption(o, months)) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -177,7 +181,7 @@ export function CRYP(_: ScreenProps) {
               title="Wie viele Coins über ihrem Durchschnitt der letzten 200 Tage stehen – viele = breiter Aufwärtstrend"
             />
           </div>
-          <div className="cryp-table">
+          <div className="cryp-table" data-export-title={`Kryptowährungen (${unit})`}>
             <Table<CryptoRow>
               rows={o.rows}
               rowKey={(r) => r.ticker}

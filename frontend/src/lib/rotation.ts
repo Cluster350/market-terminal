@@ -123,6 +123,13 @@ export function axisSpan(points: number[]): number {
   return Math.ceil((d + 0.3) * 2) / 2;
 }
 
+/** Anteil (0.012) als „+1,2 %“; auf 0,0 gerundet ohne Vorzeichen (nicht „−0,0 %“). */
+export function signedPct(x: number | null | undefined): string {
+  if (x === null || x === undefined || !Number.isFinite(x)) return "–";
+  const r = Math.round(Math.abs(x) * 1000);
+  return `${r === 0 ? "" : x > 0 ? "+" : "−"}${fmt(r / 10, 1)} %`;
+}
+
 /** Einheit der Zeitpunkte: „Wochen“ bzw. „Tage“ (Einzahl/Mehrzahl). */
 export function unitLabel(freq: Freq | undefined, n: number, short = false): string {
   if (short) return `${n} ${freq === "d" ? "T" : "W"}`;
@@ -136,7 +143,7 @@ export function rotationTestText(test: RotationResult["test"], freq: Freq = "w",
   const parts = QUADRANT_ORDER.map((k) => {
     const s = q[k]?.[`h${horizon}`];
     if (!s || !s.n || s.avg === null) return `${QUADRANT_LABEL[k]}: –`;
-    return `${QUADRANT_LABEL[k]} ${s.avg >= 0 ? "+" : "−"}${fmt(Math.abs(s.avg * 100), 1)} %`;
+    return `${QUADRANT_LABEL[k]} ${signedPct(s.avg)}`;
   });
   return `Rückblick, relative Entwicklung ${unitLabel(freq, horizon)} nach einem Stand im Feld: ${parts.join(" · ")}`;
 }

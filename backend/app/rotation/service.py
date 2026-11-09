@@ -197,12 +197,13 @@ class RotationService:
                  series: list[Series], skipped: Optional[list[str]] = None, tk: Takt = WEEKLY) -> RotationResult:
         lines = []
         members: list[RotMember] = []
+        skipped = [] if skipped is None else skipped  # sonst gingen „zu wenig Verlauf“-Hinweise verloren (Sektoren, Firmen)
         hist = tk.history
         short, long_ = tk.horizons
         for s in series:
             rs, trend, mom = rrg_lines(s.values, bench, tk.smooth, tk.trend, tk.mom)
             if not any(x is not None for x in mom[-hist:]):
-                (skipped or []).append(f"{s.label} (zu wenig Verlauf)")
+                skipped.append(f"{s.label} (zu wenig Verlauf)")
                 continue
             lines.append((rs, trend, mom))
             i = len(rs) - 1
@@ -219,7 +220,7 @@ class RotationService:
         test = backtest(lines, tk.horizons)
         test["clockwiseShare"] = test.pop("clockwise_share")  # wie alle Felder für das Frontend in camelCase
         return RotationResult(universe=universe, title=title, benchmark=bench_label, weeks=weeks[-hist:], freq=tk.key,
-                              periods=list(tk.horizons), members=members, test=test, skipped=skipped or [],
+                              periods=list(tk.horizons), members=members, test=test, skipped=skipped,
                               note=NOTE if tk.key == "w" else NOTE_DAILY)
 
     async def _histories(self, tickers: list[str], tk: Takt) -> dict[str, dict[str, float]]:

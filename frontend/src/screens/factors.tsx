@@ -234,7 +234,9 @@ export function FCTR(_: ScreenProps) {
                   <tr>
                     <th />
                     {o.corrKeys.map((k) => (
-                      <th key={k} className="num">{o.rows.find((r) => r.key === k)?.label.slice(0, 6)}</th>
+                      <th key={k} className="num" data-csv={o.rows.find((r) => r.key === k)?.label} title={o.rows.find((r) => r.key === k)?.label}>
+                        {o.rows.find((r) => r.key === k)?.label.slice(0, 6)}
+                      </th>
                     ))}
                   </tr>
                 </thead>

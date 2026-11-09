@@ -31,6 +31,14 @@ export function toInput(ticker: string, kind: FormKind, level: number, note: str
   return { ticker, kind: "price", level, direction: kind, alarm: true, note };
 }
 
+const LEVEL_INPUT = new Intl.NumberFormat("de-DE", { maximumSignificantDigits: 10, useGrouping: false });
+
+/** Wert eines Alarms zum Bearbeiten: alle gültigen Stellen (Shiba Inu 0,00006, EUR/USD 1,16845) – feste vier
+ * Nachkommastellen machten daraus „0“ bzw. 0,0001, und ein Speichern nur der Notiz änderte den Wert. */
+export function levelText(level: number): string {
+  return LEVEL_INPUT.format(level);
+}
+
 export function ALRT(_: ScreenProps) {
   const ws = useWorkspace();
   const q = useAlerts();
@@ -160,7 +168,7 @@ export function ALRT(_: ScreenProps) {
         const st = alertStatus(a);
         return (
           <span className="nowrap">
-            <button className="tool" title="Wert und Notiz ändern" onClick={() => setEdit({ id: a.id, level: fmt(a.level, a.level < 10 ? 4 : 2).replace(/0+$/, "").replace(/,$/, ""), note: a.note })}>
+            <button className="tool" title="Wert und Notiz ändern" onClick={() => setEdit({ id: a.id, level: levelText(a.level), note: a.note })}>
               ✎
             </button>
             {(st === "fired" || st === "off") && (

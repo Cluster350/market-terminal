@@ -52,6 +52,14 @@ def round_or_none(value: Optional[float], digits: int = 4) -> Optional[float]:
     return None if value is None else round(value, digits)
 
 
+def round_price(value: Optional[float], digits: int = 6) -> Optional[float]:
+    """Kurs runden: ``digits`` Nachkommastellen, Kleinstkurse unter 0,01 (z. B. Shiba Inu 0,00001234) auf sechs
+    gültige Stellen – feste Nachkommastellen machten aus ihnen 0,000012 oder gar 0."""
+    if value is None:
+        return None
+    return round(value, digits) if abs(value) >= 0.01 else float(f"{value:.6g}")
+
+
 def pct(a: Optional[float], b: Optional[float]) -> Optional[float]:
     """Prozentuale Veränderung von b nach a."""
     if a is None or b is None or b == 0:

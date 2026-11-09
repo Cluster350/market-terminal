@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from ..services.util import round_price
 from .hub import RealtimeHub, Tick
 
 
@@ -29,7 +30,7 @@ class DemoSource:
                 if lp is None:
                     continue  # außerhalb der Handelszeit
                 price, ts = lp
-                if last.get(t) != round(price, 6):
-                    last[t] = round(price, 6)
+                if last.get(t) != round_price(price):  # Kleinstkurse (Shiba Inu) bewegen sich unter 0,000001
+                    last[t] = round_price(price)
                     hub.on_tick(Tick(t, price, ts))
             await asyncio.sleep(self.every)

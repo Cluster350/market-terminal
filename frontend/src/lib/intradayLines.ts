@@ -58,3 +58,20 @@ export function windowStart(sets: (Intraday | undefined)[], hours: number): numb
   const last = Math.max(0, ...sets.map((d) => (d && d.t.length ? d.t[d.t.length - 1] : 0)));
   return last - hours * 3600;
 }
+
+/** Intraday-Kurse in US-Dollar in Euro umrechnen: Kurs ÷ EUR/USD zum selben Zeitpunkt (bzw. zum letzten Kurs
+ * davor, z. B. Freitagsschluss am Wochenende). Ohne Devisenkurs bis dahin fällt der Punkt weg (null). */
+export function inEur(d: Intraday | undefined, eurusd: Intraday | undefined): Intraday | undefined {
+  if (!d || !eurusd || !eurusd.t.length) return undefined;
+  let j = 0;
+  let rate: number | null = null;
+  const c = d.t.map((ts, i) => {
+    while (j < eurusd.t.length && eurusd.t[j] <= ts) {
+      const x = eurusd.c[j++];
+      if (x !== null && x !== undefined && x > 0) rate = x;
+    }
+    const v = d.c[i];
+    return v === null || v === undefined || rate === null ? null : v / rate;
+  });
+  return { ...d, c };
+}

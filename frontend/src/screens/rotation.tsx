@@ -18,6 +18,7 @@ import {
   QUADRANT_LABEL,
   quadrantOf,
   rotationTestText,
+  signedPct,
   tail,
   useRotation,
   unitLabel,
@@ -33,7 +34,7 @@ const SECTORS = [
   "Healthcare", "Industrials", "Basic Materials", "Real Estate", "Utilities",
 ];
 const PALETTE = ["#ffa028", "#66b8ff", "#29d17d", "#c77dff", "#ff5252", "#f2c200", "#4dd0e1", "#ff8ad8", "#a0e060", "#d8d8d8", "#ff7043", "#7986cb", "#80cbc4", "#bcaaa4"];
-const pct = (x: number | null | undefined) => (isNum(x) ? `${x >= 0 ? "+" : "−"}${fmt(Math.abs(x * 100), 1)} %` : "–");
+const pct = signedPct;
 const tone = (x: number | null | undefined) => (isNum(x) ? (x > 0.0005 ? "up" : x < -0.0005 ? "down" : "") : "");
 
 const TAILS = { w: ["4", "8", "12", "20"], d: ["5", "10", "20", "40"] } as const;

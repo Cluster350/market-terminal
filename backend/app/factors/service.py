@@ -29,6 +29,7 @@ from .universe import FACTOR_HELP, REGIONS, FactorDef, Region
 log = logging.getLogger("terminal")
 
 CACHE_SECONDS = 300
+RETRY_SECONDS = 3600  # nicht aufgelöste ISIN erst nach einer Stunde erneut suchen (Suche und Kursabrufe kosten API-Calls)
 EXPOSURE_YEARS = 3
 MIN_WEEKS = 52
 PREFERRED_EXCHANGES = ("XETRA", "F", "AS", "PA", "MI", "SW", "LSE")
@@ -110,6 +111,7 @@ class FactorService:
         self.mode = mode
         self._path = Path(data_dir) / f"faktor-kuerzel-{mode}.json" if data_dir else None
         self._resolved: dict[str, str] = self._load()
+        self._failed: dict[str, float] = {}  # ISIN -> Zeitpunkt der letzten erfolglosen Suche
         self._cache: dict[str, tuple[float, FactorOverview]] = {}
         self._lock = asyncio.Lock()
 
@@ -148,6 +150,9 @@ class FactorService:
         known = self._resolved.get(f.isin)
         if known:
             return known
+        failed = self._failed.get(f.isin)
+        if failed is not None and time.time() - failed < RETRY_SECONDS:
+            return None  # gerade erst erfolglos gesucht: nicht bei jedem Aufruf wieder Suche und Kursabrufe
         candidates: list[str] = []
         try:
             hits = await self.t.search(f.isin, 20)
@@ -160,8 +165,10 @@ class FactorService:
         for c in dict.fromkeys(candidates):
             if await self._has_history(c):
                 self._resolved[f.isin] = c
+                self._failed.pop(f.isin, None)
                 self._save()
                 return c
+        self._failed[f.isin] = time.time()
         return None
 
     async def members(self, region: Region) -> tuple[list[tuple[FactorDef, str]], list[str]]:
@@ -354,6 +361,9 @@ class FactorService:
 
         depot = [constant + sum(q * (v or 0.0) for q, v in zip([q for q, _ in weekly_pos], vals))
                  for vals in zip(*[filled(m) for _, m in weekly_pos])]
+        if depot and min(depot) <= 0:
+            # Renditen eines Depots mit Wert ≤ 0 haben das falsche Vorzeichen (ein reiner Leerverkauf hätte Beta +1)
+            raise NotFound("Depotwert im Verlauf nicht durchgehend positiv (Leerverkäufe/Kredit) – keine Faktorlast.")
         bccy = BENCH_CCY[reg_key]
         market_base = [None if v is None else v * (fx.at(bccy, w) or 0.0) for v, w in zip(filled(wk["market"]), weeks)]
         r_dep = calc.returns(depot)
