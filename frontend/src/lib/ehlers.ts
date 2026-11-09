@@ -475,7 +475,7 @@ export const OSC_INFO: Record<Oscillator, string> = {
   cti: "Correlation Trend Indicator (Ehlers 2020): wie gerade der Kurs der letzten 20 Balken steigt (+1) oder fällt (−1); um 0 kein Trend.",
   cycle: "Dominanter Zyklus (Ehlers, Homodyne-Diskriminator der MESA-Rechnung): Länge der aktuell vorherrschenden Kursschwingung in Balken (6 bis 50).",
   tscan:
-    "Trend-Scanning laufend (López de Prado; mlfinlab von Hudson & Thames): t-Wert des saubersten Trends der letzten 5 bis 19 Balken. Über +2 deutlicher Aufwärtstrend, unter −2 deutlicher Abwärtstrend; je größer, desto gerader. Nutzt nur frühere Kurse.",
+    "Trend-Scanning laufend (López de Prado; mlfinlab von Hudson & Thames): t-Wert des saubersten Trends der letzten 5 bis 19 Balken; je größer, desto gerader. Hilfslinien: grau = typischer reiner Zufallskurs, grün/rot = stärker als 90 % der Zufallskurse (erst darüber ein deutlicher Trend). Nutzt nur frühere Kurse.",
 };
 
 /** Linienfarben, Hilfslinien und Nachkommastellen je Unterfenster (für den Chartaufbau). */
@@ -489,7 +489,8 @@ export const OSC_STYLE: Record<Oscillator, { colors: string[]; levels: { value: 
   reflex: { colors: ["#c77dff", "#ffa028"], levels: [{ value: 0, color: "#555" }], digits: 2 },
   cti: { colors: ["#c77dff"], levels: [{ value: 0.5, color: "#555" }, { value: 0, color: "#555" }, { value: -0.5, color: "#555" }], digits: 2 },
   cycle: { colors: ["#c77dff"], levels: [], digits: 1 },
-  tscan: { colors: ["#c77dff"], levels: [{ value: 2, color: "#29d17d" }, { value: 0, color: "#555" }, { value: -2, color: "#ff5252" }], digits: 1 },
+  // Hilfslinien kommen aus dem Zufallsvergleich (tscanLevels in trendscan.ts)
+  tscan: { colors: ["#c77dff"], levels: [{ value: 0, color: "#555" }], digits: 1 },
 };
 
 export interface OscResult {

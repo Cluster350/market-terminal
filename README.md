@@ -413,22 +413,43 @@ testet damit keine Strategien.
 
 Auswahl **„Trend-Scan“** im Kurschart (Tages- und Intraday-Charts):
 
-| Einstellung | Was eingefärbt wird |
+| Einstellung | Was gezeigt wird |
 |---|---|
-| Rückblick 20 / 60 | welcher Trend auf jeden Balken **folgte** (5–19 bzw. 5–59 folgende Balken). Nutzt spätere Kurse, also nur zum Verstehen der Vergangenheit, **kein Signal**. Die letzten 19 bzw. 59 Balken sind noch offen (grau). |
+| Rückblick 20 / 60 | welcher Trend auf jeden Balken **folgte** (5–19 bzw. 5–59 folgende Balken). Nutzt spätere Kurse, also nur zum Verstehen der Vergangenheit, **kein Signal**. Die letzten 19 bzw. 59 Balken sind noch offen (ohne Punkt). |
 | laufend 20 / 60 | welcher Trend zu jedem Balken **hinführte** (5–19 bzw. 5–59 vorherige Balken). Nutzt nur frühere Kurse und gilt auch für heute. |
 
-- Hintergrund grün = Aufwärtstrend, rot = Abwärtstrend. Je kräftiger die Farbe, desto größer der t-Wert.
-  Unter |t| = 2 bleibt der Hintergrund frei („kein klarer Trend“).
-- Über dem Chart steht für den Balken unter dem Fadenkreuz zum Beispiel „Trend danach ▲ 14 Balken bis 19.03. ·
-  t +8,3 · +6,1 %“ (bzw. „Trend bisher … seit …“).
-- Im **Unterfenster** gibt es zusätzlich „Trend-Scan t-Wert (laufend 20)“ als Linie mit den Marken ±2.
-- Der CSV-Export enthält t-Wert, gewählte Länge, Veränderung und das andere Trendende als eigene Spalten.
+**Darstellung wie im Buch: ein Punkt je Balken auf dem Schlusskurs.**
+- **Farbe = Richtung:** grün aufwärts, rot abwärts.
+- **Größe = Stärke im Vergleich zum Zufall:** kleiner grauer Punkt = im Zufallsbereich, dann schwach,
+  mittel, deutlich (stärker als 90 % der Zufallskurse), sehr deutlich (stärker als 99 %).
+- Die Punktgröße folgt dem Zoom, damit in langen Ansichten (5J, MAX) die Kerzen sichtbar bleiben.
+- Über dem Chart steht für den Balken unter dem Fadenkreuz zum Beispiel „Trend bisher ▲ 15 Balken seit 20.10.
+  · t +15,5 · deutlich, stärker als 95 % Zufall · +18,1 %“ (bzw. „Trend danach … bis …“).
+- Im **Unterfenster** gibt es zusätzlich „Trend-Scan t-Wert (laufend 20)“ als Linie. Die Hilfslinien liegen beim
+  typischen Zufallskurs (grau) und bei „stärker als 90 % Zufall“ (grün/rot).
+- Der CSV-Export enthält t-Wert, „stärker als Zufall [%]“, gewählte Länge, Veränderung und das andere Trendende.
 
-Die Parameter entsprechen mlfinlab (look_forward_window 20, min_sample_length 5, step 1). Die Rechnung wurde gegen
-eine eigene Nachrechnung des mlfinlab-Verfahrens geprüft, die wie dort mit Matrix-Regression arbeitet. t-Werte
-stimmen auf 13 Stellen überein, Länge, Trendende und Veränderung exakt. Grundlage war der Quelltext des freien
-Ablegers mlfinpy, denn mlfinlab selbst ist inzwischen kostenpflichtig. Bei einer perfekten Geraden wäre der t-Wert
+**Warum der Vergleich mit dem Zufall:** Bei Kursen ist der t-Wert fast immer groß. Kurse hängen am Vortag, und von
+allen Längen wird die beste genommen. Selbst ein reiner Zufallskurs ohne jeden Trend erreicht typisch |t| ≈ 6
+(Fenster 20) bzw. ≈ 11 (Fenster 60). Die Lehrbuchgrenze 2 würde fast jeden Tag als Trend einfärben. Deshalb wird
+jeder t-Wert mit 20.000 Zufallskursen verglichen (Irrfahrt mit festem Startwert, also immer dieselben Zahlen):
+
+| Fenster | typischer Zufall (50 %) | 75 % | 90 % | 99 % |
+|---|---|---|---|---|
+| 20 | 6,2 | 9,0 | 12,4 | 21,6 |
+| 60 | 11,4 | 16,0 | 21,3 | 33,9 |
+
+Der Vergleich hängt nicht von Kursniveau oder Schwankung ab und gilt vorwärts wie rückwärts.
+
+**Woher die Darstellung kommt:** López de Prado zeigt im Buch (Bild 5.1 und 5.2) die Kurspunkte farbig: einmal
+nur nach Richtung, einmal fließend nach t-Wert. Die mlfinlab-Anleitung von Hudson & Thames verwendet dasselbe Bild.
+Die Größe der Punkte als Stärke ist eine Ergänzung für dieses Terminal, weil man auf dem dunklen Kerzenchart
+Größen schneller erkennt als feine Farbabstufungen.
+
+Die Rechnung selbst entspricht mlfinlab (look_forward_window 20, min_sample_length 5, step 1). Sie wurde gegen eine
+eigene Nachrechnung des mlfinlab-Verfahrens geprüft, die wie dort mit Matrix-Regression arbeitet. t-Werte stimmen
+auf 13 Stellen überein, Länge, Trendende und Veränderung exakt. Grundlage war der Quelltext des freien Ablegers
+mlfinpy, denn mlfinlab selbst ist inzwischen kostenpflichtig. Bei einer perfekten Geraden wäre der t-Wert
 unendlich; er wird bei 999 begrenzt. Keine Empfehlung.
 
 ## CSV-Export (für Excel)

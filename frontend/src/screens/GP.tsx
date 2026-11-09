@@ -40,7 +40,7 @@ import {
   type Oscillator,
   type Overlay,
 } from "../lib/ehlers";
-import { SCAN_INFO, SCAN_LABEL, SCAN_MODES, scanColor, scanParams, T_MIN, trendScan, type ScanMode } from "../lib/trendscan";
+import { DOT_SERIES, DOT_TIERS, dotSeriesIndex, dotTier, randomRank, SCAN_INFO, SCAN_LABEL, SCAN_MODES, scanParams, trendScan, tscanLevels, type ScanMode } from "../lib/trendscan";
 import { INTERVAL_LABEL, INTERVAL_SECONDS, INTERVALS, type Interval } from "../lib/intervals";
 import { retry, useEarnings, useHistory, useIntraday } from "../lib/queries";
 import { live, useLiveStatus } from "../lib/realtime";
@@ -380,7 +380,7 @@ export default function GP({ ticker }: ScreenProps) {
     type Gap = Line | { time: Time };
     type OscLine = { name: string; color: string; data: Gap[] };
     type EhlLine = { name: string; color: string; data: Line[] };
-    type ScanRow = { time: Time; t: number | null; len: number | null; ret: number | null; other: Bar | null };
+    type ScanRow = { time: Time; close: number; t: number | null; rank: number | null; len: number | null; ret: number | null; other: Bar | null };
     const empty = { bars: [] as Bar[], maLines: [] as { n: number; color: string; data: Line[] }[], base: null as number | null, prevDay: null as number | null, bands: null as null | { upper: Line[]; lower: Line[] }, oscLines: [] as OscLine[], ehlLines: [] as EhlLine[], scanRows: [] as ScanRow[], start: "" };
     // Unterfenster (RSI oder Ehlers-Oszillator) und Ehlers-Linie: über alle geladenen Balken gerechnet (keine
     // Anlaufphase im sichtbaren Bereich), gezeigt ab ``from``
@@ -409,7 +409,7 @@ export default function GP({ ticker }: ScreenProps) {
       const scanRows: ScanRow[] = sp
         ? src.slice(from).map((b, k) => {
             const p = pts[from + k];
-            return { time: b.time, t: p.t, len: p.len, ret: p.ret, other: p.other !== null ? src[p.other] : null };
+            return { time: b.time, close: b.close, t: p.t, rank: randomRank(p.t, sp.window), len: p.len, ret: p.ret, other: p.other !== null ? src[p.other] : null };
           })
         : [];
       return { oscLines, ehlLines, scanRows };
@@ -506,7 +506,7 @@ export default function GP({ ticker }: ScreenProps) {
           ...ehlLines.map((l) => `Ehlers ${l.name}`),
           ...oscLines.map((l) => l.name),
           ...(scanOn
-            ? [`Trend-Scan ${SCAN_LABEL[scan]} t-Wert`, "Trend-Scan Länge (Balken)", "Trend-Scan Veränderung [%]", scanBack ? "Trend-Scan bis" : "Trend-Scan ab"]
+            ? [`Trend-Scan ${SCAN_LABEL[scan]} t-Wert`, "Trend-Scan stärker als Zufall [%]", "Trend-Scan Länge (Balken)", "Trend-Scan Veränderung [%]", scanBack ? "Trend-Scan bis" : "Trend-Scan ab"]
             : []),
         ],
         rows: bars.map((b) => {
@@ -518,7 +518,7 @@ export default function GP({ ticker }: ScreenProps) {
             ...(scanOn
               ? (() => {
                   const r = scanMap.get(k);
-                  return [r?.t ?? null, r?.len ?? null, isNum(r?.ret) ? r!.ret! * 100 : null, r?.other ? label(r.other.time) : null];
+                  return [r?.t ?? null, isNum(r?.rank) ? r!.rank! * 100 : null, r?.len ?? null, isNum(r?.ret) ? r!.ret! * 100 : null, r?.other ? label(r.other.time) : null];
                 })()
               : []),
           ];
@@ -565,7 +565,8 @@ export default function GP({ ticker }: ScreenProps) {
     cmp: ISeriesApi<"Line">[];
     osc: ISeriesApi<"Line">[];
     ehl: ISeriesApi<"Line">[];
-    scan: ISeriesApi<"Histogram"> | null;
+    scan: ISeriesApi<"Line">[];
+    scanHalo: ISeriesApi<"Line">[];
     cone: ISeriesApi<"Line">[];
     band: ISeriesApi<"Line">[];
   } | null>(null);
@@ -611,17 +612,12 @@ export default function GP({ ticker }: ScreenProps) {
       },
     });
     chartRef.current = chart;
-    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], scan: null, cone: [], band: [] };
+    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], scan: [], scanHalo: [], cone: [], band: [] };
     if (comparing) {
       for (let i = 0; i < compare.length + 1; i++) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
       }
     } else {
-      if (scanOn) {
-        // Trend-Scan als Farbstreifen über die ganze Höhe – zuerst angelegt, damit er hinter den Kerzen liegt
-        refs.scan = chart.addHistogramSeries({ priceScaleId: "scan", base: 0, lastValueVisible: false, priceLineVisible: false });
-        chart.priceScale("scan").applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
-      }
       if (kind === "candle") {
         refs.main = chart.addCandlestickSeries({
           upColor: "#29d17d", downColor: "#ff5252", borderUpColor: "#29d17d", borderDownColor: "#ff5252",
@@ -671,9 +667,42 @@ export default function GP({ ticker }: ScreenProps) {
           refs.bands.push(chart.addLineSeries({ color: "rgba(102,184,255,0.55)", lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }));
         }
       }
+      if (scanOn) {
+        // Trend-Scan als Punkte auf dem Schlusskurs (wie im Buch von López de Prado): Farbe = Richtung, Größe = Stärke
+        // im Vergleich zum Zufall – je Stufe und Richtung eine Reihe ohne Linie, zuletzt angelegt, damit sie über den Kerzen liegt
+        // dunkler Rand unter den farbigen Punkten (Stufe 1–4), damit grüne Punkte auf grünen Kerzen sichtbar bleiben
+        for (const d of DOT_TIERS.slice(1)) {
+          refs.scanHalo.push(chart.addLineSeries({
+            color: "#0a0a0a", lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: d.radius + 1.5,
+            lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+          }));
+        }
+        for (const d of DOT_SERIES) {
+          refs.scan.push(chart.addLineSeries({
+            color: d.color, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: d.radius,
+            lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+          }));
+        }
+      }
     }
     let rsiChart: IChartApi | null = null;
     const syncers: (() => void)[] = [];
+    if (refs.scan.length) {
+      // Punktgröße folgt dem Zoom: bei vielen Balken (z. B. MAX) kleiner, damit die Kerzen sichtbar bleiben
+      let lastF = -1;
+      const fitDots = () => {
+        const r = chart.timeScale().getVisibleLogicalRange();
+        const w = chart.timeScale().width();
+        if (!r || !w) return;
+        const f = Math.round(Math.max(0.4, Math.min(1, w / Math.max(1, r.to - r.from) / 6)) * 20) / 20;
+        if (f === lastF) return;
+        lastF = f;
+        refs.scan.forEach((series, i) => series.applyOptions({ pointMarkersRadius: DOT_SERIES[i].radius * f }));
+        refs.scanHalo.forEach((series, k) => series.applyOptions({ pointMarkersRadius: (DOT_TIERS[k + 1].radius + 1.5) * f }));
+      };
+      chart.timeScale().subscribeVisibleLogicalRangeChange(fitDots);
+      syncers.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(fitDots));
+    }
     if (showRsi && rsiRef.current) {
       const os = OSC_STYLE[osc];
       rsiChart = createChart(rsiRef.current, {
@@ -687,8 +716,9 @@ export default function GP({ ticker }: ScreenProps) {
       });
       rsiChartRef.current = rsiChart;
       os.colors.forEach((color, i) => refs.osc.push(rsiChart!.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: i === 0 })));
-      for (const lv of os.levels) {
-        refs.osc[0]?.createPriceLine({ price: lv.value, color: lv.color, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: lv.value !== 0, title: "" });
+      // Trend-Scan: Hilfslinien an den Zufallsgrenzen (typischer Zufall, stärker als 90 % Zufall) statt fester Werte
+      for (const lv of osc === "tscan" ? tscanLevels(20) : os.levels.map((l) => ({ ...l, label: l.value !== 0 }))) {
+        refs.osc[0]?.createPriceLine({ price: lv.value, color: lv.color, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: lv.label, title: "" });
       }
       // Zeitachsen koppeln: Zoom und Scrollen im Kurschart bewegen den RSI mit
       const onRange = (r: unknown) => r && rsiChart?.timeScale().setVisibleLogicalRange(r as never);
@@ -795,7 +825,20 @@ export default function GP({ ticker }: ScreenProps) {
     compareLines.forEach((l, i) => s.cmp[i]?.setData(l.data));
     s.ehl.forEach((ser, i) => ser.setData((ehlLines[i]?.data ?? []) as never));
     // ohne Ergebnis (Rand, „noch offen“) ganz blass grau, schwacher Trend ohne Farbe
-    s.scan?.setData(scanRows.map((r) => ({ time: r.time, value: 1, color: r.t === null ? "rgba(140,140,140,0.07)" : scanColor(r.t) ?? "rgba(0,0,0,0)" })) as never);
+    if (s.scan.length) {
+      const perSeries: { time: Time; value: number }[][] = DOT_SERIES.map(() => []);
+      for (const r of scanRows) {
+        if (r.t === null || r.rank === null) continue;
+        perSeries[dotSeriesIndex(r.t, dotTier(r.rank))].push({ time: r.time, value: r.close });
+      }
+      s.scan.forEach((series, k) => series.setData(perSeries[k]));
+      // Rand je Stufe: Punkte beider Richtungen, zeitlich sortiert
+      s.scanHalo.forEach((series, k) =>
+        series.setData(
+          DOT_SERIES.flatMap((d, i) => (d.tier === k + 1 ? perSeries[i] : [])).sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)),
+        ),
+      );
+    }
     s.osc.forEach((ser, i) => {
       const d = oscLines[i]?.data ?? [];
       ser.setData((comparing ? alignRsi(d, compareLines) : d) as never);
@@ -1420,11 +1463,14 @@ export default function GP({ ticker }: ScreenProps) {
                         ? (shown.ts !== undefined && fmtShortDate(b.ts) !== fmtShortDate(shown.ts) ? `${fmtShortDate(b.ts)} ` : "") + fmtTime(b.ts)
                         : fmtDate(b.time as string);
                   if (!r || r.t === null) return <span className="dim">{back ? "Trend danach: noch offen" : "Trend bisher: zu wenig Verlauf"}</span>;
-                  if (Math.abs(r.t) < T_MIN) return <span className="dim">{back ? "Trend danach" : "Trend bisher"}: kein klarer Trend (t {fmt(r.t, 1)})</span>;
+                  const tier = r.rank === null ? 0 : dotTier(r.rank);
+                  const tTxt = `${r.t > 0 ? "+" : r.t < 0 ? "−" : ""}${fmt(Math.abs(r.t), 1)}`;
+                  if (tier === 0) return <span className="dim" title={SCAN_INFO[scan]}>{back ? "Trend danach" : "Trend bisher"}: kein Trend erkennbar (t {tTxt}, im Zufallsbereich)</span>;
+                  const vsRandom = `stärker als ${Math.min(99, Math.floor((r.rank ?? 0) * 100))} % Zufall`;
                   return (
                     <span className={r.t > 0 ? "up" : "down"} title={SCAN_INFO[scan]}>
                       {back ? "Trend danach" : "Trend bisher"} {r.t > 0 ? "▲" : "▼"} {r.len} Balken {back ? `bis ${when(r.other)}` : `seit ${when(r.other)}`} · t{" "}
-                      <b>{r.t > 0 ? "+" : "−"}{fmt(Math.abs(r.t), 1)}</b> · {fmtPct(isNum(r.ret) ? r.ret * 100 : null, 1)}
+                      <b>{tTxt}</b> · {DOT_TIERS[tier].text}, {vsRandom} · {fmtPct(isNum(r.ret) ? r.ret * 100 : null, 1)}
                     </span>
                   );
                 })()}

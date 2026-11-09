@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scanColor, scanParams, T_CAP, trendScan } from "./trendscan";
+import { DOT_SERIES, dotColor, dotSeriesIndex, dotTier, randomBaseline, randomQuantile, randomRank, scanParams, T_CAP, trendScan, tscanLevels } from "./trendscan";
 
 // Prüfreihe ohne Zufall: 40-Balken-Welle + 7-Balken-Welle + leichter Anstieg
 const series = Array.from({ length: 300 }, (_, i) => 100 + 10 * Math.sin((2 * Math.PI * i) / 40) + 0.02 * i + 1.5 * Math.sin((2 * Math.PI * i) / 7));
@@ -46,13 +46,69 @@ describe("Trend-Scanning (wie mlfinlab trend_scanning_labels)", () => {
     expect(trendScan(line.map(() => 5), "forward", 20)[0].t).toBe(0);
   });
 
-  it("färbt nur deutliche Trends und kennt die Auswahl", () => {
-    expect(scanColor(null)).toBeNull();
-    expect(scanColor(1.5)).toBeNull();
-    expect(scanColor(3)).toMatch(/^rgba\(41,209,125/);
-    expect(scanColor(-30)).toMatch(/^rgba\(255,82,82,0\.300\)/);
+  it("kennt die Auswahl", () => {
     expect(scanParams("off")).toBeNull();
     expect(scanParams("back60")).toEqual({ direction: "forward", window: 60 });
     expect(scanParams("live20")).toEqual({ direction: "backward", window: 20 });
+  });
+
+  it("vergleicht mit dem Zufall: reiner Zufallskurs hat schon große t-Werte, Rang verteilt sich gleichmäßig", () => {
+    // typischer |t| eines Zufallskurses (Irrfahrt) – weit über der Lehrbuchgrenze 2
+    const q50w20 = randomQuantile(0.5, 20);
+    const q50w60 = randomQuantile(0.5, 60);
+    expect(q50w20).toBeGreaterThan(5);
+    expect(q50w20).toBeLessThan(8);
+    expect(q50w60).toBeGreaterThan(9);
+    expect(q50w60).toBeLessThan(14);
+    expect(randomQuantile(0.9, 20)).toBeGreaterThan(q50w20);
+    expect(randomBaseline(20)).toBe(randomBaseline(20)); // nur einmal gerechnet
+    // fester Startwert: immer dieselben Zahlen
+    expect(randomQuantile(0.5, 20)).toBe(q50w20);
+    // neuer, unabhängiger Zufallskurs: Ränge gleichmäßig zwischen 0 und 1 (Median ≈ 0,5, ≈ 10 % über 0,9)
+    let s = 7;
+    const rnd = () => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const g = () => Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(2 * Math.PI * rnd());
+    const y = [100];
+    for (let i = 1; i < 4000; i++) y.push(y[i - 1] + g());
+    const ranks = trendScan(y, "backward", 20)
+      .map((p) => randomRank(p.t, 20))
+      .filter((r): r is number => r !== null)
+      .sort((a, b) => a - b);
+    expect(ranks[Math.floor(ranks.length / 2)]).toBeGreaterThan(0.4);
+    expect(ranks[Math.floor(ranks.length / 2)]).toBeLessThan(0.6);
+    const above90 = ranks.filter((r) => r >= 0.9).length / ranks.length;
+    expect(above90).toBeGreaterThan(0.05);
+    expect(above90).toBeLessThan(0.16);
+    // echter, sauberer Trend: stärker als fast alle Zufallsfälle
+    const trend = Array.from({ length: 60 }, (_, i) => 100 + 2 * i + (i % 3) - 1);
+    expect(randomRank(trendScan(trend, "backward", 20)[59].t, 20)!).toBeGreaterThan(0.99);
+    expect(randomRank(null, 20)).toBeNull();
+  });
+
+  it("Punkte: Größe nach Stärke, Farbe nach Richtung, grau im Zufallsbereich", () => {
+    expect(dotTier(0.3)).toBe(0);
+    expect(dotTier(0.5)).toBe(1);
+    expect(dotTier(0.8)).toBe(2);
+    expect(dotTier(0.95)).toBe(3);
+    expect(dotTier(0.995)).toBe(4);
+    expect(dotTier(1)).toBe(4);
+    expect(dotColor(5, 0)).toMatch(/^rgba\(150,150,150/);
+    expect(dotColor(-5, 0)).toMatch(/^rgba\(150,150,150/);
+    expect(dotColor(9, 3)).toMatch(/^rgba\(41,209,125,0\.95\)/);
+    expect(dotColor(-9, 4)).toMatch(/^rgba\(255,82,82,1\.00\)/);
+    // je Stufe und Richtung eine Reihe mit fester Farbe
+    expect(DOT_SERIES).toHaveLength(9);
+    expect(DOT_SERIES[dotSeriesIndex(3, 0)].color).toBe(dotColor(3, 0));
+    expect(DOT_SERIES[dotSeriesIndex(-3, 0)].color).toBe(dotColor(-3, 0));
+    for (const tier of [1, 2, 3, 4]) {
+      for (const t of [7, -7]) {
+        const d = DOT_SERIES[dotSeriesIndex(t, tier)];
+        expect(d.color).toBe(dotColor(t, tier));
+        expect(d.tier).toBe(tier);
+      }
+    }
+    const lv = tscanLevels(20);
+    expect(lv.map((l) => l.value)).toEqual([randomQuantile(0.9, 20), randomQuantile(0.5, 20), 0, -randomQuantile(0.5, 20), -randomQuantile(0.9, 20)]);
+    expect(lv.filter((l) => l.label)).toHaveLength(2);
   });
 });
