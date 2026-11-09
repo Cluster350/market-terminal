@@ -25,7 +25,21 @@ import { useCsvExport, type CsvDataset } from "../lib/exporter";
 import { BAND_KEYS, bandsCsv, bandTestText, bandTestVerdict, gapText, REGION_LABEL, useStockBands } from "../lib/valuation";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
 import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
-import { isBool, isNumberList, isOneOf, usePersistentState } from "../lib/persist";
+import { isBool, isNumberList, isOneOf, readPersistent, usePersistentState } from "../lib/persist";
+import {
+  OSC_INFO,
+  OSC_LABEL,
+  OSC_STYLE,
+  OSCILLATORS,
+  OVERLAY_INFO,
+  OVERLAY_LABEL,
+  OVERLAY_STYLE,
+  OVERLAYS,
+  oscillatorLines,
+  overlayLines,
+  type Oscillator,
+  type Overlay,
+} from "../lib/ehlers";
 import { INTERVAL_LABEL, INTERVAL_SECONDS, INTERVALS, type Interval } from "../lib/intervals";
 import { retry, useEarnings, useHistory, useIntraday } from "../lib/queries";
 import { live, useLiveStatus } from "../lib/realtime";
@@ -305,7 +319,11 @@ export default function GP({ ticker }: ScreenProps) {
   const [kind, setKind] = usePersistentState<Kind>("gp.kind", "candle", isOneOf(KINDS));
   const [mas, setMas] = usePersistentState<number[]>("gp.mas", [50, 200], isNumberList([20, 50, 200]));
   const [boll, setBoll] = usePersistentState("gp.boll", false, isBool);
-  const [showRsi, setShowRsi] = usePersistentState("gp.rsi", false, isBool);
+  // Unterfenster unter dem Kurs (früher nur „RSI 14“ an/aus – die alte Einstellung wird übernommen) und
+  // Ehlers-Linie auf dem Kurs
+  const [osc, setOsc] = usePersistentState<Oscillator>("gp.osc", readPersistent("gp.rsi", false, isBool) ? "rsi" : "off", isOneOf(OSCILLATORS));
+  const showRsi = osc !== "off";
+  const [ehlers, setEhlers] = usePersistentState<Overlay>("gp.ehlers", "off", isOneOf(OVERLAYS));
   const [showVwap, setShowVwap] = usePersistentState("gp.vwap", true, isBool);
   const [showVp, setShowVp] = usePersistentState("gp.vp", false, isBool);
   const [showCone, setShowCone] = usePersistentState("gp.cone", false, isBool);
@@ -356,15 +374,33 @@ export default function GP({ ticker }: ScreenProps) {
 
   const view = useMemo(() => {
     type Line = { time: Time; value: number };
-    const empty = { bars: [] as Bar[], maLines: [] as { n: number; color: string; data: Line[] }[], base: null as number | null, prevDay: null as number | null, bands: null as null | { upper: Line[]; lower: Line[] }, rsi: [] as (Line | { time: Time })[], start: "" };
+    type Gap = Line | { time: Time };
+    type OscLine = { name: string; color: string; data: Gap[] };
+    type EhlLine = { name: string; color: string; data: Line[] };
+    const empty = { bars: [] as Bar[], maLines: [] as { n: number; color: string; data: Line[] }[], base: null as number | null, prevDay: null as number | null, bands: null as null | { upper: Line[]; lower: Line[] }, oscLines: [] as OscLine[], ehlLines: [] as EhlLine[], start: "" };
+    // Unterfenster (RSI oder Ehlers-Oszillator) und Ehlers-Linie: über alle geladenen Balken gerechnet (keine
+    // Anlaufphase im sichtbaren Bereich), gezeigt ab ``from``
+    const indicators = (src: Bar[], from: number) => {
+      const raw =
+        osc === "off" ? [] : osc === "rsi" ? [{ name: "RSI 14", color: "#c77dff", values: rsiSeries(src.map((b) => b.close)) }] : oscillatorLines(osc, src).lines;
+      const oscLines: OscLine[] = raw.map((l) => ({
+        name: l.name,
+        color: l.color,
+        data: src.slice(from).map((b, k) => (l.values[from + k] === null ? { time: b.time } : { time: b.time, value: l.values[from + k]! })),
+      }));
+      const ehlLines: EhlLine[] = overlayLines(ehlers, src).map((l) => {
+        const data: Line[] = [];
+        for (let i = from; i < src.length; i++) if (l.values[i] !== null) data.push({ time: src[i].time, value: l.values[i]! });
+        return { name: l.name, color: l.color, data };
+      });
+      return { oscLines, ehlLines };
+    };
     if (intradayRange) {
       const d = intra.data;
       if (!d || !d.t.length) return empty;
       const bars = intradayBars(d);
       const firstDay = new Date(d.t[0] * 1000).toISOString().slice(0, 10);
       const lastDay = new Date(d.t[d.t.length - 1] * 1000).toISOString().slice(0, 10);
-      const closes = bars.map((b) => b.close);
-      const r = rsiSeries(closes);
       // base: Bezug der Veränderung über den Zeitraum (Schluss vor dem ersten Tag);
       // prevDay: Linie „Vortag“ = Schluss vor dem letzten Tag (im 5T-Chart früher der Schluss vor dem Fenster)
       return {
@@ -372,7 +408,7 @@ export default function GP({ ticker }: ScreenProps) {
         bars,
         base: closeBefore(hist.data, firstDay) ?? bars[0]?.open ?? null,
         prevDay: closeBefore(hist.data, lastDay),
-        rsi: bars.map((b, i) => (r[i] === null ? { time: b.time } : { time: b.time, value: r[i]! })),
+        ...indicators(bars, 0),
       };
     }
     const h = hist.data;
@@ -398,12 +434,10 @@ export default function GP({ ticker }: ScreenProps) {
         if (b.lower[i] !== null) bands.lower.push({ time: all[i].time, value: b.lower[i]! });
       }
     }
-    const r = rsiSeries(closes);
-    const rsi = all.slice(from).map((b, k) => (r[from + k] === null ? { time: b.time } : { time: b.time, value: r[from + k]! }));
-    return { bars: all.slice(from), maLines: lines, base: periodBase(all, from), prevDay: null, bands, rsi, start };
-  }, [hist.data, intra.data, range, mas, intradayRange, boll]);
+    return { bars: all.slice(from), maLines: lines, base: periodBase(all, from), prevDay: null, bands, ...indicators(all, from), start };
+  }, [hist.data, intra.data, range, mas, intradayRange, boll, osc, ehlers]);
 
-  const { bars, maLines, base, prevDay, bands, rsi } = view;
+  const { bars, maLines, base, prevDay, bands, oscLines, ehlLines } = view;
 
   // Vergleich: Wertentwicklung in % ab Periodenbeginn, je Serie auf ihren Schluss vor dem Start normiert
   const compareLines = useMemo(() => {
@@ -433,6 +467,8 @@ export default function GP({ ticker }: ScreenProps) {
     const maMaps = maLines.map((m) => new Map(m.data.map((p) => [String(p.time), p.value])));
     const bollUp = new Map((bands?.upper ?? []).map((p) => [String(p.time), p.value]));
     const bollLo = new Map((bands?.lower ?? []).map((p) => [String(p.time), p.value]));
+    const ehlMaps = ehlLines.map((l) => new Map(l.data.map((p) => [String(p.time), p.value])));
+    const oscMaps = oscLines.map((l) => new Map(l.data.map((p) => [String(p.time), "value" in p ? p.value : null])));
     const sets: CsvDataset[] = [
       {
         title: `Kursverlauf ${name} (${range})`,
@@ -445,10 +481,16 @@ export default function GP({ ticker }: ScreenProps) {
           "Volumen",
           ...maLines.map((m) => `SMA ${m.n}`),
           ...(bands ? ["Bollinger oben", "Bollinger unten"] : []),
+          ...ehlLines.map((l) => `Ehlers ${l.name}`),
+          ...oscLines.map((l) => l.name),
         ],
         rows: bars.map((b) => {
           const k = String(b.time);
-          return [label(b.time), b.open, b.high, b.low, b.close, b.volume, ...maMaps.map((mm) => mm.get(k) ?? null), ...(bands ? [bollUp.get(k) ?? null, bollLo.get(k) ?? null] : [])];
+          return [
+            label(b.time), b.open, b.high, b.low, b.close, b.volume, ...maMaps.map((mm) => mm.get(k) ?? null),
+            ...(bands ? [bollUp.get(k) ?? null, bollLo.get(k) ?? null] : []),
+            ...ehlMaps.map((mm) => mm.get(k) ?? null), ...oscMaps.map((mm) => mm.get(k) ?? null),
+          ];
         }),
       },
     ];
@@ -490,7 +532,8 @@ export default function GP({ ticker }: ScreenProps) {
     ma: Map<number, ISeriesApi<"Line">>;
     bands: ISeriesApi<"Line">[];
     cmp: ISeriesApi<"Line">[];
-    rsi: ISeriesApi<"Line"> | null;
+    osc: ISeriesApi<"Line">[];
+    ehl: ISeriesApi<"Line">[];
     cone: ISeriesApi<"Line">[];
     band: ISeriesApi<"Line">[];
   } | null>(null);
@@ -536,7 +579,7 @@ export default function GP({ ticker }: ScreenProps) {
       },
     });
     chartRef.current = chart;
-    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], rsi: null, cone: [], band: [] };
+    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], cone: [], band: [] };
     if (comparing) {
       for (let i = 0; i < compare.length + 1; i++) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
@@ -556,6 +599,12 @@ export default function GP({ ticker }: ScreenProps) {
       chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
       for (const m of MA.filter((m) => maKey.split(",").includes(String(m.n)))) {
         refs.ma.set(m.n, chart.addLineSeries({ color: m.color, lineWidth: 1, lineStyle: LineStyle.Solid, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }));
+      }
+      for (const st of OVERLAY_STYLE[ehlers]) {
+        refs.ehl.push(chart.addLineSeries({
+          color: st.color, lineWidth: 2, lineStyle: st.dashed ? LineStyle.Dashed : LineStyle.Solid,
+          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+        }));
       }
       if (intradayRange && showVwap) {
         refs.vwap = chart.addLineSeries({ color: "#f2c200", lineWidth: 1, lineStyle: LineStyle.Solid, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
@@ -589,18 +638,21 @@ export default function GP({ ticker }: ScreenProps) {
     let rsiChart: IChartApi | null = null;
     const syncers: (() => void)[] = [];
     if (showRsi && rsiRef.current) {
+      const os = OSC_STYLE[osc];
       rsiChart = createChart(rsiRef.current, {
         ...baseOptions,
         rightPriceScale: { borderColor: "#262626", minimumWidth: axisWidth, scaleMargins: { top: 0.1, bottom: 0.1 } },
-        localization: { locale: "de-DE", timeFormatter: crosshairTime, priceFormatter: (p: number) => fmt(p, 0) },
+        // Roofing-Filter in Kurseinheiten (auch Kleinstkurse), sonst feste Nachkommastellen
+        localization: { locale: "de-DE", timeFormatter: crosshairTime, priceFormatter: (p: number) => (osc === "roof" ? fmtPrice(p) : fmt(p, os.digits)) },
         timeScale: { ...baseOptions.timeScale, visible: false },
         handleScroll: false,
         handleScale: false,
       });
       rsiChartRef.current = rsiChart;
-      refs.rsi = rsiChart.addLineSeries({ color: "#c77dff", lineWidth: 1, priceLineVisible: false });
-      refs.rsi.createPriceLine({ price: 70, color: "#ff5252", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "" });
-      refs.rsi.createPriceLine({ price: 30, color: "#29d17d", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "" });
+      os.colors.forEach((color, i) => refs.osc.push(rsiChart!.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: i === 0 })));
+      for (const lv of os.levels) {
+        refs.osc[0]?.createPriceLine({ price: lv.value, color: lv.color, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: lv.value !== 0, title: "" });
+      }
       // Zeitachsen koppeln: Zoom und Scrollen im Kurschart bewegen den RSI mit
       const onRange = (r: unknown) => r && rsiChart?.timeScale().setVisibleLogicalRange(r as never);
       chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
@@ -646,7 +698,7 @@ export default function GP({ ticker }: ScreenProps) {
       seriesRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasData, kind, intradayRange, isYield, maKey, boll, showRsi, cmpKey, showVwap, coneOn, bandOn]);
+  }, [hasData, kind, intradayRange, isYield, maKey, boll, osc, ehlers, cmpKey, showVwap, coneOn, bandOn]);
 
   useEffect(() => {
     const s = seriesRef.current;
@@ -704,14 +756,18 @@ export default function GP({ ticker }: ScreenProps) {
       }
     }
     compareLines.forEach((l, i) => s.cmp[i]?.setData(l.data));
-    s.rsi?.setData((comparing ? alignRsi(rsi, compareLines) : rsi) as never);
-    const key = `${ticker}|${range}|${kind}|${maKey}|${cmpKey}|${showRsi}`;
+    s.ehl.forEach((ser, i) => ser.setData((ehlLines[i]?.data ?? []) as never));
+    s.osc.forEach((ser, i) => {
+      const d = oscLines[i]?.data ?? [];
+      ser.setData((comparing ? alignRsi(d, compareLines) : d) as never);
+    });
+    const key = `${ticker}|${range}|${kind}|${maKey}|${cmpKey}|${osc}`;
     if (fitKey.current !== key) {
       chart.timeScale().fitContent();
       rsiChartRef.current?.timeScale().fitContent();
       fitKey.current = key;
     }
-  }, [bars, maLines, bands, rsi, compareLines, comparing, kind, range, ticker, maKey, cmpKey, showRsi, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen, shownBands]);
+  }, [bars, maLines, bands, oscLines, ehlLines, compareLines, comparing, kind, range, ticker, maKey, cmpKey, osc, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen, shownBands]);
 
   // Laufende Kerze: Ticks des Echtzeit-Stroms (US-Werte, Devisen, Krypto) bzw. verzögerte Kurse
   // (übrige Börsen) schreiben die letzte Kerze fort, ohne den ganzen Chart neu zu zeichnen
@@ -1151,9 +1207,33 @@ export default function GP({ ticker }: ScreenProps) {
             VWAP
           </label>
         )}
-        <label className="check" style={{ color: showRsi ? "#c77dff" : undefined }}>
-          <input type="checkbox" checked={showRsi} onChange={(e) => setShowRsi(e.target.checked)} />
-          RSI 14
+        {!comparing && (
+          <label className="small muted" style={{ color: ehlers !== "off" ? "#4dd0e1" : undefined }} title={OVERLAY_INFO[ehlers]}>
+            Ehlers{" "}
+            <select className="field" aria-label="Ehlers-Linie auf dem Kurs" value={ehlers} onChange={(e) => setEhlers(e.target.value as Overlay)}>
+              {OVERLAYS.map((o) => (
+                <option key={o} value={o} title={OVERLAY_INFO[o]}>
+                  {OVERLAY_LABEL[o]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="small muted" style={{ color: showRsi ? "#c77dff" : undefined }} title={OSC_INFO[osc]}>
+          Unterfenster{" "}
+          <select className="field" aria-label="Unterfenster" value={osc} onChange={(e) => setOsc(e.target.value as Oscillator)}>
+            <option value="off">{OSC_LABEL.off}</option>
+            <optgroup label="Klassisch">
+              <option value="rsi" title={OSC_INFO.rsi}>{OSC_LABEL.rsi}</option>
+            </optgroup>
+            <optgroup label="Ehlers">
+              {OSCILLATORS.filter((o) => o !== "off" && o !== "rsi").map((o) => (
+                <option key={o} value={o} title={OSC_INFO[o]}>
+                  {OSC_LABEL[o]}
+                </option>
+              ))}
+            </optgroup>
+          </select>
         </label>
         {!comparing && !isYield && (
           <label
@@ -1270,6 +1350,14 @@ export default function GP({ ticker }: ScreenProps) {
                 {isNum(prevClose) && !isYield && <span className={tone(shown.close - prevClose)}>{fmtPct((shown.close / prevClose - 1) * 100)}</span>}
                 {isNum(prevClose) && isYield && <span className={tone(shown.close - prevClose, 2)}>{fmtBp(shown.close - prevClose)}</span>}
                 {isNum(shown.volume) && <span>Vol <b>{fmtBig(shown.volume)}</b></span>}
+                {ehlLines.map((l) => {
+                  const at = l.data.find((p) => p.time === shown.time);
+                  return (
+                    <span key={l.name} style={{ color: l.color }} title={OVERLAY_INFO[ehlers]}>
+                      {l.name} <b>{at ? fmtPrice(at.value, ticker) : "–"}</b>
+                    </span>
+                  );
+                })}
               </div>
             )}
             {comparing && (
@@ -1296,7 +1384,20 @@ export default function GP({ ticker }: ScreenProps) {
             </div>
             {showRsi && (
               <div style={{ position: "relative", flex: "0 0 26%", minHeight: 70, borderTop: "1px solid var(--rule)" }}>
-                <span className="xs" style={{ position: "absolute", left: 8, top: 2, zIndex: 3, color: "#c77dff" }}>RSI 14</span>
+                <span className="xs gp-osc-label" title={OSC_INFO[osc]}>
+                  <span style={{ color: "#c77dff" }}>{OSC_LABEL[osc]}</span>
+                  {oscLines.map((l) => {
+                    const t = (hover ?? bars[bars.length - 1])?.time;
+                    const at = l.data.find((p) => p.time === t);
+                    const v = at && "value" in at ? at.value : null;
+                    return (
+                      <span key={l.name} style={{ color: l.color }}>
+                        {oscLines.length > 1 ? `${l.name} ` : ""}
+                        {isNum(v) ? (osc === "roof" ? fmtPrice(v) : fmt(v, OSC_STYLE[osc].digits)) : "–"}
+                      </span>
+                    );
+                  })}
+                </span>
                 <div className="chart-host" ref={rsiRef} />
               </div>
             )}

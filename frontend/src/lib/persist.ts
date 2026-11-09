@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 
 const PREFIX = "mt.pref.v1.";
 
+/** Gespeicherten Wert lesen (z. B. um eine ältere Einstellung in eine neue zu übernehmen). */
+export function readPersistent<T>(key: string, fallback: T, valid: (x: unknown) => x is T): T {
+  return read(key, fallback, valid);
+}
+
 function read<T>(key: string, fallback: T, valid: (x: unknown) => x is T): T {
   try {
     const raw = localStorage.getItem(PREFIX + key);

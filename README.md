@@ -363,6 +363,46 @@ die Quelle nur Schlusskurse liefert. Europa: Die Börsenkürzel der UCITS-ETFs w
 gesucht (Xetra in Euro bevorzugt) und in `faktor-kuerzel-eodhd.json` gemerkt; die Liste steht in
 `backend/app/factors/universe.py` und lässt sich dort anpassen.
 
+## Ehlers-Indikatoren im Kurschart (GP)
+
+John F. Ehlers überträgt Verfahren der Signalverarbeitung (Radartechnik) auf Kurse: Trend, Zyklus und Rauschen
+werden getrennt, die Linien reagieren schneller als klassische Durchschnitte. Im Kurschart gibt es dafür zwei
+Auswahlfelder (gilt für Tages- und Intraday-Charts, Erklärung im Tooltip und im HELP-Glossar):
+
+**„Ehlers“ – Linie auf dem Kurs**
+
+| Linie | Wofür |
+|---|---|
+| SuperSmoother 20 (2013) | Glättung wie ein 20-Tage-Durchschnitt, aber mit viel weniger Verzögerung |
+| UltimateSmoother 20 (2024) | Kurs minus Hochpass – im Trend praktisch ohne Verzögerung |
+| Instantaneous Trendline (2004) | Trendlinie mit Auslöser (gestrichelt); Auslöser darüber = Aufwärtstrend |
+| MAMA / FAMA (2001) | passen sich dem gemessenen Zyklus an; MAMA kreuzt FAMA = Trendwechsel |
+| FRAMA 16 (2005) | fraktal adaptiv: im Trend schnell, seitwärts fast flach |
+| Decycler 60 (2015) | Kurs ohne alle Schwankungen unter 60 Balken – ruhige Trendlinie |
+
+**„Unterfenster“** (statt bisher nur RSI 14; die alte Einstellung wird übernommen)
+
+| Oszillator | Lesart |
+|---|---|
+| RSI 14 | klassisch, über 70 überkauft, unter 30 überverkauft |
+| Fisher Transform 10 (2002) | macht Wendepunkte deutlich; Kreuzung mit dem Auslöser (Vortag) = Signal |
+| Laguerre-RSI (2004) | schneller RSI 0–1; über 0,8 überkauft, unter 0,2 überverkauft |
+| Roofing-Filter 48/10 (2014) | nur der Zyklus (Trend und Rauschen entfernt), schwingt um null |
+| Even Better Sinewave 40 (2013) | Zyklus zwischen −1 und +1; klebt die Linie am Rand, läuft ein Trend |
+| Reflex / Trendflex 20 (2020) | fast verzögerungsfrei: Reflex = Zyklus, Trendflex = Trend |
+| Correlation Trend 20 (2020) | +1 sauberer Aufwärtstrend, −1 Abwärtstrend, um 0 kein Trend |
+| Zykluslänge (MESA) | Länge der vorherrschenden Kursschwingung in Balken |
+
+Die Werte unter dem Fadenkreuz stehen über dem Chart bzw. im Unterfenster; der CSV-Export enthält die gewählten
+Ehlers-Linien als eigene Spalten. Gerechnet wird über alle geladenen Kurse (keine Anlaufphase im sichtbaren Bereich).
+
+Umsetzung nach Ehlers' veröffentlichten EasyLanguage-Listings (Winkel dort in Grad – sauber umgerechnet).
+Geprüft gegen Referenzbibliotheken: SuperSmoother, Fisher Transform und Correlation Trend stimmen mit pandas-ta auf
+Rechengenauigkeit überein, MAMA/FAMA und die Zykluslänge mit TA-Lib (Abweichung unter 0,0001 %); die übrigen über
+mathematische Eigenschaften (gleichbleibender Kurs bleibt gleich, Trend wird entfernt, Wertebereiche, Zykluslänge
+eines reinen Zyklus). Hinweis: Viele frei verfügbare Umsetzungen enthalten den Grad-/Bogenmaß-Fehler und liefern
+andere Werte. Keine Empfehlung – Indikatoren zeigen Vergangenheit, keine Zukunft.
+
 ## CSV-Export (für Excel)
 
 Jedes Fenster hat oben rechts den Knopf **CSV**. Ein Klick speichert alles, was das Fenster gerade zeigt, als

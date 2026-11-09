@@ -794,3 +794,4 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .factor-bar { position: relative; display: inline-block; vertical-align: middle; height: 10px; width: 160px; background: #151515; }
 .factor-bar > span { position: absolute; top: 0; bottom: 0; }
 .factor-bar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #555; }
+.gp-osc-label { position: absolute; left: 8px; top: 2px; z-index: 3; display: flex; gap: 10px; pointer-events: none; }
