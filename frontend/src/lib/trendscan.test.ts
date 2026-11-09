@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DOT_SERIES, DOT_TIERS, dotColor, dotSeriesIndex, dotTier, HOLLOW_INNER, RANDOM_SHARE_STRONG, vsRandomText, randomBaseline, randomQuantile, randomRank, scanParams, T_CAP, trendScan, tscanLevels } from "./trendscan";
+import { dotStyle, dotTier, RANDOM_SHARE_STRONG, randomBaseline, randomQuantile, randomRank, scanParams, STRONG_TIER, T_CAP, trendScan, tscanLevels, vsRandomText } from "./trendscan";
 
 // Prüfreihe ohne Zufall: 40-Balken-Welle + 7-Balken-Welle + leichter Anstieg
 const series = Array.from({ length: 300 }, (_, i) => 100 + 10 * Math.sin((2 * Math.PI * i) / 40) + 0.02 * i + 1.5 * Math.sin((2 * Math.PI * i) / 7));
@@ -85,35 +85,36 @@ describe("Trend-Scanning (wie mlfinlab trend_scanning_labels)", () => {
     expect(randomRank(null, 20)).toBeNull();
   });
 
-  it("Punkte: grau im Zufallsbereich, Farbe erst ab „deutlich“ (90 %), größer ab 99 %", () => {
+  it("Punkte fließend: grau bis zum typischen Zufall, dann kräftiger und größer; Stufen für Text und Zählung", () => {
     expect(dotTier(0.3)).toBe(0);
-    expect(dotTier(0.5)).toBe(0);
-    expect(dotTier(0.89)).toBe(0);
-    expect(dotTier(0.9)).toBe(1);
-    expect(dotTier(0.95)).toBe(1);
-    expect(dotTier(0.995)).toBe(2);
-    expect(dotTier(1)).toBe(2);
+    expect(dotTier(0.5)).toBe(1);
+    expect(dotTier(0.89)).toBe(1);
+    expect(dotTier(0.9)).toBe(STRONG_TIER);
+    expect(dotTier(0.995)).toBe(3);
     expect(RANDOM_SHARE_STRONG).toBeCloseTo(0.1, 12);
-    expect(DOT_TIERS[2].radius).toBeGreaterThan(DOT_TIERS[1].radius);
-    expect(HOLLOW_INNER.every((r, k) => r < DOT_TIERS[k].radius)).toBe(true);
-    expect(dotColor(5, 0)).toMatch(/^rgba\(150,150,150/);
-    expect(dotColor(-5, 0)).toMatch(/^rgba\(150,150,150/);
-    expect(dotColor(9, 1)).toMatch(/^rgba\(41,209,125,0\.95\)/);
-    expect(dotColor(-9, 2)).toMatch(/^rgba\(255,82,82,1\.00\)/);
-    // je Stufe und Richtung eine Reihe mit fester Farbe
-    expect(DOT_SERIES).toHaveLength(5);
-    expect(DOT_SERIES[dotSeriesIndex(3, 0)].color).toBe(dotColor(3, 0));
-    expect(DOT_SERIES[dotSeriesIndex(-3, 0)].color).toBe(dotColor(-3, 0));
-    for (const tier of [1, 2]) {
-      for (const t of [7, -7]) {
-        const d = DOT_SERIES[dotSeriesIndex(t, tier)];
-        expect(d.color).toBe(dotColor(t, tier));
-        expect(d.tier).toBe(tier);
-      }
+    // bis Rang 50 % grau und klein, Richtung egal
+    expect(dotStyle(5, 0.3)).toEqual({ color: "rgb(150,150,150)", radius: 2, mix: 0 });
+    expect(dotStyle(-5, 0.5).color).toBe("rgb(150,150,150)");
+    // dazwischen fließend: halbe Farbe bei 70 %
+    const mid = dotStyle(5, 0.7);
+    expect(mid.mix).toBeCloseTo(0.5, 12);
+    expect(mid.color).toBe("rgb(96,180,138)");
+    expect(mid.radius).toBeCloseTo(3, 12);
+    // volle Farbe ab „deutlich“, größte Punkte ab „sehr deutlich“
+    expect(dotStyle(9, 0.9)).toEqual({ color: "rgb(41,209,125)", radius: 4, mix: 1 });
+    expect(dotStyle(-9, 0.95).color).toBe("rgb(255,82,82)");
+    expect(dotStyle(-9, 0.99).radius).toBe(6);
+    expect(dotStyle(-9, 1).radius).toBe(6);
+    // stetig und monoton wachsend
+    let prev = 0;
+    for (let r = 0; r <= 1.0001; r += 0.01) {
+      const st = dotStyle(1, Math.min(1, r));
+      expect(st.radius).toBeGreaterThanOrEqual(prev);
+      prev = st.radius;
     }
     // ehrlicher Wortlaut statt „zu x % sicher“
     expect(vsRandomText(0.92)).toBe("so gerade wie nur 8 von 100 Zufallskursen");
-    expect(vsRandomText(0.991)).toBe("so gerade wie nur 1 von 100 Zufallskursen");
+    expect(vsRandomText(0.75)).toBe("so gerade wie 25 von 100 Zufallskursen");
     expect(vsRandomText(0.999)).toBe("gerader als 99 von 100 Zufallskursen");
     const lv = tscanLevels(20);
     expect(lv.map((l) => l.value)).toEqual([randomQuantile(0.9, 20), randomQuantile(0.5, 20), 0, -randomQuantile(0.5, 20), -randomQuantile(0.9, 20)]);

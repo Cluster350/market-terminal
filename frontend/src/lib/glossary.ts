@@ -25,7 +25,7 @@ export const GLOSSARY: Record<string, string> = {
   "Laguerre-RSI": "Schneller, glatter RSI von Ehlers zwischen 0 und 1; über 0,8 überkauft, unter 0,2 überverkauft.",
   "Reflex / Trendflex": "Ehlers 2020: zwei fast verzögerungsfreie Oszillatoren – Reflex für den Zyklus, Trendflex für den Trend.",
   "Correlation Trend": "Ehlers 2020: wie sehr die letzten 20 Kurse einer steigenden (+1) oder fallenden (−1) Geraden folgen.",
-  "Trend-Scanning": "López de Prado / mlfinlab (Hudson & Thames): je Balken Geraden über 5 bis 19 (bzw. 59) Balken, die mit dem größten t-Wert der Steigung bestimmt den Trend. Im Chart ein Punkt je Balken: grau = im Zufallsbereich, farbig erst wenn gerader als 90 von 100 reinen Zufallskursen (grün auf, rot ab, groß ab 99 von 100). Rückblick (hohle Punkte) = folgender Trend, nutzt spätere Kurse, kein Signal; laufend = bisheriger Trend, keine Prognose.",
+  "Trend-Scanning": "López de Prado / mlfinlab (Hudson & Thames): je Balken Geraden über 5 bis 19 (bzw. 59) Balken, die mit dem größten t-Wert der Steigung bestimmt den Trend. Im Chart ein Punkt je Balken, Farbe und Größe fließend im Vergleich zu reinen Zufallskursen: grau = wie Zufall, immer kräftiger grün (auf) bzw. rot (ab), volle Farbe ab gerader als 90 von 100 Zufallskursen. Rückblick (hohle Punkte) = folgender Trend, nutzt spätere Kurse, kein Signal; laufend = bisheriger Trend, keine Prognose.",
   Zykluslänge: "Länge der gerade vorherrschenden Kursschwingung in Balken, gemessen mit Ehlers' MESA-Verfahren (Hilbert-Transformation).",
   bp: "Basispunkt = 0,01 Prozentpunkte. Zinsänderungen werden in bp angegeben.",
   "2s10s": "Rendite 10 Jahre minus Rendite 2 Jahre in bp. Negativ = inverse Zinskurve.",

@@ -40,7 +40,8 @@ import {
   type Oscillator,
   type Overlay,
 } from "../lib/ehlers";
-import { DOT_SERIES, DOT_TIERS, dotSeriesIndex, dotTier, HOLLOW_INNER, OPEN_MARK, RANDOM_SHARE_STRONG, randomRank, SCAN_INFO, SCAN_LABEL, SCAN_MODES_KEPT, scanParams, trendScan, tscanLevels, vsRandomText, type ScanMode } from "../lib/trendscan";
+import { DOT_TIERS, dotTier, RANDOM_SHARE_STRONG, randomRank, SCAN_INFO, SCAN_LABEL, SCAN_MODES_KEPT, scanParams, STRONG_TIER, trendScan, tscanLevels, vsRandomText, type ScanMode } from "../lib/trendscan";
+import { TrendDotsPrimitive } from "../components/trendDots";
 import { INTERVAL_LABEL, INTERVAL_SECONDS, INTERVALS, type Interval } from "../lib/intervals";
 import { retry, useEarnings, useHistory, useIntraday } from "../lib/queries";
 import { live, useLiveStatus } from "../lib/realtime";
@@ -475,7 +476,7 @@ export default function GP({ ticker }: ScreenProps) {
   const scanStats = useMemo(() => {
     const done = scanRows.filter((r) => r.rank !== null);
     if (!done.length) return null;
-    return { n: done.length, strong: done.filter((r) => dotTier(r.rank!) >= 1).length, expected: Math.round(done.length * RANDOM_SHARE_STRONG) };
+    return { n: done.length, strong: done.filter((r) => dotTier(r.rank!) >= STRONG_TIER).length, expected: Math.round(done.length * RANDOM_SHARE_STRONG) };
   }, [scanRows]);
   const scanOn = scan !== "off" && !comparing;
   // Beim Trend-Scan zeigt der Chart den Kurs nur als Punkte (wie im Buch) – keine Kerzen, keine Linie
@@ -598,18 +599,14 @@ export default function GP({ ticker }: ScreenProps) {
     cmp: ISeriesApi<"Line">[];
     osc: ISeriesApi<"Line">[];
     ehl: ISeriesApi<"Line">[];
-    scan: ISeriesApi<"Line">[];
-    scanHalo: ISeriesApi<"Line">[];
-    scanOpen: ISeriesApi<"Line">[];
-    scanInner: ISeriesApi<"Line">[];
     scanFit: ISeriesApi<"Line"> | null;
-    scanScale: [ISeriesApi<"Line">, number][];
     cone: ISeriesApi<"Line">[];
     band: ISeriesApi<"Line">[];
   } | null>(null);
   const barsRef = useRef<Map<string, Bar>>(new Map());
   const prevLineRef = useRef<ReturnType<ISeriesApi<"Line">["createPriceLine"]> | null>(null);
   const vpRef = useRef<VolumeProfilePrimitive | null>(null);
+  const dotsRef = useRef<TrendDotsPrimitive | null>(null);
   const vpLines = useRef<IPriceLine[]>([]);
   const markLines = useRef<IPriceLine[]>([]);
   const marksRef = useRef<Alert[]>([]); // Marken in derselben Reihenfolge wie markLines
@@ -649,7 +646,7 @@ export default function GP({ ticker }: ScreenProps) {
       },
     });
     chartRef.current = chart;
-    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], scan: [], scanHalo: [], scanOpen: [], scanInner: [], scanFit: null, scanScale: [], cone: [], band: [] };
+    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], scanFit: null, cone: [], band: [] };
     if (comparing) {
       for (let i = 0; i < compare.length + 1; i++) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
@@ -708,43 +705,13 @@ export default function GP({ ticker }: ScreenProps) {
         }
       }
       if (scanOn) {
-        // Trend-Scan als Punkte auf dem Schlusskurs (wie im Buch von López de Prado): grau = Zufallsbereich, farbig erst ab
-        // „deutlich“ (Farbe = Richtung, Größe = Stärke); Rückblick hohl. Je Stufe/Richtung eine Reihe mit fester Farbe,
-        // zuletzt angelegt, damit sie oben liegen.
-        const dot = (color: string, radius: number) => {
-          const series = chart.addLineSeries({
-            color, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: radius,
-            lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
-          });
-          refs.scanScale.push([series, radius]);
-          return series;
-        };
-        // gefundene Gerade zum Balken unter dem Fadenkreuz (Länge, Steigung, im Rückblick der Griff in die Zukunft)
+        // gefundene Gerade zum Balken unter dem Fadenkreuz (Länge, Steigung, im Rückblick der Griff in spätere Kurse);
+        // die Punkte selbst zeichnet TrendDotsPrimitive (fließende Farben)
         refs.scanFit = chart.addLineSeries({ color: "#ffa028", lineWidth: 2, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
-        // dunkler Rand unter den farbigen Punkten, damit eng liegende Punkte unterscheidbar bleiben
-        for (const d of DOT_TIERS.slice(1)) refs.scanHalo.push(dot("#0a0a0a", d.radius + 1.5));
-        refs.scanOpen.push(dot(OPEN_MARK.color, OPEN_MARK.radius));
-        for (const d of DOT_SERIES) refs.scan.push(dot(d.color, d.radius));
-        if (scan.startsWith("back")) for (const r of HOLLOW_INNER) refs.scanInner.push(dot("#0a0a0a", r));
       }
     }
     let rsiChart: IChartApi | null = null;
     const syncers: (() => void)[] = [];
-    if (refs.scan.length) {
-      // Punktgröße folgt dem Zoom: bei vielen Balken (z. B. MAX) kleiner, damit die Kerzen sichtbar bleiben
-      let lastF = -1;
-      const fitDots = () => {
-        const r = chart.timeScale().getVisibleLogicalRange();
-        const w = chart.timeScale().width();
-        if (!r || !w) return;
-        const f = Math.round(Math.max(0.4, Math.min(1, w / Math.max(1, r.to - r.from) / 6)) * 20) / 20;
-        if (f === lastF) return;
-        lastF = f;
-        refs.scanScale.forEach(([series, radius]) => series.applyOptions({ pointMarkersRadius: radius * f }));
-      };
-      chart.timeScale().subscribeVisibleLogicalRangeChange(fitDots);
-      syncers.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(fitDots));
-    }
     if (showRsi && rsiRef.current) {
       const os = OSC_STYLE[osc];
       rsiChart = createChart(rsiRef.current, {
@@ -777,6 +744,12 @@ export default function GP({ ticker }: ScreenProps) {
       refs.main.attachPrimitive(vp);
       vpRef.current = vp;
     }
+    dotsRef.current = null;
+    if (refs.main && scanOn) {
+      const td = new TrendDotsPrimitive();
+      refs.main.attachPrimitive(td);
+      dotsRef.current = td;
+    }
     setChartGen((g) => g + 1); // Kursmarken auf dem neuen Chart neu zeichnen
     fitKey.current = "";
     // Panelgröße geändert (Maximieren, Layout, Fenster): Inhalt neu einpassen, sonst blieb nach
@@ -799,6 +772,7 @@ export default function GP({ ticker }: ScreenProps) {
       chart.unsubscribeCrosshairMove(onMove);
       // Volumenprofil und Linien gehören zu diesem Chart: nach remove() nicht mehr ansprechen
       vpRef.current = null;
+      dotsRef.current = null;
       vpLines.current = [];
       markLines.current = [];
       chart.remove();
@@ -870,26 +844,11 @@ export default function GP({ ticker }: ScreenProps) {
     compareLines.forEach((l, i) => s.cmp[i]?.setData(l.data));
     s.ehl.forEach((ser, i) => ser.setData((ehlLines[i]?.data ?? []) as never));
     // ohne Ergebnis (Rand, „noch offen“) ganz blass grau, schwacher Trend ohne Farbe
-    if (s.scan.length) {
-      // an jedem Balken eine Markierung: Punkt (Ergebnis) oder kleiner dunkler Punkt (noch offen)
-      const perSeries: { time: Time; value: number }[][] = DOT_SERIES.map(() => []);
-      const perTier: { time: Time; value: number }[][] = DOT_TIERS.map(() => []);
-      const open: { time: Time; value: number }[] = [];
-      for (const r of scanRows) {
-        const p = { time: r.time, value: r.close };
-        if (r.t === null || r.rank === null) {
-          open.push(p);
-          continue;
-        }
-        const k = dotTier(r.rank);
-        perSeries[dotSeriesIndex(r.t, k)].push(p);
-        perTier[k].push(p);
-      }
-      s.scanOpen.forEach((series) => series.setData(open));
-      s.scan.forEach((series, k) => series.setData(perSeries[k]));
-      s.scanHalo.forEach((series, k) => series.setData(perTier[k + 1]));
-      s.scanInner.forEach((series, k) => series.setData(perTier[k]));
-    }
+    // Trend-Scan: an jedem Balken ein Punkt (Ergebnis) oder kleiner dunkler Punkt (noch offen); Rückblick hohl
+    dotsRef.current?.setDots(
+      scanRows.map((r) => ({ time: r.time, price: r.close, t: r.t, rank: r.rank })),
+      scan.startsWith("back"),
+    );
     s.osc.forEach((ser, i) => {
       const d = oscLines[i]?.data ?? [];
       ser.setData((comparing ? alignRsi(d, compareLines) : d) as never);
@@ -1212,7 +1171,7 @@ export default function GP({ ticker }: ScreenProps) {
       series.setData([]);
       return;
     }
-    const strong = r.rank !== null && dotTier(r.rank) > 0;
+    const strong = r.rank !== null && dotTier(r.rank) >= STRONG_TIER;
     series.applyOptions({ color: strong ? "#ffa028" : "rgba(150,150,150,0.8)" });
     const a = { time: r.time, value: r.fitAt };
     const b = { time: r.other.time, value: r.fitOther };
@@ -1578,7 +1537,7 @@ export default function GP({ ticker }: ScreenProps) {
                     : "";
                   const chgTxt = isYield ? fmtBp(r.diff) : fmtPct(isNum(r.ret) ? r.ret * 100 : null, 1);
                   return (
-                    <span className={r.t > 0 ? "up" : "down"} title={SCAN_INFO[scan]}>
+                    <span className={r.t > 0 ? "up" : "down"} style={tier < STRONG_TIER ? { opacity: 0.75 } : undefined} title={SCAN_INFO[scan]}>
                       {head} {r.t > 0 ? "▲" : "▼"} {lenTxt} · t <b>{tTxt}</b> · {DOT_TIERS[tier].text}: {vsRandomText(r.rank ?? 0)}
                       {slopeTxt && ` · Steigung ${slopeTxt}`} · gesamt {chgTxt}
                       {vorl}

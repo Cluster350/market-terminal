@@ -118,7 +118,7 @@ export const SCAN_LABEL: Record<ScanMode, string> = {
 };
 
 const DOTS =
-  " Punkte auf dem Schlusskurs: grau = im Zufallsbereich (so gerade wie viele reine Zufallskurse); farbig erst ab „deutlich“ (gerader als 90 von 100 Zufallskursen), grün aufwärts, rot abwärts, größer = „sehr deutlich“ (gerader als 99 von 100). Kleiner dunkler Punkt = noch kein Ergebnis. Beim Fadenkreuz wird die gefundene Gerade eingezeichnet.";
+  " Punkte auf dem Schlusskurs, Farbe und Größe fließend: grau und klein = so gerade wie ein typischer reiner Zufallskurs; je kräftiger grün (aufwärts) bzw. rot (abwärts) und je größer, desto gerader im Vergleich zu Zufallskursen – volle Farbe ab „deutlich“ (gerader als 90 von 100), am größten ab „sehr deutlich“ (99 von 100). Kleiner dunkler Punkt = noch kein Ergebnis. Beim Fadenkreuz wird die gefundene Gerade eingezeichnet.";
 const MANY =
   " Achtung: Benachbarte Punkte hängen stark zusammen; auch reiner Zufall erzeugt etwa 10 % „deutliche“ Punkte und ganze Strecken davon.";
 
@@ -213,58 +213,70 @@ export function randomQuantile(q: number, window = 20, minLen = 5, step = 1): nu
 }
 
 /**
- * Darstellung als Punkt auf dem Schlusskurs – an jedem Balken. Grau = im Zufallsbereich (Zufallsrang unter 90 %);
- * erst darüber Farbe = Richtung (grün auf, rot ab) und Größe = Stärke: „deutlich“ ab 90 %, „sehr deutlich“ ab 99 %.
- * Unter 90 % bleibt grau, weil reiner Zufall dort die Hälfte aller Punkte färben würde.
+ * Stufen für Text und Zählung (die Punkte selbst sind fließend, siehe dotStyle): unter 50 % kein Trend erkennbar,
+ * 50–90 % Tendenz (noch im Bereich, den Zufall oft erzeugt), ab 90 % deutlich, ab 99 % sehr deutlich.
  */
 export const DOT_TIERS = [
-  { from: 0, radius: 2, alpha: 0.95, text: "im Zufallsbereich" },
-  { from: 0.9, radius: 4, alpha: 0.95, text: "deutlich" },
-  { from: 0.99, radius: 6, alpha: 1, text: "sehr deutlich" },
+  { from: 0, text: "kein Trend erkennbar" },
+  { from: 0.5, text: "Tendenz, im Zufallsbereich" },
+  { from: 0.9, text: "deutlich" },
+  { from: 0.99, text: "sehr deutlich" },
 ] as const;
 
-/** Anteil der Balken, die bei reinem Zufall mindestens „deutlich“ wären. */
-export const RANDOM_SHARE_STRONG = 1 - DOT_TIERS[1].from;
+/** Ab dieser Stufe gilt ein Punkt als „deutlich“. */
+export const STRONG_TIER = 2;
 
-/** Stufe 0 … 2 zum Zufallsrang. */
+/** Anteil der Balken, die bei reinem Zufall mindestens „deutlich“ wären. */
+export const RANDOM_SHARE_STRONG = 1 - DOT_TIERS[STRONG_TIER].from;
+
+/** Stufe 0 … 3 zum Zufallsrang. */
 export function dotTier(rank: number): number {
   let k = 0;
   for (let i = 1; i < DOT_TIERS.length; i++) if (rank >= DOT_TIERS[i].from) k = i;
   return k;
 }
 
-export function dotColor(t: number, tier: number): string {
-  if (tier <= 0) return "rgba(150,150,150,0.95)";
-  const a = DOT_TIERS[Math.min(tier, DOT_TIERS.length - 1)].alpha.toFixed(2);
-  return t > 0 ? `rgba(41,209,125,${a})` : `rgba(255,82,82,${a})`;
+const GREY = [150, 150, 150];
+const UP = [41, 209, 125];
+const DOWN = [255, 82, 82];
+/** Stützstellen Zufallsrang → Farbanteil (0 grau … 1 volle Farbe) und Radius in Pixeln; dazwischen fließend. */
+const COLOR_STOPS: [number, number][] = [
+  [0.5, 0],
+  [0.9, 1],
+];
+const RADIUS_STOPS: [number, number][] = [
+  [0.5, 2],
+  [0.9, 4],
+  [0.99, 6],
+];
+
+function piecewise(stops: [number, number][], x: number): number {
+  if (x <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    const [x0, y0] = stops[i - 1];
+    const [x1, y1] = stops[i];
+    if (x <= x1) return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
+  }
+  return stops[stops.length - 1][1];
 }
 
 /**
- * Reihen für die Punkte: Stufe 0 grau, die übrigen Stufen je einmal grün (aufwärts) und rot (abwärts). Jede Reihe hat
- * EINE Farbe – die Chart-Bibliothek (4.2) zeichnet Punkte mit wechselnder Farbe innerhalb einer Reihe nicht vollständig.
+ * Fließende Darstellung eines Punkts (wie Bild 5.2 im Buch, aber gegen den Zufall gemessen): bis zum typischen
+ * Zufallskurs (Rang 50 %) grau und klein, dann immer kräftiger grün (aufwärts) bzw. rot (abwärts) – volle Farbe ab
+ * „deutlich“ (90 %) – und größer bis „sehr deutlich“ (99 %).
  */
-export const DOT_SERIES: { tier: number; up: boolean; radius: number; color: string }[] = DOT_TIERS.flatMap((d, tier) =>
-  tier === 0
-    ? [{ tier, up: true, radius: d.radius, color: dotColor(0, 0) }]
-    : [true, false].map((up) => ({ tier, up, radius: d.radius, color: dotColor(up ? 1 : -1, tier) })),
-);
-
-/** Noch ohne Ergebnis (Rückblick: die letzten Balken; laufend: zu wenig Verlauf): kleiner dunkelgrauer Punkt. */
-export const OPEN_MARK = { radius: 1.5, color: "#4a4a4a" } as const;
-
-/** Rückblick: hohle Punkte – innen dunkel (Radius je Stufe), damit man ihn nicht mit „laufend“ verwechselt. */
-export const HOLLOW_INNER = DOT_TIERS.map((d) => Math.max(0.9, d.radius - 1.6));
-
-/** Index in DOT_SERIES für einen t-Wert und seine Stufe. */
-export function dotSeriesIndex(t: number, tier: number): number {
-  return tier <= 0 ? 0 : 1 + (Math.min(tier, DOT_TIERS.length - 1) - 1) * 2 + (t > 0 ? 0 : 1);
+export function dotStyle(t: number, rank: number): { color: string; radius: number; mix: number } {
+  const mix = piecewise(COLOR_STOPS, rank);
+  const target = t > 0 ? UP : DOWN;
+  const c = GREY.map((g, i) => Math.round(g + (target[i] - g) * mix));
+  return { color: `rgb(${c[0]},${c[1]},${c[2]})`, radius: piecewise(RADIUS_STOPS, rank), mix };
 }
 
 /** Ehrlicher Wortlaut zum Zufallsrang (kein „zu x % sicher“). */
 export function vsRandomText(rank: number): string {
   if (rank >= 0.995) return "gerader als 99 von 100 Zufallskursen";
   const n = Math.max(1, Math.round((1 - rank) * 100));
-  return `so gerade wie nur ${n} von 100 Zufallskursen`;
+  return `so gerade wie ${n <= 10 ? "nur " : ""}${n} von 100 Zufallskursen`;
 }
 
 /** Hilfslinien fürs Unterfenster „Trend-Scan t-Wert“: typischer Zufall (grau) und stärker als 90 % Zufall (grün/rot). */

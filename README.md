@@ -423,14 +423,20 @@ der Chart den Kurs **nur als Punkte**, ohne Kerzen und ohne Linie („Darstellun
 kommt die vorher gewählte Darstellung zurück. Durchschnitte, Ehlers-Linie, Volumen und Alarme bleiben sichtbar;
 Quartalszahlen („E“) erscheinen dann als orange Quadrate, damit sie nicht wie Trendpunkte aussehen.
 
-| Punkt | Bedeutung |
-|---|---|
-| grau | im Zufallsbereich – so gerade wie viele reine Zufallskurse (Zufallsrang unter 90 %) |
-| grün / rot, mittel | „deutlich“: gerader als 90 von 100 Zufallskursen, Richtung auf- bzw. abwärts |
-| grün / rot, groß | „sehr deutlich“: gerader als 99 von 100 Zufallskursen |
-| klein, dunkelgrau | noch kein Ergebnis |
+**Farbe und Größe fließend** (wie Bild 5.2 im Buch, aber gegen den Zufall gemessen):
 
-- **Unter 90 % bleibt grau,** weil reiner Zufall sonst die Hälfte aller Punkte färben würde.
+| Zufallsrang | Punkt | Text |
+|---|---|---|
+| unter 50 % | grau, klein | kein Trend erkennbar |
+| 50–90 % | zunehmend grün / rot und größer | Tendenz, im Zufallsbereich |
+| ab 90 % | volle Farbe | deutlich (gerader als 90 von 100 Zufallskursen) |
+| ab 99 % | volle Farbe, am größten | sehr deutlich |
+| – | klein, dunkelgrau | noch kein Ergebnis |
+
+- **Volle Farbe erst ab 90 %:** Darunter liegt der Bereich, den reiner Zufall oft erzeugt. Die Punkte sind dort nur
+  blass, man sieht die Richtung, aber nichts springt ins Auge.
+- **Eigene Zeichenschicht:** Die Punkte zeichnet eine eigene Zeichen-Erweiterung, denn die Chart-Bibliothek zeichnet
+  wechselnde Punktfarben in einer Reihe unvollständig. Starke Punkte liegen oben, und die Größe folgt dem Zoom.
 - **Gerade beim Fadenkreuz:** Für den Balken unter dem Fadenkreuz wird die gefundene Gerade gestrichelt eingezeichnet.
   So sieht man Länge, Steigung (Beta) und im Rückblick, wie weit die Rechnung in spätere Kurse greift.
 - **Zeile über dem Chart,** z. B. „Trend bisher ▲ 15 Balken seit 20.10.2026 · t +15,1 · deutlich: so gerade wie nur
