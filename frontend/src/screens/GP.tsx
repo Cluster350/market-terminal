@@ -24,7 +24,7 @@ import { coneLines, useVolForecast } from "../lib/forecast";
 import { useCsvExport, type CsvDataset } from "../lib/exporter";
 import { BAND_KEYS, bandsCsv, bandTestText, bandTestVerdict, gapText, REGION_LABEL, useStockBands } from "../lib/valuation";
 import { normalizeTicker, unknownSecurityMessage } from "../lib/commands";
-import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
+import { displayTicker, fmt, fmtBig, fmtBp, fmtDate, fmtPct, fmtPrice, fmtShortDate, fmtTime, isEquity, isNum, priceDigits, shiftMonths, tone } from "../lib/format";
 import { isBool, isNumberList, isOneOf, readPersistent, usePersistentState } from "../lib/persist";
 import {
   OSC_INFO,
@@ -40,6 +40,7 @@ import {
   type Oscillator,
   type Overlay,
 } from "../lib/ehlers";
+import { SCAN_INFO, SCAN_LABEL, SCAN_MODES, scanColor, scanParams, T_MIN, trendScan, type ScanMode } from "../lib/trendscan";
 import { INTERVAL_LABEL, INTERVAL_SECONDS, INTERVALS, type Interval } from "../lib/intervals";
 import { retry, useEarnings, useHistory, useIntraday } from "../lib/queries";
 import { live, useLiveStatus } from "../lib/realtime";
@@ -324,6 +325,8 @@ export default function GP({ ticker }: ScreenProps) {
   const [osc, setOsc] = usePersistentState<Oscillator>("gp.osc", readPersistent("gp.rsi", false, isBool) ? "rsi" : "off", isOneOf(OSCILLATORS));
   const showRsi = osc !== "off";
   const [ehlers, setEhlers] = usePersistentState<Overlay>("gp.ehlers", "off", isOneOf(OVERLAYS));
+  // Trend-Scanning als Hintergrundfarbe (Rückblick = folgender Trend, laufend = bisheriger Trend)
+  const [scan, setScan] = usePersistentState<ScanMode>("gp.scan", "off", isOneOf(SCAN_MODES));
   const [showVwap, setShowVwap] = usePersistentState("gp.vwap", true, isBool);
   const [showVp, setShowVp] = usePersistentState("gp.vp", false, isBool);
   const [showCone, setShowCone] = usePersistentState("gp.cone", false, isBool);
@@ -377,12 +380,20 @@ export default function GP({ ticker }: ScreenProps) {
     type Gap = Line | { time: Time };
     type OscLine = { name: string; color: string; data: Gap[] };
     type EhlLine = { name: string; color: string; data: Line[] };
-    const empty = { bars: [] as Bar[], maLines: [] as { n: number; color: string; data: Line[] }[], base: null as number | null, prevDay: null as number | null, bands: null as null | { upper: Line[]; lower: Line[] }, oscLines: [] as OscLine[], ehlLines: [] as EhlLine[], start: "" };
+    type ScanRow = { time: Time; t: number | null; len: number | null; ret: number | null; other: Bar | null };
+    const empty = { bars: [] as Bar[], maLines: [] as { n: number; color: string; data: Line[] }[], base: null as number | null, prevDay: null as number | null, bands: null as null | { upper: Line[]; lower: Line[] }, oscLines: [] as OscLine[], ehlLines: [] as EhlLine[], scanRows: [] as ScanRow[], start: "" };
     // Unterfenster (RSI oder Ehlers-Oszillator) und Ehlers-Linie: über alle geladenen Balken gerechnet (keine
     // Anlaufphase im sichtbaren Bereich), gezeigt ab ``from``
     const indicators = (src: Bar[], from: number) => {
+      const closes = src.map((b) => b.close);
       const raw =
-        osc === "off" ? [] : osc === "rsi" ? [{ name: "RSI 14", color: "#c77dff", values: rsiSeries(src.map((b) => b.close)) }] : oscillatorLines(osc, src).lines;
+        osc === "off"
+          ? []
+          : osc === "rsi"
+            ? [{ name: "RSI 14", color: "#c77dff", values: rsiSeries(closes) }]
+            : osc === "tscan"
+              ? [{ name: "Trend-Scan laufend 20 t-Wert", color: "#c77dff", values: trendScan(closes, "backward", 20).map((p) => p.t) }]
+              : oscillatorLines(osc, src).lines;
       const oscLines: OscLine[] = raw.map((l) => ({
         name: l.name,
         color: l.color,
@@ -393,7 +404,15 @@ export default function GP({ ticker }: ScreenProps) {
         for (let i = from; i < src.length; i++) if (l.values[i] !== null) data.push({ time: src[i].time, value: l.values[i]! });
         return { name: l.name, color: l.color, data };
       });
-      return { oscLines, ehlLines };
+      const sp = scanParams(scan);
+      const pts = sp ? trendScan(closes, sp.direction, sp.window) : [];
+      const scanRows: ScanRow[] = sp
+        ? src.slice(from).map((b, k) => {
+            const p = pts[from + k];
+            return { time: b.time, t: p.t, len: p.len, ret: p.ret, other: p.other !== null ? src[p.other] : null };
+          })
+        : [];
+      return { oscLines, ehlLines, scanRows };
     };
     if (intradayRange) {
       const d = intra.data;
@@ -435,9 +454,10 @@ export default function GP({ ticker }: ScreenProps) {
       }
     }
     return { bars: all.slice(from), maLines: lines, base: periodBase(all, from), prevDay: null, bands, ...indicators(all, from), start };
-  }, [hist.data, intra.data, range, mas, intradayRange, boll, osc, ehlers]);
+  }, [hist.data, intra.data, range, mas, intradayRange, boll, osc, ehlers, scan]);
 
-  const { bars, maLines, base, prevDay, bands, oscLines, ehlLines } = view;
+  const { bars, maLines, base, prevDay, bands, oscLines, ehlLines, scanRows } = view;
+  const scanOn = scan !== "off" && !comparing;
 
   // Vergleich: Wertentwicklung in % ab Periodenbeginn, je Serie auf ihren Schluss vor dem Start normiert
   const compareLines = useMemo(() => {
@@ -469,6 +489,8 @@ export default function GP({ ticker }: ScreenProps) {
     const bollLo = new Map((bands?.lower ?? []).map((p) => [String(p.time), p.value]));
     const ehlMaps = ehlLines.map((l) => new Map(l.data.map((p) => [String(p.time), p.value])));
     const oscMaps = oscLines.map((l) => new Map(l.data.map((p) => [String(p.time), "value" in p ? p.value : null])));
+    const scanMap = new Map(scanRows.map((r) => [String(r.time), r]));
+    const scanBack = scan.startsWith("back");
     const sets: CsvDataset[] = [
       {
         title: `Kursverlauf ${name} (${range})`,
@@ -483,6 +505,9 @@ export default function GP({ ticker }: ScreenProps) {
           ...(bands ? ["Bollinger oben", "Bollinger unten"] : []),
           ...ehlLines.map((l) => `Ehlers ${l.name}`),
           ...oscLines.map((l) => l.name),
+          ...(scanOn
+            ? [`Trend-Scan ${SCAN_LABEL[scan]} t-Wert`, "Trend-Scan Länge (Balken)", "Trend-Scan Veränderung [%]", scanBack ? "Trend-Scan bis" : "Trend-Scan ab"]
+            : []),
         ],
         rows: bars.map((b) => {
           const k = String(b.time);
@@ -490,6 +515,12 @@ export default function GP({ ticker }: ScreenProps) {
             label(b.time), b.open, b.high, b.low, b.close, b.volume, ...maMaps.map((mm) => mm.get(k) ?? null),
             ...(bands ? [bollUp.get(k) ?? null, bollLo.get(k) ?? null] : []),
             ...ehlMaps.map((mm) => mm.get(k) ?? null), ...oscMaps.map((mm) => mm.get(k) ?? null),
+            ...(scanOn
+              ? (() => {
+                  const r = scanMap.get(k);
+                  return [r?.t ?? null, r?.len ?? null, isNum(r?.ret) ? r!.ret! * 100 : null, r?.other ? label(r.other.time) : null];
+                })()
+              : []),
           ];
         }),
       },
@@ -534,6 +565,7 @@ export default function GP({ ticker }: ScreenProps) {
     cmp: ISeriesApi<"Line">[];
     osc: ISeriesApi<"Line">[];
     ehl: ISeriesApi<"Line">[];
+    scan: ISeriesApi<"Histogram"> | null;
     cone: ISeriesApi<"Line">[];
     band: ISeriesApi<"Line">[];
   } | null>(null);
@@ -579,12 +611,17 @@ export default function GP({ ticker }: ScreenProps) {
       },
     });
     chartRef.current = chart;
-    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], cone: [], band: [] };
+    const refs: NonNullable<typeof seriesRef.current> = { main: null, vol: null, vwap: null, ma: new Map(), bands: [], cmp: [], osc: [], ehl: [], scan: null, cone: [], band: [] };
     if (comparing) {
       for (let i = 0; i < compare.length + 1; i++) {
         refs.cmp.push(chart.addLineSeries({ color: i === 0 ? "#ffa028" : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length], lineWidth: i === 0 ? 2 : 1, priceLineVisible: false }));
       }
     } else {
+      if (scanOn) {
+        // Trend-Scan als Farbstreifen über die ganze Höhe – zuerst angelegt, damit er hinter den Kerzen liegt
+        refs.scan = chart.addHistogramSeries({ priceScaleId: "scan", base: 0, lastValueVisible: false, priceLineVisible: false });
+        chart.priceScale("scan").applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
+      }
       if (kind === "candle") {
         refs.main = chart.addCandlestickSeries({
           upColor: "#29d17d", downColor: "#ff5252", borderUpColor: "#29d17d", borderDownColor: "#ff5252",
@@ -698,7 +735,7 @@ export default function GP({ ticker }: ScreenProps) {
       seriesRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasData, kind, intradayRange, isYield, maKey, boll, osc, ehlers, cmpKey, showVwap, coneOn, bandOn]);
+  }, [hasData, kind, intradayRange, isYield, maKey, boll, osc, ehlers, scanOn, cmpKey, showVwap, coneOn, bandOn]);
 
   useEffect(() => {
     const s = seriesRef.current;
@@ -757,6 +794,8 @@ export default function GP({ ticker }: ScreenProps) {
     }
     compareLines.forEach((l, i) => s.cmp[i]?.setData(l.data));
     s.ehl.forEach((ser, i) => ser.setData((ehlLines[i]?.data ?? []) as never));
+    // ohne Ergebnis (Rand, „noch offen“) ganz blass grau, schwacher Trend ohne Farbe
+    s.scan?.setData(scanRows.map((r) => ({ time: r.time, value: 1, color: r.t === null ? "rgba(140,140,140,0.07)" : scanColor(r.t) ?? "rgba(0,0,0,0)" })) as never);
     s.osc.forEach((ser, i) => {
       const d = oscLines[i]?.data ?? [];
       ser.setData((comparing ? alignRsi(d, compareLines) : d) as never);
@@ -767,7 +806,7 @@ export default function GP({ ticker }: ScreenProps) {
       rsiChartRef.current?.timeScale().fitContent();
       fitKey.current = key;
     }
-  }, [bars, maLines, bands, oscLines, ehlLines, compareLines, comparing, kind, range, ticker, maKey, cmpKey, osc, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen, shownBands]);
+  }, [bars, maLines, bands, oscLines, ehlLines, scanRows, compareLines, comparing, kind, range, ticker, maKey, cmpKey, osc, base, prevDay, intradayRange, earn.data, isYield, volFc.data, chartGen, shownBands]);
 
   // Laufende Kerze: Ticks des Echtzeit-Stroms (US-Werte, Devisen, Krypto) bzw. verzögerte Kurse
   // (übrige Börsen) schreiben die letzte Kerze fort, ohne den ganzen Chart neu zu zeichnen
@@ -1219,6 +1258,23 @@ export default function GP({ ticker }: ScreenProps) {
             </select>
           </label>
         )}
+        {!comparing && (
+          <label className="small muted" style={{ color: scanOn ? "#29d17d" : undefined }} title={SCAN_INFO[scan]}>
+            Trend-Scan{" "}
+            <select className="field" aria-label="Trend-Scanning" value={scan} onChange={(e) => setScan(e.target.value as ScanMode)}>
+              <option value="off">{SCAN_LABEL.off}</option>
+              <optgroup label="Rückblick (folgender Trend)">
+                <option value="back20" title={SCAN_INFO.back20}>{SCAN_LABEL.back20}</option>
+                <option value="back60" title={SCAN_INFO.back60}>{SCAN_LABEL.back60}</option>
+              </optgroup>
+              <optgroup label="Laufend (bisheriger Trend)">
+                <option value="live20" title={SCAN_INFO.live20}>{SCAN_LABEL.live20}</option>
+                <option value="live60" title={SCAN_INFO.live60}>{SCAN_LABEL.live60}</option>
+              </optgroup>
+            </select>
+          </label>
+        )}
+        {scanOn && scan.startsWith("back") && <span className="small dim" title={SCAN_INFO[scan]}>Rückblick: nutzt spätere Kurse, kein Signal</span>}
         <label className="small muted" style={{ color: showRsi ? "#c77dff" : undefined }} title={OSC_INFO[osc]}>
           Unterfenster{" "}
           <select className="field" aria-label="Unterfenster" value={osc} onChange={(e) => setOsc(e.target.value as Oscillator)}>
@@ -1227,11 +1283,14 @@ export default function GP({ ticker }: ScreenProps) {
               <option value="rsi" title={OSC_INFO.rsi}>{OSC_LABEL.rsi}</option>
             </optgroup>
             <optgroup label="Ehlers">
-              {OSCILLATORS.filter((o) => o !== "off" && o !== "rsi").map((o) => (
+              {OSCILLATORS.filter((o) => o !== "off" && o !== "rsi" && o !== "tscan").map((o) => (
                 <option key={o} value={o} title={OSC_INFO[o]}>
                   {OSC_LABEL[o]}
                 </option>
               ))}
+            </optgroup>
+            <optgroup label="Trend-Scanning">
+              <option value="tscan" title={OSC_INFO.tscan}>{OSC_LABEL.tscan}</option>
             </optgroup>
           </select>
         </label>
@@ -1350,6 +1409,25 @@ export default function GP({ ticker }: ScreenProps) {
                 {isNum(prevClose) && !isYield && <span className={tone(shown.close - prevClose)}>{fmtPct((shown.close / prevClose - 1) * 100)}</span>}
                 {isNum(prevClose) && isYield && <span className={tone(shown.close - prevClose, 2)}>{fmtBp(shown.close - prevClose)}</span>}
                 {isNum(shown.volume) && <span>Vol <b>{fmtBig(shown.volume)}</b></span>}
+                {scanOn && (() => {
+                  const r = scanRows.find((x) => x.time === shown.time);
+                  const back = scan.startsWith("back");
+                  // Intraday: Uhrzeit, bei anderem Tag (5T-Chart) mit Datum davor
+                  const when = (b: Bar | null) =>
+                    !b
+                      ? ""
+                      : intradayRange && b.ts !== undefined
+                        ? (shown.ts !== undefined && fmtShortDate(b.ts) !== fmtShortDate(shown.ts) ? `${fmtShortDate(b.ts)} ` : "") + fmtTime(b.ts)
+                        : fmtDate(b.time as string);
+                  if (!r || r.t === null) return <span className="dim">{back ? "Trend danach: noch offen" : "Trend bisher: zu wenig Verlauf"}</span>;
+                  if (Math.abs(r.t) < T_MIN) return <span className="dim">{back ? "Trend danach" : "Trend bisher"}: kein klarer Trend (t {fmt(r.t, 1)})</span>;
+                  return (
+                    <span className={r.t > 0 ? "up" : "down"} title={SCAN_INFO[scan]}>
+                      {back ? "Trend danach" : "Trend bisher"} {r.t > 0 ? "▲" : "▼"} {r.len} Balken {back ? `bis ${when(r.other)}` : `seit ${when(r.other)}`} · t{" "}
+                      <b>{r.t > 0 ? "+" : "−"}{fmt(Math.abs(r.t), 1)}</b> · {fmtPct(isNum(r.ret) ? r.ret * 100 : null, 1)}
+                    </span>
+                  );
+                })()}
                 {ehlLines.map((l) => {
                   const at = l.data.find((p) => p.time === shown.time);
                   return (

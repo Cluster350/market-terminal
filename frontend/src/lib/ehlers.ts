@@ -445,7 +445,8 @@ export function overlayLines(kind: Overlay, bars: OhlcBar[]): EhlersLine[] {
   }
 }
 
-export const OSCILLATORS = ["off", "rsi", "fisher", "lrsi", "roof", "ebsw", "reflex", "cti", "cycle"] as const;
+// Auswahl im Unterfenster des Kurscharts: RSI, Ehlers-Oszillatoren und der laufende Trend-Scan-t-Wert
+export const OSCILLATORS = ["off", "rsi", "fisher", "lrsi", "roof", "ebsw", "reflex", "cti", "cycle", "tscan"] as const;
 export type Oscillator = (typeof OSCILLATORS)[number];
 
 export const OSC_LABEL: Record<Oscillator, string> = {
@@ -458,6 +459,7 @@ export const OSC_LABEL: Record<Oscillator, string> = {
   reflex: "Reflex / Trendflex 20",
   cti: "Correlation Trend 20",
   cycle: "Zykluslänge (MESA)",
+  tscan: "Trend-Scan t-Wert (laufend 20)",
 };
 
 export const OSC_INFO: Record<Oscillator, string> = {
@@ -472,6 +474,8 @@ export const OSC_INFO: Record<Oscillator, string> = {
     "Reflex (lila) und Trendflex (orange), Ehlers 2020: fast ohne Verzögerung. Reflex zeigt den Zyklus, Trendflex den Trend; Nulldurchgänge markieren Wendepunkte, Werte sind auf die eigene Schwankung normiert.",
   cti: "Correlation Trend Indicator (Ehlers 2020): wie gerade der Kurs der letzten 20 Balken steigt (+1) oder fällt (−1); um 0 kein Trend.",
   cycle: "Dominanter Zyklus (Ehlers, Homodyne-Diskriminator der MESA-Rechnung): Länge der aktuell vorherrschenden Kursschwingung in Balken (6 bis 50).",
+  tscan:
+    "Trend-Scanning laufend (López de Prado; mlfinlab von Hudson & Thames): t-Wert des saubersten Trends der letzten 5 bis 19 Balken. Über +2 deutlicher Aufwärtstrend, unter −2 deutlicher Abwärtstrend; je größer, desto gerader. Nutzt nur frühere Kurse.",
 };
 
 /** Linienfarben, Hilfslinien und Nachkommastellen je Unterfenster (für den Chartaufbau). */
@@ -485,6 +489,7 @@ export const OSC_STYLE: Record<Oscillator, { colors: string[]; levels: { value: 
   reflex: { colors: ["#c77dff", "#ffa028"], levels: [{ value: 0, color: "#555" }], digits: 2 },
   cti: { colors: ["#c77dff"], levels: [{ value: 0.5, color: "#555" }, { value: 0, color: "#555" }, { value: -0.5, color: "#555" }], digits: 2 },
   cycle: { colors: ["#c77dff"], levels: [], digits: 1 },
+  tscan: { colors: ["#c77dff"], levels: [{ value: 2, color: "#29d17d" }, { value: 0, color: "#555" }, { value: -2, color: "#ff5252" }], digits: 1 },
 };
 
 export interface OscResult {
@@ -494,7 +499,7 @@ export interface OscResult {
 }
 
 /** Oszillator-Linien für das Unterfenster (ohne RSI, der im Kurschart selbst gerechnet wird). */
-export function oscillatorLines(kind: Exclude<Oscillator, "off" | "rsi">, bars: OhlcBar[]): OscResult {
+export function oscillatorLines(kind: Exclude<Oscillator, "off" | "rsi" | "tscan">, bars: OhlcBar[]): OscResult {
   const close = bars.map((b) => b.close);
   const hl2 = bars.map((b) => (b.high + b.low) / 2);
   switch (kind) {

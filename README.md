@@ -403,6 +403,34 @@ mathematische Eigenschaften (gleichbleibender Kurs bleibt gleich, Trend wird ent
 eines reinen Zyklus). Hinweis: Viele frei verfügbare Umsetzungen enthalten den Grad-/Bogenmaß-Fehler und liefern
 andere Werte. Keine Empfehlung – Indikatoren zeigen Vergangenheit, keine Zukunft.
 
+## Trend-Scanning im Kurschart (GP)
+
+Verfahren von Marcos López de Prado („Machine Learning for Asset Managers“, 2020), umgesetzt wie
+`trend_scanning_labels` in **mlfinlab** von Hudson & Thames. Für jeden Balken werden Geraden über verschiedene
+Längen gelegt (bei Fenster 20: 5, 6, … 19 Balken). Die Länge, deren Steigung den größten t-Wert hat, gewinnt.
+Das Vorzeichen zeigt die Richtung, der Betrag, wie sauber der Trend ist. **Nur zur Darstellung**: Das Terminal
+testet damit keine Strategien.
+
+Auswahl **„Trend-Scan“** im Kurschart (Tages- und Intraday-Charts):
+
+| Einstellung | Was eingefärbt wird |
+|---|---|
+| Rückblick 20 / 60 | welcher Trend auf jeden Balken **folgte** (5–19 bzw. 5–59 folgende Balken). Nutzt spätere Kurse, also nur zum Verstehen der Vergangenheit, **kein Signal**. Die letzten 19 bzw. 59 Balken sind noch offen (grau). |
+| laufend 20 / 60 | welcher Trend zu jedem Balken **hinführte** (5–19 bzw. 5–59 vorherige Balken). Nutzt nur frühere Kurse und gilt auch für heute. |
+
+- Hintergrund grün = Aufwärtstrend, rot = Abwärtstrend. Je kräftiger die Farbe, desto größer der t-Wert.
+  Unter |t| = 2 bleibt der Hintergrund frei („kein klarer Trend“).
+- Über dem Chart steht für den Balken unter dem Fadenkreuz zum Beispiel „Trend danach ▲ 14 Balken bis 19.03. ·
+  t +8,3 · +6,1 %“ (bzw. „Trend bisher … seit …“).
+- Im **Unterfenster** gibt es zusätzlich „Trend-Scan t-Wert (laufend 20)“ als Linie mit den Marken ±2.
+- Der CSV-Export enthält t-Wert, gewählte Länge, Veränderung und das andere Trendende als eigene Spalten.
+
+Die Parameter entsprechen mlfinlab (look_forward_window 20, min_sample_length 5, step 1). Die Rechnung wurde gegen
+eine eigene Nachrechnung des mlfinlab-Verfahrens geprüft, die wie dort mit Matrix-Regression arbeitet. t-Werte
+stimmen auf 13 Stellen überein, Länge, Trendende und Veränderung exakt. Grundlage war der Quelltext des freien
+Ablegers mlfinpy, denn mlfinlab selbst ist inzwischen kostenpflichtig. Bei einer perfekten Geraden wäre der t-Wert
+unendlich; er wird bei 999 begrenzt. Keine Empfehlung.
+
 ## CSV-Export (für Excel)
 
 Jedes Fenster hat oben rechts den Knopf **CSV**. Ein Klick speichert alles, was das Fenster gerade zeigt, als
