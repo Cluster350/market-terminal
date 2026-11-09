@@ -213,3 +213,41 @@ def test_ai_tools_krypto_faktoren():
     assert k["waehrung"] == "EUR" and [c["kuerzel"] for c in k["coins"]] == ["ETH"]
     assert f["region"] == "Europa" and len(f["faktoren_gegenueber_markt_prozent"]) == 5
     assert f["depot_faktorlast"]["wochen"] >= 52 and len(f["depot_faktorlast"]["stile"]) == 5
+
+
+def test_change_24h_from_intraday_bars():
+    now = 1_000_000.0
+    bars = [(int(now - 86400 - 600 + 300 * k), 100.0 + k, 99.0 + k, 99.5 + k) for k in range(300)]
+    chg, ref, hi, lo = ccalc.change_24h(bars, now, last=110.0)
+    # Bezug: Schluss des Balkens, in dem „jetzt − 24 h“ liegt (Balken 2: Start 300 s vor dem Stichtag)
+    assert ref == 101.5 and chg == pytest.approx((110 / 101.5 - 1) * 100)
+    assert hi == max(110.0, max(b[1] for b in bars if b[0] > now - 86400)) and lo == 102.0
+    # Lücke: kein Kurs in der Nähe von „jetzt − 24 h“ (z. B. Wochenende ohne Handel) -> nichts erfinden
+    assert ccalc.change_24h([(int(now - 5 * 86400), 1.0, 1.0, 1.0)], now) == (None, None, None, None)
+    assert ccalc.change_24h([], now) == (None, None, None, None)
+
+
+def test_rotation_daily_cadence(tmp_path, monkeypatch):
+    monkeypatch.setenv("PORTFOLIO_DIR", str(tmp_path))
+    from app.config import Settings
+
+    with TestClient(create_app(DemoProvider(now_fn=lambda: NOW), cfg=Settings())) as c:
+        import time
+
+        for _ in range(150):
+            r = c.get("/api/rotation", params={"universe": "sectors", "freq": "d"}).json()
+            if r.get("state") == "ready":
+                break
+            time.sleep(0.1)
+        assert r["state"] == "ready" and r["freq"] == "d" and r["periods"] == [5, 20] and len(r["weeks"]) == 250
+        assert all(dt.date.fromisoformat(d).weekday() < 5 for d in r["weeks"]) and r["weeks"][-1] == "2026-11-06"
+        assert "h20" in r["test"]["quadrants"]["fuehrend"] and len(r["members"]) >= 8
+        w = c.get("/api/rotation", params={"universe": "sectors"}).json()
+        assert w["freq"] == "w" and w["periods"] == [4, 13] and len(w["weeks"]) == 104
+        for u, extra in (("countries", {}), ("currencies", {}), ("crypto", {"bench": "btc"}), ("factors", {"region": "us"})):
+            d = c.get("/api/rotation", params={"universe": u, "freq": "d", **extra}).json()
+            assert d["freq"] == "d" and len(d["weeks"]) == 250 and d["members"], u
+            assert all(m["trend"][-1] is not None for m in d["members"]), u
+        cr = c.get("/api/crypto").json()
+        assert all(isinstance(r["chg24h"], float) for r in cr["rows"][:5])  # Freitag 15 Uhr: 24 Stunden vorhanden
+        assert c.get("/api/rotation", params={"freq": "x"}).status_code == 422

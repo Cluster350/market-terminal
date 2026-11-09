@@ -10,10 +10,14 @@ import { useCsvExport } from "../lib/exporter";
 import { FACTOR_COLORS, PERIOD_LABEL, PERIODS, relativeLine, useFactors, type FactorOverview, type FactorRegion, type FactorRow } from "../lib/factors";
 import { DASH, displayTicker, fmt, fmtDate, fmtPrice, isNum, tone } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
+import { intradayNormalized, intradayRatio, useIntradaySet } from "../lib/intradayLines";
+import type { Intraday } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
 
 const RANGES = [
+  { value: "d1", label: "Heute" },
+  { value: "d5", label: "5 T" },
   { value: "12", label: "1J" },
   { value: "36", label: "3J" },
   { value: "60", label: "5J" },
@@ -60,6 +64,37 @@ function chartOption(o: FactorOverview, view: View, months: number): EOption | n
   };
 }
 
+/** Tagesverlauf (heute bzw. fünf Handelstage): Faktor ÷ Markt oder Kurs, je auf den ersten Kurs = 100. */
+function intradayOption(o: FactorOverview, view: View, sets: (Intraday | undefined)[]): EOption | null {
+  const market = sets[0];
+  if (!market || !market.t.length) return null;
+  const from = market.t[0];
+  const series: Record<string, unknown>[] = o.rows.map((r, i) => ({
+    name: r.label,
+    type: "line",
+    showSymbol: false,
+    data: view === "rel" ? intradayRatio(sets[i + 1], market, from) : intradayNormalized(sets[i + 1], from),
+    lineStyle: { width: 1.4, color: FACTOR_COLORS[r.key] ?? "#d8d8d8" },
+    itemStyle: { color: FACTOR_COLORS[r.key] ?? "#d8d8d8" },
+    markLine: view === "rel" && i === 0 ? { silent: true, symbol: "none", lineStyle: { color: "#555", type: "dashed" }, data: [{ yAxis: 100 }], label: { show: false } } : undefined,
+  }));
+  if (view === "abs") {
+    series.unshift({
+      name: o.bench.label, type: "line", showSymbol: false, data: intradayNormalized(market, from),
+      lineStyle: { width: 2, color: FACTOR_COLORS.market }, itemStyle: { color: FACTOR_COLORS.market },
+    });
+  }
+  return {
+    animation: false,
+    grid: { left: 46, right: 12, top: 28, bottom: 22 },
+    legend: { type: "scroll", top: 0, textStyle: { color: "#8f8f8f", fontSize: 10 }, itemHeight: 6, pageTextStyle: { color: "#8f8f8f" } },
+    tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: (v: number) => (isNum(v) ? fmt(v, 2) : DASH) },
+    xAxis: { type: "time", ...AXIS, axisLabel: { ...AXIS.axisLabel, hideOverlap: true } },
+    yAxis: { type: "value", scale: true, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => fmt(v, 1) } },
+    series,
+  };
+}
+
 function corrColor(c: number | null): string | undefined {
   if (!isNum(c)) return undefined;
   const a = Math.min(1, Math.abs(c));
@@ -73,7 +108,17 @@ export function FCTR(_: ScreenProps) {
   const [range, setRange] = usePersistentState<RangeKey>("fctr.range", "36", isOneOf(RANGES.map((r) => r.value)));
   const q = useFactors(region);
   const o = q.data;
-  const option = useMemo(() => (o ? chartOption(o, view, Number(range)) : null), [o, view, range]);
+  const intraday = range === "d1" || range === "d5";
+  const tickers = useMemo(() => (o ? [o.bench.ticker, ...o.rows.map((r) => r.ticker)] : []), [o]);
+  const iq = useIntradaySet(tickers, range === "d1" ? 1 : 5, range === "d1" ? "5m" : "15m", intraday);
+  const iData = iq.map((x) => x.data);
+  const iStamp = iq.map((x) => x.dataUpdatedAt).join(",");
+  const iMissing = intraday && iq.length > 0 && iq.every((x) => !x.isPending) && !iData[0]?.t.length;
+  const option = useMemo(
+    () => (o ? (intraday ? intradayOption(o, view, iData) : chartOption(o, view, Number(range))) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [o, view, range, intraday, iStamp],
+  );
 
   // CSV: Tabelle und Korrelationen kommen aus dem Panel; dazu die Tageskurse aller ETFs
   useCsvExport(() => {
@@ -170,8 +215,15 @@ export function FCTR(_: ScreenProps) {
             <div>
               <div className="section-title">
                 {view === "rel" ? "Faktor ÷ Markt (Start = 100; steigt = Stil läuft besser als der Markt)" : "Kursverlauf (Start = 100)"}
+                {intraday ? (range === "d1" ? " · letzter Handelstag, 5-Minuten-Kurse" : " · 5 Handelstage, 15-Minuten-Kurse") : ""}
               </div>
-              <div className="cryp-chart">{option && <EChart option={option} csv={false} />}</div>
+              <div className="cryp-chart">
+                {iMissing ? (
+                  <Empty>Für diese ETFs liefert die Datenquelle keine Intraday-Kurse – bitte einen längeren Zeitraum wählen.</Empty>
+                ) : (
+                  option && <EChart option={option} csv={false} />
+                )}
+              </div>
             </div>
             <div>
               <div className="section-title" title="Korrelation der wöchentlichen Überrenditen (Faktor minus Markt) der letzten drei Jahre">

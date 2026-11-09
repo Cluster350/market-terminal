@@ -19,6 +19,7 @@ log = logging.getLogger("terminal")
 
 CACHE_SECONDS = 60
 INFO_SECONDS = 24 * 3600
+INTRA_SECONDS = 1800  # 5-Minuten-Balken für die 24-Stunden-Veränderung (ältere Balken ändern sich nicht)
 CROSS_YEARS = 5
 
 
@@ -27,7 +28,10 @@ class CryptoRow(Model):
     name: str
     symbol: str
     last: Optional[float] = None
-    chg_1d: Optional[float] = None
+    chg_1d: Optional[float] = None  # seit 0 Uhr UTC (Tagesschluss)
+    chg_24h: Optional[float] = None  # rollierend über 24 Stunden (Intraday)
+    high_24h: Optional[float] = None
+    low_24h: Optional[float] = None
     chg_7d: Optional[float] = None
     chg_30d: Optional[float] = None
     chg_ytd: Optional[float] = None
@@ -85,6 +89,7 @@ class CryptoService:
         self.t = terminal
         self._cache: dict[str, tuple[float, CryptoOverview]] = {}
         self._info: dict[str, tuple[float, dict]] = {}
+        self._intra: dict[str, tuple[float, list[tuple[int, float, float, float]]]] = {}
         self._lock = asyncio.Lock()
 
     def _gold(self) -> Optional[str]:
@@ -117,6 +122,20 @@ class CryptoService:
         self._info[ticker] = (time.time(), info)
         return info
 
+    async def _bars(self, ticker: str) -> list[tuple[int, float, float, float]]:
+        """5-Minuten-Balken der letzten zwei Tage (Zeitstempel, Hoch, Tief, Schluss), 30 Minuten gemerkt."""
+        hit = self._intra.get(ticker)
+        if hit and time.time() - hit[0] < INTRA_SECONDS:
+            return hit[1]
+        try:
+            d = await self.t.intraday(ticker, 2, "5m")
+            bars = [(int(ts), h or c, l or c, c) for ts, h, l, c in zip(d.t, d.h, d.l, d.c) if c]
+        except TerminalError as exc:
+            log.info("Krypto: keine Intraday-Kurse für %s (%s)", ticker, exc.message)
+            bars = []
+        self._intra[ticker] = (time.time(), bars)
+        return bars
+
     async def overview(self, ccy: str = "usd") -> CryptoOverview:
         ccy = "eur" if ccy == "eur" else "usd"
         hit = self._cache.get(ccy)
@@ -147,6 +166,13 @@ class CryptoService:
 
         all_hist = await asyncio.gather(*(hist(t) for t in tickers + [c for c, _ in cross_defs] + ["EURUSD.FOREX"]))
         infos = await asyncio.gather(*(self._crypto_info(t) for t in tickers))
+
+        async def bars(t: str) -> list[tuple[int, float, float, float]]:
+            async with sem:
+                return await self._bars(t)
+
+        intra = dict(zip(tickers + ["EURUSD.FOREX"], await asyncio.gather(*(bars(t) for t in tickers + ["EURUSD.FOREX"]))))
+        now_ts = self.t.now().timestamp()
         series = {t: _with_quote(h, quotes.get(t)) for t, h in zip(tickers, all_hist[: len(tickers)])}
         cross_hist = dict(zip([c for c, _ in cross_defs], all_hist[len(tickers) : -1]))
         eurusd = _with_quote(all_hist[-1], quotes.get("EURUSD.FOREX"))
@@ -178,13 +204,21 @@ class CryptoService:
             q = quotes.get(t)
             last = closes[-1]
             chg_1d = q.change_pct if (ccy == "usd" and q and q.change_pct is not None) else (closes[-1] / closes[-2] - 1) * 100
+            # Rollierende 24 Stunden aus 5-Minuten-Balken (in Euro mit dem Devisenkurs von damals und jetzt)
+            c24, ref, h24, l24 = calc.change_24h(intra.get(t) or [], now_ts, usd[-1][1])
+            if ccy == "eur" and c24 is not None:
+                _, fx_ref, _, _ = calc.change_24h(intra.get("EURUSD.FOREX") or [], now_ts, eur_now, tolerance=4 * 86400)
+                fx_ref = fx_ref or eur_now
+                c24 = ((usd[-1][1] / eur_now) / (ref / fx_ref) - 1) * 100 if eur_now and fx_ref and ref else None
+                h24 = h24 / eur_now if h24 and eur_now else None
+                l24 = l24 / eur_now if l24 and eur_now else None
             hi, hi_date = calc.from_high(pts)
             s200 = calc.sma(pts, 200)
             supply = info.get("circulating_supply")
             cap_usd = supply * usd[-1][1] if supply else info.get("market_cap")
             cap = cap_usd / eur_now if (cap_usd and ccy == "eur" and eur_now) else cap_usd
             rows.append(CryptoRow(
-                ticker=t, name=name, symbol=t.split("-")[0], last=last, chg_1d=chg_1d,
+                ticker=t, name=name, symbol=t.split("-")[0], last=last, chg_1d=chg_1d, chg_24h=c24, high_24h=h24, low_24h=l24,
                 chg_7d=metrics.perf_since(dates, closes, days=7), chg_30d=metrics.perf_since(dates, closes, days=30),
                 chg_ytd=metrics.perf_ytd(dates, closes, today=today), chg_1y=metrics.perf_since(dates, closes, months=12),
                 vol_30d=calc.vol(pts, 30), from_high=hi, high_date=hi_date,
@@ -210,8 +244,8 @@ class CryptoService:
         if any(r.market_cap is None for r in rows):
             notes.append("Ohne Angabe der umlaufenden Menge fehlt bei einzelnen Coins die Marktkapitalisierung.")
         notes.append(
-            "Tag = seit 0 Uhr UTC. Abstand zum Hoch: höchster Tagesschluss seit Beginn der Kursdaten. Schwankung "
-            "mit 365 Tagen hochgerechnet. Stablecoins (USDT, USDC) sind nicht enthalten."
+            "24 h = Veränderung über die letzten 24 Stunden (5-Minuten-Kurse). Abstand zum Hoch: höchster Tagesschluss "
+            "seit Beginn der Kursdaten. Schwankung mit 365 Tagen hochgerechnet. Stablecoins (USDT, USDC) sind nicht enthalten."
         )
 
         # Vergleich mit Aktien und Gold: Kurse der letzten Jahre und gleitende Korrelation (90 Börsentage)

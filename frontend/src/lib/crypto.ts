@@ -9,6 +9,9 @@ export interface CryptoRow {
   symbol: string;
   last: number | null;
   chg1d: number | null;
+  chg24h: number | null;
+  high24h: number | null;
+  low24h: number | null;
   chg7d: number | null;
   chg30d: number | null;
   chgYtd: number | null;

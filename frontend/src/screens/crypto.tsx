@@ -8,10 +8,14 @@ import { monthsBack, normalized, useCrypto, type CryptoOverview, type CryptoRow 
 import { useCsvExport } from "../lib/exporter";
 import { DASH, fmt, fmtBig, fmtDate, fmtPrice, isNum } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
+import { intradayNormalized, useIntradaySet, windowStart } from "../lib/intradayLines";
+import type { Intraday } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
 
 const RANGES = [
+  { value: "h24", label: "24 h" },
+  { value: "d7", label: "7 T" },
   { value: "3", label: "3M" },
   { value: "12", label: "1J" },
   { value: "36", label: "3J" },
@@ -54,6 +58,31 @@ function crossOption(o: CryptoOverview, months: number): EOption | null {
   };
 }
 
+/** Vergleich im Tagesverlauf (24 Stunden aus 5-Minuten-, 7 Tage aus Stundenkursen). Aktien und Gold nur zu
+ * Börsenzeiten; jede Linie startet mit ihrem ersten Kurs im Zeitraum bei 100. */
+function intradayCrossOption(o: CryptoOverview, sets: (Intraday | undefined)[], hours: number): EOption | null {
+  const btc = sets[o.cross.findIndex((c) => c.key === "BTC-USD.CC")];
+  if (!btc || !btc.t.length) return null;
+  const from = windowStart([btc], hours);
+  return {
+    animation: false,
+    grid: { left: 46, right: 12, top: 26, bottom: 22 },
+    legend: { top: 0, textStyle: { color: "#8f8f8f", fontSize: 10 }, itemHeight: 6 },
+    tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: (v: number) => (isNum(v) ? fmt(v, 2) : DASH) },
+    xAxis: { type: "time", ...AXIS, axisLabel: { ...AXIS.axisLabel, hideOverlap: true } },
+    yAxis: { type: "value", scale: true, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => fmt(v, 1) } },
+    series: o.cross.map((c, i) => ({
+      name: c.label,
+      type: "line",
+      showSymbol: false,
+      connectNulls: false,
+      data: intradayNormalized(sets[i], from),
+      lineStyle: { width: c.key === "BTC-USD.CC" ? 2 : 1.2, color: CROSS_COLORS[c.key] ?? "#d8d8d8" },
+      itemStyle: { color: CROSS_COLORS[c.key] ?? "#d8d8d8" },
+    })),
+  };
+}
+
 function corrOption(o: CryptoOverview, months: number): EOption | null {
   if (!o.corr.length) return null;
   const last = o.corr[0].t[o.corr[0].t.length - 1];
@@ -83,8 +112,17 @@ export function CRYP(_: ScreenProps) {
   const [range, setRange] = usePersistentState<RangeKey>("cryp.range", "12", isOneOf(RANGES.map((r) => r.value)));
   const q = useCrypto(ccy);
   const o = q.data;
-  const months = Number(range);
-  const cross = useMemo(() => (o ? crossOption(o, months) : null), [o, months]);
+  const intraday = range === "h24" || range === "d7";
+  const months = intraday ? 12 : Number(range);
+  const crossKeys = useMemo(() => (o ? o.cross.map((c) => c.key) : []), [o]);
+  const iq = useIntradaySet(crossKeys, range === "h24" ? 2 : 8, range === "h24" ? "5m" : "1h", intraday);
+  const iData = iq.map((x) => x.data);
+  const iStamp = iq.map((x) => x.dataUpdatedAt).join(",");
+  const cross = useMemo(
+    () => (o ? (intraday ? intradayCrossOption(o, iData, range === "h24" ? 24 : 7 * 24) : crossOption(o, months)) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [o, months, intraday, range, iStamp],
+  );
   const corr = useMemo(() => (o ? corrOption(o, months) : null), [o, months]);
   const unit = ccy === "eur" ? "EUR" : "USD";
 
@@ -147,7 +185,21 @@ export function CRYP(_: ScreenProps) {
               columns={[
                 { key: "name", label: "Coin", sort: (r) => r.name, render: (r) => <span title={r.ticker}><b>{r.symbol}</b> <span className="muted">{r.name}</span></span> },
                 { key: "last", label: `Kurs ${unit}`, num: true, sort: (r) => r.last, render: (r) => fmtPrice(r.last) },
-                { key: "d", label: "Tag", num: true, sort: (r) => r.chg1d, render: (r) => <Change value={r.chg1d} />, title: "Veränderung seit 0 Uhr UTC" },
+                {
+                  key: "d", label: "24 h", num: true, sort: (r) => r.chg24h ?? r.chg1d,
+                  title: "Veränderung über die letzten 24 Stunden (5-Minuten-Kurse); ohne Intraday-Kurse: seit 0 Uhr UTC (mit *)",
+                  csv: (r) => (isNum(r.chg24h) ? `${fmt(r.chg24h, 2)} %` : isNum(r.chg1d) ? `${fmt(r.chg1d, 2)} %` : ""),
+                  render: (r) =>
+                    isNum(r.chg24h) ? (
+                      <span title={`24 h: Hoch ${fmtPrice(r.high24h)} · Tief ${fmtPrice(r.low24h)}\nSeit 0 Uhr UTC: ${isNum(r.chg1d) ? fmt(r.chg1d, 2) : DASH} %`}>
+                        <Change value={r.chg24h} />
+                      </span>
+                    ) : (
+                      <span title="Keine Intraday-Kurse: Veränderung seit 0 Uhr UTC">
+                        <Change value={r.chg1d} />*
+                      </span>
+                    ),
+                },
                 { key: "w", label: "7 T", num: true, sort: (r) => r.chg7d, render: (r) => <Change value={r.chg7d} digits={1} /> },
                 { key: "m", label: "30 T", num: true, sort: (r) => r.chg30d, render: (r) => <Change value={r.chg30d} digits={1} /> },
                 { key: "ytd", label: "YTD", num: true, sort: (r) => r.chgYtd, render: (r) => <Change value={r.chgYtd} digits={1} />, className: "col-opt2" },
@@ -184,7 +236,11 @@ export function CRYP(_: ScreenProps) {
           </div>
           <div className="cryp-charts">
             <div>
-              <div className="section-title">Bitcoin im Vergleich (Start = 100{months >= 36 ? ", logarithmisch" : ""})</div>
+              <div className="section-title">
+                {intraday
+                  ? `Bitcoin im Vergleich – letzte ${range === "h24" ? "24 Stunden (5-Minuten-Kurse)" : "7 Tage (Stundenkurse)"}, Start = 100; Aktien und Gold nur zu Börsenzeiten`
+                  : `Bitcoin im Vergleich (Start = 100${months >= 36 ? ", logarithmisch" : ""})`}
+              </div>
               <div className="cryp-chart">{cross && <EChart option={cross} csv={false} />}</div>
             </div>
             <div>

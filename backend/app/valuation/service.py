@@ -185,6 +185,11 @@ class ValuationService:
         if not self.result and self.state != "building" and (self._building is None or self._building.done()):
             self._building = asyncio.create_task(self.build())
 
+    def ensure_part(self, part: str) -> None:
+        """Fehlt einem gespeicherten Ergebnis ein Teil (z. B. Tagesindizes aus einer älteren Version), neu rechnen."""
+        if self.result and part not in self.result and self.state != "building" and (self._building is None or self._building.done()):
+            self._building = asyncio.create_task(self.build())
+
     # --- Berechnung -------------------------------------------------------------------------
 
     async def _screen(self, exchange: str, sector: Optional[str], n: int) -> list[ScreenRow]:
@@ -271,6 +276,7 @@ class ValuationService:
                 chosen[gid] = chosen.get(f"sector:us:{sector}", []) + chosen.get(f"sector:eu:{sector}", [])
 
             weekly = await asyncio.to_thread(self._weekly, chosen, groups, today)
+            daily = await asyncio.to_thread(self._daily, chosen, today)
             years = list(range(today.year - YEARS_BACK, today.year + 2))
             rows_out: dict[str, dict] = {}
             details: dict[str, dict] = {}
@@ -294,6 +300,7 @@ class ValuationService:
                 "built_at": dt.datetime.now(dt.timezone.utc).isoformat(), "today": today.isoformat(),
                 "years": years, "est_years": [today.year, today.year + 1], "rows": rows_out, "details": details,
                 "weekly": weekly,
+                "daily": daily,
             }
             self._record(today, rows_out)
             self._save()
@@ -329,6 +336,27 @@ class ValuationService:
             if members:
                 out[f"market:{region}"] = chain_index(list(members.values()), days)
         return {"t": keys, "groups": out}
+
+    @staticmethod
+    def _daily(chosen: dict[str, list[CompanyVal]], today: dt.date, days_back: int = 730) -> dict:
+        """Tagesindizes (Börsenwert, verkettet) je Sektor und Region für die Rotation auf Tagesbasis:
+        Handelstage Mo–Fr der letzten zwei Jahre, Feiertage übernehmen den Vortag."""
+        start = today - dt.timedelta(days=days_back)
+        days = [start + dt.timedelta(days=k) for k in range((today - start).days + 1)]
+        days = [d for d in days if d.weekday() < 5]
+        out: dict[str, list[Optional[float]]] = {}
+        for gid, cs in chosen.items():
+            if cs and gid.startswith("sector:"):
+                out[gid] = chain_index(cs, days)
+        for region in ("us", "eu", "all"):
+            members: dict[str, CompanyVal] = {}
+            for gid, cs in chosen.items():
+                if gid.startswith(f"sector:{region}:"):
+                    for c in cs:
+                        members[c.ticker] = c
+            if members:
+                out[f"market:{region}"] = chain_index(list(members.values()), days)
+        return {"t": [d.isoformat() for d in days], "groups": out}
 
     @staticmethod
     def _row(g: dict, agg: GroupVal, years: list[int]) -> ValRow:

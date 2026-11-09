@@ -98,3 +98,23 @@ def rolling_corr(a: Sequence[tuple[str, float]], b: Sequence[tuple[str, float]],
         if sxx > 0 and syy > 0:
             out.append((days[i], sxy / math.sqrt(sxx * syy)))
     return out
+
+
+def change_24h(bars: Sequence[tuple[int, float, float, float]], now_ts: float, last: Optional[float] = None,
+               tolerance: int = 3 * 3600) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+    """Veränderung über die letzten 24 Stunden aus Intraday-Balken (Start-Zeitstempel, Hoch, Tief, Schluss):
+    Bezug ist der Schluss des Balkens, in dem „jetzt minus 24 Stunden“ liegt. Gibt (Veränderung in Prozent,
+    Bezugskurs, Hoch, Tief der 24 Stunden) zurück; None, wenn um diese Zeit kein Kurs vorliegt (z. B. Lücke)."""
+    if not bars:
+        return None, None, None, None
+    target = now_ts - 86400
+    before = [b for b in bars if b[0] <= target]
+    if not before or target - before[-1][0] > tolerance:
+        return None, None, None, None
+    ref = before[-1][3]
+    window = [b for b in bars if b[0] > target]
+    cur = last if last is not None else (window[-1][3] if window else None)
+    highs = [b[1] for b in window] + ([cur] if cur is not None else [])
+    lows = [b[2] for b in window] + ([cur] if cur is not None else [])
+    chg = (cur / ref - 1) * 100 if cur is not None and ref else None
+    return chg, ref, (max(highs) if highs else None), (min(lows) if lows else None)

@@ -29,14 +29,18 @@ interface QuadrantStats {
   up: number | null;
 }
 
+export type Freq = "w" | "d";
+
 export interface RotationResult {
   universe: Universe;
   title: string;
   benchmark: string;
-  weeks: string[];
+  weeks: string[]; // Zeitpunkte: Wochen-Freitage bzw. Handelstage
+  freq?: Freq;
+  periods?: [number, number]; // kurze und lange Vergleichsspanne (rel4/rel13, Rückblick)
   members: RotMember[];
   test: {
-    quadrants?: Record<Quadrant, { h4: QuadrantStats; h13: QuadrantStats }>;
+    quadrants?: Record<Quadrant, Record<string, QuadrantStats>>;
     clockwise?: number;
     counter?: number;
     clockwiseShare?: number | null;
@@ -52,6 +56,7 @@ export interface RotationParams {
   sector?: string;
   ccy: "eur" | "local";
   bench: "basket" | "eur" | "btc";
+  freq: Freq;
 }
 
 export const useRotation = (p: RotationParams) =>
@@ -118,16 +123,22 @@ export function axisSpan(points: number[]): number {
   return Math.ceil((d + 0.3) * 2) / 2;
 }
 
-/** Rückblick in Worten: relative Entwicklung in 13 Wochen nach einem Stand im jeweiligen Feld. */
-export function rotationTestText(test: RotationResult["test"]): string {
+/** Einheit der Zeitpunkte: „Wochen“ bzw. „Tage“ (Einzahl/Mehrzahl). */
+export function unitLabel(freq: Freq | undefined, n: number, short = false): string {
+  if (short) return `${n} ${freq === "d" ? "T" : "W"}`;
+  return freq === "d" ? `${n} ${n === 1 ? "Handelstag" : "Handelstage"}` : `${n} ${n === 1 ? "Woche" : "Wochen"}`;
+}
+
+/** Rückblick in Worten: relative Entwicklung in 13 Wochen (bzw. 20 Handelstagen) nach einem Stand im jeweiligen Feld. */
+export function rotationTestText(test: RotationResult["test"], freq: Freq = "w", horizon = freq === "d" ? 20 : 13): string {
   const q = test.quadrants;
   if (!q) return "";
   const parts = QUADRANT_ORDER.map((k) => {
-    const s = q[k]?.h13;
+    const s = q[k]?.[`h${horizon}`];
     if (!s || !s.n || s.avg === null) return `${QUADRANT_LABEL[k]}: –`;
     return `${QUADRANT_LABEL[k]} ${s.avg >= 0 ? "+" : "−"}${fmt(Math.abs(s.avg * 100), 1)} %`;
   });
-  return `Rückblick, relative Entwicklung 13 Wochen nach einem Stand im Feld: ${parts.join(" · ")}`;
+  return `Rückblick, relative Entwicklung ${unitLabel(freq, horizon)} nach einem Stand im Feld: ${parts.join(" · ")}`;
 }
 
 export function clockwiseText(test: RotationResult["test"]): string {

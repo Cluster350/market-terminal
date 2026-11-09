@@ -19,5 +19,6 @@ async def rotation(
     sector: Optional[str] = Query(None, max_length=40),
     ccy: str = Query("eur", pattern="^(eur|local)$"),
     bench: str = Query("basket", pattern="^(basket|eur|btc)$"),
+    freq: str = Query("w", pattern="^(w|d)$"),
 ):
-    return await request.app.state.rotation.rotation(universe, region, sector, ccy, bench)
+    return await request.app.state.rotation.rotation(universe, region, sector, ccy, bench, freq)

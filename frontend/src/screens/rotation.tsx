@@ -1,5 +1,6 @@
 // RRG – relative Rotation: Wer läuft besser als der Maßstab, und nimmt das zu oder ab?
-// Sektoren, Firmen in einem Sektor, Länderindizes und Währungen; Schweife der letzten Wochen, abspielbar.
+// Sektoren, Firmen in einem Sektor, Länderindizes, Währungen, Krypto und Faktoren; Takt Wochen oder Tage,
+// Schweife der letzten Zeitpunkte, abspielbar.
 
 import { useEffect, useMemo, useState } from "react";
 import EChart, { AXIS, TOOLTIP, type EOption } from "../components/EChart";
@@ -19,6 +20,8 @@ import {
   rotationTestText,
   tail,
   useRotation,
+  unitLabel,
+  type Freq,
   type RotationResult,
   type Universe,
 } from "../lib/rotation";
@@ -33,6 +36,8 @@ const PALETTE = ["#ffa028", "#66b8ff", "#29d17d", "#c77dff", "#ff5252", "#f2c200
 const pct = (x: number | null | undefined) => (isNum(x) ? `${x >= 0 ? "+" : "−"}${fmt(Math.abs(x * 100), 1)} %` : "–");
 const tone = (x: number | null | undefined) => (isNum(x) ? (x > 0.0005 ? "up" : x < -0.0005 ? "down" : "") : "");
 
+const TAILS = { w: ["4", "8", "12", "20"], d: ["5", "10", "20", "40"] } as const;
+
 const ROW_LABEL: Record<Universe, string> = { sectors: "Sektor", sector: "Firma", countries: "Land", currencies: "Währung", crypto: "Coin", factors: "Faktor" };
 
 export function RRG(_: ScreenProps) {
@@ -42,17 +47,21 @@ export function RRG(_: ScreenProps) {
   const [sector, setSector] = usePersistentState<string>("rrg.sector", "Technology", (x): x is string => typeof x === "string" && SECTORS.includes(x));
   const [ccy, setCcy] = usePersistentState<"eur" | "local">("rrg.ccy", "eur", isOneOf(["eur", "local"] as const));
   const [bench, setBench] = usePersistentState<"basket" | "eur" | "btc">("rrg.bench", "basket", isOneOf(["basket", "eur", "btc"] as const));
-  const [tailLen, setTailLen] = usePersistentState<string>("rrg.tail", "8", isOneOf(["4", "8", "12", "20"] as const));
-  const [end, setEnd] = useState<number | null>(null); // Woche, bis zu der gezeigt wird (null = aktuell)
+  const [freq, setFreq] = usePersistentState<Freq>("rrg.freq", "w", isOneOf(["w", "d"] as const));
+  const [tailW, setTailW] = usePersistentState<string>("rrg.tail", "8", isOneOf(TAILS.w));
+  const [tailD, setTailD] = usePersistentState<string>("rrg.tailD", "10", isOneOf(TAILS.d));
+  const tailLen = freq === "d" ? tailD : tailW;
+  const setTailLen = freq === "d" ? setTailD : setTailW;
+  const [end, setEnd] = useState<number | null>(null); // Zeitpunkt, bis zu dem gezeigt wird (null = aktuell)
   const [playing, setPlaying] = useState(false);
   const [focus, setFocus] = useState<string | null>(null);
-  const q = useRotation({ universe, region, sector: universe === "sector" ? sector : undefined, ccy, bench });
+  const q = useRotation({ universe, region, sector: universe === "sector" ? sector : undefined, ccy, bench, freq });
   const r = q.data;
   const last = r ? r.weeks.length - 1 : 0;
   const at = end === null ? last : Math.min(end, last);
   const len = Number(tailLen);
 
-  // CSV: alle Wochenwerte (RS-Trend und RS-Momentum je Mitglied), zusätzlich zur Tabelle im Panel
+  // CSV: alle Werte je Woche bzw. Tag (RS-Trend und RS-Momentum je Mitglied), zusätzlich zur Tabelle im Panel
   useCsvExport(() => {
     if (!r || !r.weeks.length) return [];
     const rows = r.members.flatMap((m) =>
@@ -63,14 +72,14 @@ export function RRG(_: ScreenProps) {
     );
     return [
       {
-        title: `Relative Rotation ${r.title} – Wochenwerte gegen ${r.benchmark}`,
-        columns: ["Woche", "Name", "Kürzel", "RS-Trend", "RS-Momentum", "Feld"],
+        title: `Relative Rotation ${r.title} – ${r.freq === "d" ? "Tageswerte" : "Wochenwerte"} gegen ${r.benchmark}`,
+        columns: [r.freq === "d" ? "Tag" : "Woche", "Name", "Kürzel", "RS-Trend", "RS-Momentum", "Feld"],
         rows,
       },
     ];
   });
 
-  // Abspielen: Woche für Woche über die letzten zwei Jahre
+  // Abspielen: Woche für Woche über zwei Jahre bzw. Tag für Tag über ein Jahr
   useEffect(() => {
     if (!playing || !r) return;
     const id = setInterval(() => {
@@ -82,14 +91,14 @@ export function RRG(_: ScreenProps) {
         }
         return cur;
       });
-    }, 350);
+    }, freq === "d" ? 120 : 350);
     return () => clearInterval(id);
-  }, [playing, r, last, len]);
+  }, [playing, r, last, len, freq]);
 
   useEffect(() => {
     setEnd(null);
     setFocus(null);
-  }, [universe, region, sector, ccy, bench]);
+  }, [universe, region, sector, ccy, bench, freq]);
 
   if (IS_STATIC) return <Empty>Die Rotation braucht den Terminal-Server (in der statischen Demo nicht verfügbar).</Empty>;
 
@@ -185,19 +194,28 @@ export function RRG(_: ScreenProps) {
             onChange={setRegion}
           />
         )}
-        <label className="small muted" title="Wie viele Wochen der Schweif zurückreicht">
+        <Seg
+          label="Takt"
+          value={freq}
+          options={[
+            { value: "w", label: "Wochen" },
+            { value: "d", label: "Tage" },
+          ]}
+          onChange={setFreq}
+        />
+        <label className="small muted" title={`Wie viele ${freq === "d" ? "Handelstage" : "Wochen"} der Schweif zurückreicht`}>
           Schweif{" "}
           <select className="field" value={tailLen} onChange={(e) => setTailLen(e.target.value)}>
-            {["4", "8", "12", "20"].map((v) => (
+            {TAILS[freq].map((v) => (
               <option key={v} value={v}>
-                {v} Wochen
+                {unitLabel(freq, Number(v))}
               </option>
             ))}
           </select>
         </label>
         {r && r.weeks.length > 0 && (
           <span className="rrg-play">
-            <button type="button" className="tool" title={playing ? "Anhalten" : "Rotation der letzten zwei Jahre abspielen"} onClick={() => setPlaying((p) => !p)}>
+            <button type="button" className="tool" title={playing ? "Anhalten" : freq === "d" ? "Rotation des letzten Jahres Tag für Tag abspielen" : "Rotation der letzten zwei Jahre abspielen"} onClick={() => setPlaying((p) => !p)}>
               {playing ? "⏸" : "▶"}
             </button>
             <input
@@ -205,7 +223,7 @@ export function RRG(_: ScreenProps) {
               min={Math.min(len, last)}
               max={last}
               value={at}
-              aria-label="Woche"
+              aria-label={freq === "d" ? "Tag" : "Woche"}
               onChange={(e) => {
                 setPlaying(false);
                 const v = Number(e.target.value);
@@ -235,7 +253,7 @@ export function RRG(_: ScreenProps) {
             </div>
             <div className="notes">
               <div>
-                <b>{r.title}</b> gegen {r.benchmark}. {rotationTestText(r.test)}
+                <b>{r.title}</b> gegen {r.benchmark}. {rotationTestText(r.test, r.freq ?? "w", r.periods?.[1])}
               </div>
               <div>{clockwiseText(r.test)}</div>
               <div className="dim">
@@ -303,7 +321,7 @@ function rrgOption(r: RotationResult, at: number, len: number, focus: string | n
       trigger: "item",
       formatter: (p: { seriesName: string; data: { value: [number, number]; week: string } }) =>
         p.data?.value
-          ? `${p.seriesName}<br/>Woche bis ${fmtDate(p.data.week)}<br/>Trend ${fmt(p.data.value[0], 2)} · Schwung ${fmt(p.data.value[1], 2)}<br/>${QUADRANT_LABEL[quadrantOf(p.data.value[0], p.data.value[1])!]}`
+          ? `${p.seriesName}<br/>${r.freq === "d" ? "Tag" : "Woche bis"} ${fmtDate(p.data.week)}<br/>Trend ${fmt(p.data.value[0], 2)} · Schwung ${fmt(p.data.value[1], 2)}<br/>${QUADRANT_LABEL[quadrantOf(p.data.value[0], p.data.value[1])!]}`
           : "",
     },
     xAxis: {
@@ -339,6 +357,7 @@ function RrgTable({ r, at, len, focus, onFocus, onOpen }: { r: RotationResult; a
     .sort((a, b) => (b.trend ?? -1e9) - (a.trend ?? -1e9));
   const showFair = r.universe === "sectors" || r.universe === "sector";
   const current = at === r.weeks.length - 1;
+  const [short, long] = r.periods ?? [4, 13];
   return (
     <div className="rrg-table">
       <table className="t" data-export-title="Stand je Mitglied">
@@ -348,9 +367,9 @@ function RrgTable({ r, at, len, focus, onFocus, onOpen }: { r: RotationResult; a
             <th>Feld</th>
             <th className="num" title="Trend der relativen Stärke (über 100: besser als der Maßstab)">Trend</th>
             <th className="num" title="Schwung (über 100: der Trend nimmt zu)">Schwung</th>
-            <th title="Richtung der letzten Woche; nach rechts oben ist am stärksten">Ri.</th>
-            {current && <th className="num" title="Entwicklung gegenüber dem Maßstab in 4 Wochen">4 W</th>}
-            {current && <th className="num" title="Entwicklung gegenüber dem Maßstab in 13 Wochen">13 W</th>}
+            <th title={`Richtung ${r.freq === "d" ? "des letzten Tages" : "der letzten Woche"}; nach rechts oben ist am stärksten`}>Ri.</th>
+            {current && <th className="num" title={`Entwicklung gegenüber dem Maßstab in ${unitLabel(r.freq, short)}`}>{unitLabel(r.freq, short, true)}</th>}
+            {current && <th className="num" title={`Entwicklung gegenüber dem Maßstab in ${unitLabel(r.freq, long)}`}>{unitLabel(r.freq, long, true)}</th>}
             {showFair && current && <th className="num" title="Abstand zum Fair Value aus dem Bewertungstrend (übliches KGV × Gewinnschätzung)">Bewertung</th>}
           </tr>
         </thead>

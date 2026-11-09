@@ -76,12 +76,18 @@ def zscore(xs: Sequence[Optional[float]], n: int) -> list[Optional[float]]:
     return out
 
 
-def rrg_lines(values: Sequence[Optional[float]], bench: Sequence[Optional[float]]) -> tuple[list[Optional[float]], list[Optional[float]], list[Optional[float]]]:
-    """(relative Stärke, Trend, Schwung) je Woche."""
+def to_daily(dates: Sequence[str], closes: Sequence[Optional[float]]) -> dict[str, float]:
+    """Schlusskurs je Tag (JJJJ-MM-TT)."""
+    return {d[:10]: c for d, c in zip(dates, closes) if c is not None and c > 0 and math.isfinite(c)}
+
+
+def rrg_lines(values: Sequence[Optional[float]], bench: Sequence[Optional[float]], smooth_n: int = SMOOTH,
+              trend_n: int = TREND_WEEKS, mom_n: int = MOM_WEEKS) -> tuple[list[Optional[float]], list[Optional[float]], list[Optional[float]]]:
+    """(relative Stärke, Trend, Schwung) je Zeitpunkt (Woche oder Tag – die Fenster zählen Zeitpunkte)."""
     rs: list[Optional[float]] = [100 * v / b if v and b else None for v, b in zip(values, bench)]
-    smooth = ema(rs, SMOOTH)
-    trend = zscore(smooth, TREND_WEEKS)
-    mom = zscore(trend, MOM_WEEKS)
+    smooth = ema(rs, smooth_n)
+    trend = zscore(smooth, trend_n)
+    mom = zscore(trend, mom_n)
     return rs, trend, mom
 
 

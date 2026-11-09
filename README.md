@@ -289,8 +289,11 @@ dem Prinzip der Relative Rotation Graphs (Julius de Kempenaer), auf Wochenbasis.
 - **Waagerecht: Trend** der relativen Stärke (über 100 = besser als der Maßstab), **senkrecht: Schwung**
   (über 100 = der Vorsprung wächst). Vier Felder: **führend** (oben rechts), **schwächer werdend** (unten rechts),
   **Nachzügler** (unten links), **erholend** (oben links). Typisch ist ein Lauf im Uhrzeigersinn.
-- **Schweif** der letzten 4–20 Wochen mit Pfeil in Laufrichtung; nach rechts oben ist am stärksten.
-  **▶** spielt die Rotation der letzten zwei Jahre Woche für Woche ab, der Regler springt zu einer Woche.
+- **Takt Wochen oder Tage:** Wochen (klassisch, ruhiger; Schweif 4–20 Wochen, Abspielen über zwei Jahre) oder
+  Tage (kurzfristig; Trend gegenüber 30 Handelstagen, Schwung gegenüber 10, Schweif 5–40 Tage, Abspielen über ein
+  Jahr). Tabelle und Rückblick passen sich an (4/13 Wochen bzw. 5/20 Handelstage).
+- **Schweif** mit Pfeil in Laufrichtung; nach rechts oben ist am stärksten.
+  **▶** spielt die Rotation ab, der Regler springt zu einer Woche bzw. einem Tag.
 - **Tabelle:** Feld, Trend, Schwung, Richtung, Entwicklung gegenüber dem Maßstab in 4 und 13 Wochen, bei Sektoren
   und Firmen der Abstand zum Fair Value aus BWT. Klick auf einen Sektor zeigt dessen Firmen, sonst den Kurschart.
 - **Rückblick:** wie sich die Werte in den 13 Wochen nach einem Stand in jedem Feld entwickelten, und wie oft die
@@ -307,13 +310,16 @@ Länder ohne Devisenkurs (in Euro) werden genannt und weggelassen. Sektoren brau
 `CRYP` (oder „Krypto“, „Bitcoin“) zeigt die 20 größten Kryptowährungen ohne Stablecoins, wahlweise in **Dollar
 oder Euro**:
 
-- **Tabelle:** Kurs, Veränderung Tag (seit 0 Uhr UTC), 7 und 30 Tage, seit Jahresbeginn, 1 Jahr, Schwankung
+- **Tabelle:** Kurs, Veränderung über die **letzten 24 Stunden** (aus 5-Minuten-Kursen, Hoch/Tief im Tooltip;
+  ohne Intraday-Kurse ersatzweise seit 0 Uhr UTC, mit * markiert), 7 und 30 Tage, seit Jahresbeginn, 1 Jahr, Schwankung
   (30 Tage, auf ein Jahr hochgerechnet), Abstand zum Hoch, Gleichlauf mit Bitcoin (Korrelation 90 Tage), über
   oder unter der 200-Tage-Linie, Marktkapitalisierung und Anteil. Klick auf einen Coin öffnet den Kurschart.
 - **Kopfzeile:** Marktkapitalisierung, Anteil von Bitcoin und Ethereum, **Breite** (wie viele Coins über ihrer
   200-Tage-Linie stehen).
-- **Diagramme:** Bitcoin und Ethereum gegen Nasdaq 100, S&P 500 und Gold (Start = 100, ab 3 Jahren
-  logarithmisch) und der **Gleichlauf** von Bitcoin mit Aktien und Gold über die Zeit (Korrelation 90 Börsentage).
+- **Diagramme:** Bitcoin und Ethereum gegen Nasdaq 100, S&P 500 und Gold – **24 Stunden** (5-Minuten-Kurse),
+  **7 Tage** (Stundenkurse) oder 3 Monate bis 5 Jahre (Tageskurse, ab 3 Jahren logarithmisch); Aktien und Gold im
+  Tagesverlauf nur zu Börsenzeiten. Dazu der **Gleichlauf** von Bitcoin mit Aktien und Gold über die Zeit
+  (Korrelation 90 Börsentage).
 
 Mit EODHD: Kurse aus den Krypto-Kursdaten (`BTC-USD.CC` …), umlaufende Menge und Marktanteil aus den
 Krypto-Fundamentaldaten (einmal täglich). Liefert die Quelle keinen Anteil am gesamten Kryptomarkt, bezieht sich
@@ -338,7 +344,9 @@ Depot, z. B. `ETH-USD Curncy`. Liste der Coins: `backend/app/crypto/universe.py`
 
 - **Tabelle:** Entwicklung von 1 Tag bis 5 Jahre, **gegenüber dem Markt** (Faktor-ETF geteilt durch Markt-ETF)
   oder absolut; Schwankung, Beta und **Trend** (läuft der Stil derzeit besser als im Schnitt der letzten 200 Tage?).
-- **Diagramm:** Faktor ÷ Markt (Start = 100): steigt die Linie, schlägt der Stil den Markt.
+- **Diagramm:** Faktor ÷ Markt (Start = 100): steigt die Linie, schlägt der Stil den Markt. Zeiträume **Heute**
+  (letzter Handelstag, 5-Minuten-Kurse) und **5 Tage** (15-Minuten-Kurse) zeigen, welcher Stil im Tagesverlauf vorn
+  liegt; 1 bis 10 Jahre aus Tageskursen.
 - **Wie ähnlich laufen die Stile?** Korrelation der wöchentlichen Überrenditen der letzten drei Jahre
   (z. B. Value und Wachstum laufen meist gegeneinander).
 - **RRG → Faktoren** zeigt dieselben Stile als Rotation (führend, schwächer werdend …).
