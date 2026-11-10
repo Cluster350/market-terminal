@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -52,6 +53,33 @@ log = logging.getLogger("terminal")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
+class HideSecrets(logging.Filter):
+    """Der EODHD-Schlüssel steht in jeder Abruf-Adresse (api_token=…), und httpx protokolliert jede Anfrage samt
+    Adresse. Im Protokoll (market-terminal.log, sichtbares Startfenster) wird er durch *** ersetzt."""
+
+    _TOKEN = re.compile(r"(api_token=)[^&\s\"'<>]+", re.IGNORECASE)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            text = record.getMessage()
+        except Exception:  # noqa: BLE001 – unpassende Platzhalter: Meldung unverändert lassen
+            return True
+        if "api_token=" in text.lower():
+            record.msg, record.args = self._TOKEN.sub(r"\1***", text), None
+        if record.exc_info and not record.exc_text:
+            record.exc_text = logging.Formatter().formatException(record.exc_info)
+        if record.exc_text and "api_token=" in record.exc_text.lower():
+            record.exc_text = self._TOKEN.sub(r"\1***", record.exc_text)
+        return True
+
+
+_hide_secrets = HideSecrets()
+for _name in ("httpx", "uvicorn.error"):
+    logging.getLogger(_name).addFilter(_hide_secrets)
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(_hide_secrets)
+
+
 def _finite(x: Any) -> Any:
     if isinstance(x, float) and not math.isfinite(x):
         return None
@@ -92,6 +120,75 @@ class _GZipExceptStream(GZipMiddleware):
             await self.app(scope, receive, send)
             return
         await super().__call__(scope, receive, send)
+
+
+# --- Nur lokaler Zugriff -------------------------------------------------------------------
+# Der Server lauscht nur auf 127.0.0.1, aber jede Webseite im Browser des Nutzers kann Anfragen an ihn
+# schicken: als Cross-Site-Anfrage (Formular, fetch ohne CORS, Bild) oder per DNS-Rebinding (ein fremder
+# Name, der kurz darauf auf 127.0.0.1 zeigt; dann darf die Seite sogar die Antworten lesen). Deshalb gelten
+# nur 127.0.0.1/localhost als Host, und API-Anfragen fremder Webseiten werden abgelehnt.
+LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+_FOREIGN = (403, "cross_site", "Anfrage einer fremden Webseite abgelehnt.")
+
+
+def _hostname(value: Optional[str]) -> Optional[str]:
+    """Rechnername ohne Port aus Host-Kopf oder Origin: „127.0.0.1:8000“ → 127.0.0.1, „[::1]:8000“ → ::1."""
+    v = (value or "").strip().lower()
+    if not v or "@" in v or "/" in v:
+        return None
+    if v.startswith("["):
+        end = v.find("]")
+        return v[1:end] if end > 0 else None
+    return v.rsplit(":", 1)[0] if ":" in v else v
+
+
+def _origin_host(origin: str) -> Optional[str]:
+    scheme, sep, rest = origin.strip().lower().partition("://")
+    if not sep or scheme not in ("http", "https"):
+        return None  # auch „null“ (Sandbox-Rahmen, lokale Datei)
+    return _hostname(rest)
+
+
+def access_problem(method: str, path: str, headers: dict[str, str], hosts: frozenset[str] = LOCAL_HOSTS) -> Optional[tuple[int, str, str]]:
+    """Grund, eine Anfrage abzulehnen (Status, Code, Meldung), sonst None. ``headers`` mit kleingeschriebenen Namen.
+    Anfragen ohne Origin/Sec-Fetch-Site (Startskripte, curl, Tests) bleiben erlaubt – Browser senden sie immer."""
+    if _hostname(headers.get("host")) not in hosts:
+        return 400, "host", "Unbekannter Host. Das Terminal ist nur über http://127.0.0.1 oder http://localhost erreichbar."
+    if not path.startswith("/api/"):
+        return None
+    if headers.get("sec-fetch-site", "").strip().lower() == "cross-site":
+        return _FOREIGN
+    if method.upper() in _WRITE_METHODS:
+        origin = headers.get("origin")
+        if origin is not None and _origin_host(origin) not in hosts:
+            return _FOREIGN
+        # Ohne Content-Type liest FastAPI den Body trotzdem als JSON – so käme eine „einfache“ Anfrage ohne
+        # CORS-Vorabprüfung durch (fetch mit Blob). Schreibende Anfragen mit Inhalt daher nur als JSON.
+        has_body = headers.get("content-length", "0").strip() not in ("", "0") or "transfer-encoding" in headers
+        ctype = headers.get("content-type", "").split(";")[0].strip().lower()
+        if has_body and ctype != "application/json" and not ctype.endswith("+json"):
+            return 415, "content_type", "Daten bitte als JSON senden (Content-Type: application/json)."
+    return None
+
+
+class _LocalOnly:
+    """Prüft jede HTTP-Anfrage vor allem anderen (auch bevor der Body gelesen wird), siehe access_problem."""
+
+    def __init__(self, app, hosts: frozenset[str] = LOCAL_HOSTS):  # type: ignore[no-untyped-def]
+        self.app = app
+        self.hosts = hosts
+
+    async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        if scope.get("type") == "http":
+            headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
+            problem = access_problem(str(scope.get("method", "GET")), str(scope.get("path", "")), headers, self.hosts)
+            if problem:
+                status, code, message = problem
+                log.info("Anfrage abgelehnt (%s): %s %s", code, scope.get("method"), str(scope.get("path", ""))[:120])
+                await JSONResponse(status_code=status, content={"error": {"code": code, "message": message}})(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 def make_realtime(app: FastAPI, prov: Provider, cfg: Settings, enabled: bool) -> RealtimeHub:
@@ -181,6 +278,10 @@ def create_app(
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    # Zuletzt angemeldet = äußerste Schicht: fremde Hosts und Webseiten noch vor allem anderen abweisen.
+    # Tests (eigener Provider) sprechen über den TestClient mit dem Host „testserver“.
+    app.add_middleware(_LocalOnly, hosts=LOCAL_HOSTS if provider is None else LOCAL_HOSTS | {"testserver"})
 
     @app.exception_handler(TerminalError)
     async def terminal_error(_: Request, exc: TerminalError):

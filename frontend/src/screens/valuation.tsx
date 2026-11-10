@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import EChart, { AXIS, TOOLTIP, type EOption } from "../components/EChart";
 import { Empty, ErrorState, Loading, Seg, TickerLink } from "../components/ui";
 import { IS_STATIC } from "../lib/api";
-import { fmt, fmtBig, fmtDate, isNum } from "../lib/format";
+import { escapeHtml, fmt, fmtBig, fmtDate, isNum } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
 import { useCsvExport, type CsvDataset } from "../lib/exporter";
 import {
@@ -248,6 +248,11 @@ function coverTitle(r: ValRow, y: number): string | undefined {
   return c < r.n ? `aus ${c} von ${r.n} Firmen (übrige ohne Gewinn- oder Kursdaten für ${y}, z. B. spätere Börsengänge)` : `aus allen ${r.n} Firmen`;
 }
 
+/** Tooltip der Karte (HTML): Sektor- und Ländernamen stammen teils aus der Datenquelle, daher escapen. */
+export function valMapTip(r: ValRow): string {
+  return `${escapeHtml(r.label)}<br/>KGV heute ${fmtPe(r.peTtm)} (üblich ${fmtPe(r.median ?? r.avg)})<br/>bis Fair Value ${pct(r.fairGap, 0)}<br/>Schätzung nächstes Jahr 90 T: ${pct(r.rev90)}<br/>${quadrant(r.position, r.rev90)}`;
+}
+
 function ValMap({ o, onSelect }: { o: ValOverview; onSelect: (key: string) => void }) {
   const option = useMemo<EOption>(() => {
     const pts = o.rows.filter((r) => isNum(r.position) && isNum(r.rev90));
@@ -257,10 +262,7 @@ function ValMap({ o, onSelect }: { o: ValOverview; onSelect: (key: string) => vo
       grid: { left: 62, right: 110, top: 24, bottom: 40 },
       tooltip: {
         ...TOOLTIP,
-        formatter: (p: { data: { row: ValRow } }) => {
-          const r = p.data.row;
-          return `${r.label}<br/>KGV heute ${fmtPe(r.peTtm)} (üblich ${fmtPe(r.median ?? r.avg)})<br/>bis Fair Value ${pct(r.fairGap, 0)}<br/>Schätzung nächstes Jahr 90 T: ${pct(r.rev90)}<br/>${quadrant(r.position, r.rev90)}`;
-        },
+        formatter: (p: { data: { row: ValRow } }) => valMapTip(p.data.row),
       },
       xAxis: { type: "value", min: 0, max: 100, name: "günstiger als üblich  ←  Lage in der 10-Jahres-Spanne  →  teurer als üblich", nameLocation: "middle", nameGap: 24, ...AXIS, nameTextStyle: { color: "#8f8f8f", fontSize: 10 } },
       yAxis: { type: "value", min: -maxRev, max: maxRev, name: "Schätzungen fürs nächste Jahr, 90 Tage (%)", nameLocation: "middle", nameGap: 40, nameTextStyle: { color: "#8f8f8f", fontSize: 10 }, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => `${fmt(v, 0)}` } },

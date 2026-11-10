@@ -38,12 +38,17 @@ COMDTY_ALIASES = {
 }
 
 _VALID = re.compile(r"^[A-Z0-9][A-Z0-9\-_=^&]{0,24}\.[A-Z0-9]{1,10}$")
+# Längste gültige Schreibweise hat gut 40 Zeichen („AAPL US Equity“, CODE.BÖRSE höchstens 36). Längere Texte
+# gar nicht erst prüfen: \s+EQUITY$ braucht bei vielen Leerzeichen quadratisch viel Zeit und blockierte den Server.
+MAX_RAW_LENGTH = 60
 
 
 def normalize(raw: str, default_exchange: str = "US") -> str:
     s = (raw or "").strip().upper()
     if not s:
         raise BadRequest("Ticker fehlt.")
+    if len(s) > MAX_RAW_LENGTH:
+        raise BadRequest(f"Ticker zu lang (höchstens {MAX_RAW_LENGTH} Zeichen).")
     s = re.sub(r"\s+EQUITY$", "", s)
     # Bloomberg schreibt einbuchstabige Rohstoff-Generika mit Leerzeichen: "W 1 Comdty" = W1
     s = re.sub(r"^([A-Z]{1,2})\s+(\d)\s+COMDTY$", r"\1\2 COMDTY", s)

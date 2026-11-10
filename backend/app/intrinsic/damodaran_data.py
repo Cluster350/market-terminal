@@ -31,6 +31,11 @@ BASE_URL = "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/"
 PAGES = {"erp": "histimpl.html", "crp": "ctryprem.html", "beta": "Betas.html", "margin": "margin.html", "capex": "capex.html"}
 SOURCE = "Damodaran Online (pages.stern.nyu.edu/~adamodar)"
 MAX_AGE_DAYS = 180
+# Obergrenzen für fremde Inhalte: Die Seiten sind 50–500 KB groß, Zahlenzellen ein paar Zeichen lang. Riesige
+# Seiten oder Zellen würden Speicher füllen bzw. den Server beim Lesen blockieren (_NUM ist bei langen
+# Ziffernfolgen quadratisch langsam).
+MAX_PAGE_BYTES = 5_000_000
+MAX_NUMBER_CHARS = 30
 
 
 class _Tables(HTMLParser):
@@ -80,7 +85,7 @@ _NUM = re.compile(r"^\(?-?[\d,]*\.?\d+%?\)?%?$")
 def parse_number(text: str, percent: bool = False) -> Optional[float]:
     """„4.33%“ → 0.0433; „1.23“ → 1.23; bei percent=True werden Zahlen > 1,5 ohne %-Zeichen als Prozent gelesen."""
     s = (text or "").strip().replace("−", "-").replace(" ", "")
-    if not s or not _NUM.match(s):
+    if not s or len(s) > MAX_NUMBER_CHARS or not _NUM.match(s):
         return None
     neg = s.startswith("(") and s.endswith(")")
     s = s.strip("()")
@@ -226,11 +231,21 @@ async def fetch(transport: Optional[httpx.AsyncBaseTransport] = None, timeout: f
                                  headers={"User-Agent": "MarketTerminal/1.0 (Bewertungsparameter)"}) as client:
         for key, page in PAGES.items():
             try:
-                r = await client.get(BASE_URL + page)
-                if r.status_code == 200 and r.text:
-                    pages[key] = r.text
-                else:
-                    log.info("Damodaran-Daten: %s → HTTP %s", page, r.status_code)
+                async with client.stream("GET", BASE_URL + page) as r:
+                    if r.status_code != 200:
+                        log.info("Damodaran-Daten: %s → HTTP %s", page, r.status_code)
+                        continue
+                    body = bytearray()
+                    async for chunk in r.aiter_bytes():
+                        body += chunk
+                        if len(body) > MAX_PAGE_BYTES:
+                            break
+                    if len(body) > MAX_PAGE_BYTES:
+                        log.info("Damodaran-Daten: %s größer als %d MB – übersprungen", page, MAX_PAGE_BYTES // 1_000_000)
+                        continue
+                    text = body.decode(r.encoding or "utf-8", errors="replace")
+                    if text:
+                        pages[key] = text
             except httpx.HTTPError as exc:
                 log.info("Damodaran-Daten: %s nicht erreichbar (%s)", page, exc)
     return pages

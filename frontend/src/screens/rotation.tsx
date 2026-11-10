@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import EChart, { AXIS, TOOLTIP, type EOption } from "../components/EChart";
 import { Empty, ErrorState, Loading, Seg } from "../components/ui";
 import { IS_STATIC } from "../lib/api";
-import { fmt, fmtDate, isNum, sectorDe } from "../lib/format";
+import { escapeHtml, fmt, fmtDate, isNum, sectorDe } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
 import { useCsvExport } from "../lib/exporter";
 import {
@@ -269,7 +269,7 @@ export function RRG(_: ScreenProps) {
   );
 }
 
-function rrgOption(r: RotationResult, at: number, len: number, focus: string | null): EOption {
+export function rrgOption(r: RotationResult, at: number, len: number, focus: string | null): EOption {
   const tails = r.members.map((m) => ({ m, pts: tail(m, at, len) }));
   const span = axisSpan(tails.flatMap((x) => x.pts.flatMap((p) => [p.trend, p.mom])));
   const lo = 100 - span;
@@ -320,9 +320,10 @@ function rrgOption(r: RotationResult, at: number, len: number, focus: string | n
     tooltip: {
       ...TOOLTIP,
       trigger: "item",
+      // Tooltip ist HTML: Firmennamen (Sektor-Mitglieder) stammen aus der Datenquelle
       formatter: (p: { seriesName: string; data: { value: [number, number]; week: string } }) =>
         p.data?.value
-          ? `${p.seriesName}<br/>${r.freq === "d" ? "Tag" : "Woche bis"} ${fmtDate(p.data.week)}<br/>Trend ${fmt(p.data.value[0], 2)} · Schwung ${fmt(p.data.value[1], 2)}<br/>${QUADRANT_LABEL[quadrantOf(p.data.value[0], p.data.value[1])!]}`
+          ? `${escapeHtml(p.seriesName)}<br/>${r.freq === "d" ? "Tag" : "Woche bis"} ${fmtDate(p.data.week)}<br/>Trend ${fmt(p.data.value[0], 2)} · Schwung ${fmt(p.data.value[1], 2)}<br/>${QUADRANT_LABEL[quadrantOf(p.data.value[0], p.data.value[1])!]}`
           : "",
     },
     xAxis: {
