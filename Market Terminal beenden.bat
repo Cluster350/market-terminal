@@ -1,6 +1,6 @@
 @echo off
 rem Market Terminal beenden - auch wenn es unsichtbar im Hintergrund laeuft
-rem (gestartet mit Start-Windows-Hintergrund.vbs).
+rem (gestartet mit "Market Terminal starten" bzw. dem Desktop-Symbol).
 setlocal
 set "FOUND="
 for /f "tokens=5" %%P in ('netstat -ano ^| findstr /r /c:":8000 .*LISTENING"') do (

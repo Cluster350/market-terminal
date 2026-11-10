@@ -1,2 +1,7 @@
 # Windows-Startdateien brauchen Windows-Zeilenenden
 *.bat text eol=crlf
+# Windows-Skripte und die Anleitung im Editor: Windows-Zeilenenden
+*.vbs text eol=crlf
+LIESMICH*.txt text eol=crlf
+*.ico binary
+*.png binary

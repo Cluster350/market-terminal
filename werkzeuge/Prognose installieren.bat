@@ -2,9 +2,9 @@
 rem Installiert das Zusatzpaket fuer die Prognose mit Chronos-2 (PyTorch und Modell).
 rem Ohne dieses Paket rechnet das Terminal mit der eingebauten Statistik.
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if not exist "backend\.venv\Scripts\python.exe" (
-  echo  Bitte zuerst "Start-Windows.bat" einmal ausfuehren.
+  echo  Bitte zuerst "Market Terminal starten" im Hauptordner einmal doppelklicken.
   pause
   exit /b 1
 )
@@ -21,7 +21,7 @@ cd backend
 .venv\Scripts\python -m scripts.check_forecast || goto :fehler
 echo.
 echo  Fertig. Ab dem naechsten Start rechnet die Prognose mit Chronos-2.
-echo  Laeuft das Terminal gerade: einmal Stop-Windows.bat und dann Start-Windows.bat.
+echo  Laeuft das Terminal gerade: einmal "Market Terminal beenden" und dann wieder starten.
 echo.
 pause
 exit /b 0

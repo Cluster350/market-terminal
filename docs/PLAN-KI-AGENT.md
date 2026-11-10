@@ -129,7 +129,7 @@ Terminals. Alles läuft auf dem eigenen PC, keine Daten verlassen den Rechner.
 - **Tests:** Ein nachgebautes Modell (Stub) liefert feste Antworten und Tool-Aufrufe. Getestet
   werden Agenten-Schleife, Schrittgrenze, Schema-Prüfung, Prompt-Injection-Text in einer
   Meldung und Verhalten ohne Server.
-- **Prüfprogramm `LLM-pruefen-Windows.bat`:** prüft Erreichbarkeit, geladenes Modell,
+- **Prüfprogramm `werkzeuge/KI pruefen.bat`:** prüft Erreichbarkeit, geladenes Modell,
   Tool-Aufruf, JSON-Ausgabe und Antwortzeit.
 
 ## Phasen

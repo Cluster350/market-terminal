@@ -32,6 +32,11 @@ reduzieren“ entfällt es.
 
 ## Schnellstart unter Windows (ohne Vorkenntnisse)
 
+Das Terminal ist keine `.exe`. Es läuft als kleiner Server auf dem eigenen Rechner und zeigt sich in einem eigenen
+Fenster ohne Adressleiste, mit dem Symbol **MT** (orange auf schwarz) in der Taskleiste. Das gilt, wenn der
+Standardbrowser Edge oder Chrome ist, denn dort liegen Watchlist und Layouts. Bei anderen Browsern öffnet sich ein
+normaler Tab. Dieselbe Anleitung steht im Ordner in **`LIESMICH - so startest du das Terminal.txt`**.
+
 Einmalig vorbereiten:
 1. **Python** installieren: https://www.python.org/downloads/ – im Installer unten
    **„Add python.exe to PATH“** anhaken.
@@ -40,31 +45,52 @@ Einmalig vorbereiten:
    ZIP-Datei entpacken (Rechtsklick → „Alle extrahieren“).
 
 Starten:
-4. Im entpackten Ordner **`Start-Windows.bat`** doppelklicken. Der erste Start richtet alles
-   ein und dauert einige Minuten; danach öffnet sich das Terminal im Browser
-   (http://127.0.0.1:8000). Warnt Windows („Der Computer wurde durch Windows geschützt“),
-   auf „Weitere Informationen“ → „Trotzdem ausführen“ klicken.
-5. Zum Beenden das schwarze Fenster schließen.
+4. Im entpackten Ordner **`Market Terminal starten`** doppelklicken.
+   - Der erste Start richtet alles ein. Ein schwarzes Fenster zeigt den Fortschritt, das dauert einige Minuten.
+     Danach öffnet sich das Terminal.
+   - Dabei entsteht auf dem **Desktop das Symbol „Market Terminal“** (MT, orange auf schwarz) und im Startmenü der
+     Ordner „Market Terminal“. **Ab dann nur noch das Desktop-Symbol doppelklicken.**
+   - Warnt Windows („Der Computer wurde durch Windows geschützt“): „Weitere Informationen“ → „Trotzdem ausführen“.
+   - Läuft das Terminal schon, öffnet ein Doppelklick nur sein Fenster.
+5. Beenden: **`Market Terminal beenden`** doppelklicken (im Ordner oder im Startmenü). Nur das Fenster zu schließen
+   reicht nicht: Das Terminal läuft im Hintergrund weiter und prüft die Kursalarme.
 
-Ohne schwarzes Fenster: **`Start-Windows-Hintergrund.vbs`** doppelklicken. Das Terminal läuft
-dann unsichtbar im Hintergrund (Kursalarme werden weiter geprüft), der Browser öffnet sich.
-Ein zweiter Doppelklick öffnet nur den Browser. Beim ersten Start und nach einem Update erscheint
-zur Einrichtung kurz das normale Fenster. Beenden mit **`Stop-Windows.bat`**. Bei einem Fehler
-öffnet sich das Protokoll `market-terminal.log` im Editor.
+Ordner nach dem Entpacken (das Wichtige liegt oben):
+
+| Datei / Ordner | Wofür |
+|---|---|
+| `Market Terminal starten` | starten (wie das Desktop-Symbol) |
+| `Market Terminal beenden` | beenden |
+| `LIESMICH - so startest du das Terminal.txt` | Anleitung zum Starten und Bedienen |
+| `Market Terminal.ico` | das Symbol |
+| `werkzeuge\Starten mit Fenster.bat` | Start mit sichtbarem Fenster, alle Meldungen, zur Fehlersuche |
+| `werkzeuge\Desktop-Symbol anlegen.vbs` | Desktop-Symbol neu anlegen (z. B. nach dem Verschieben des Ordners) |
+| `werkzeuge\EODHD pruefen.bat` | Datenzugang prüfen |
+| `werkzeuge\KI pruefen.bat` | LM Studio prüfen |
+| `werkzeuge\Prognose installieren.bat` | Zusatzpaket für die Prognose |
+| `backend`, `frontend`, `docs` | Programm und Unterlagen – nichts anklicken nötig |
+
+- **Normaler Browser-Tab statt eigenem Fenster:** in `.env` die Zeile `MT_APP_FENSTER=0` eintragen. Die Adresse ist
+  http://127.0.0.1:8000.
+- **Bei einem Fehler** öffnet sich das Protokoll `market-terminal.log` im Editor.
 
 Echte Daten statt Demo:
 6. Die Datei **`.env`** im Ordner mit dem Editor öffnen (Rechtsklick → „Öffnen mit“ → Editor),
    hinter `EODHD_API_KEY=` den Schlüssel von eodhd.com eintragen, speichern.
-7. **`EODHD-pruefen-Windows.bat`** doppelklicken: prüft, ob alle Datenarten ankommen.
-8. Terminal neu starten (Schritt 4).
+7. **`werkzeuge\EODHD pruefen.bat`** doppelklicken: prüft, ob alle Datenarten ankommen.
+8. Terminal beenden und neu starten.
 
 Mac/Linux: im Terminal in den Projektordner wechseln und `./start.sh` ausführen.
 
 Neue Version installieren:
 - Neue ZIP-Datei herunterladen und entpacken, die Datei **`.env`** aus dem alten Ordner in den
-  neuen kopieren (sie enthält den Schlüssel) und dort `Start-Windows.bat` doppelklicken.
-- Wer die neue Version über den alten Ordner entpackt: `Start-Windows.bat` erkennt die neue
-  Version und baut Oberfläche und Pakete beim nächsten Start selbst neu.
+  neuen kopieren (sie enthält den Schlüssel) und dort `Market Terminal starten` doppelklicken.
+  Das Desktop-Symbol zeigt danach automatisch auf den neuen Ordner.
+- Wer die neue Version über den alten Ordner entpackt: Der Start erkennt die neue Version und baut
+  Oberfläche und Pakete selbst neu.
+- **Umstieg von älteren Versionen:** `Start-Windows.bat`, `Start-Windows-Hintergrund.vbs` und `Stop-Windows.bat` heißen
+  jetzt `Market Terminal starten` bzw. `Market Terminal beenden`. Die Prüf- und Installationsdateien liegen im Ordner
+  `werkzeuge`.
 
 ## Depot und Risiko (Seite 5 DEPOT)
 
@@ -102,7 +128,7 @@ Die Weltkarte färbt rund 35 Länder nach einer Kennzahl ein; daneben steht die 
   (Jahreswerte, Weltbank-Basis; grün = günstig, rot = ungünstig).
 - Ausschnitte Welt, Europa, Amerika, Asien/Pazifik. Mit der Maus über ein Land zeigt Wert und
   Index bzw. Anleihe, ein Klick öffnet den Index- bzw. Renditechart (Konjunktur: ECST).
-- Mit EODHD zeigt `EODHD-pruefen-Windows.bat`, ob alle Länderindizes und Anleihen im Plan
+- Mit EODHD zeigt `werkzeuge\EODHD pruefen.bat`, ob alle Länderindizes und Anleihen im Plan
   enthalten sind; fehlende Länder bleiben auf der Karte grau.
 
 ## Optionen (OMON)
@@ -120,7 +146,7 @@ Für US-Aktien und -ETFs, z. B. `AAPL US OMON` (Demo: `NWND OMON`). Tagesenddate
   Skew, Put/Call und Max Pain (Klick wählt den Verfall).
 - **Daten:** Bei EODHD sind Optionen ein **Zusatzprodukt** im Marketplace („US Stock Options
   Data API“, Anbieter Unicorn Bay), nur US-Werte, Tagesendstand; ein Abruf kostet 10 API-Calls
-  je 1000 Kontrakte. `EODHD-pruefen-Windows.bat` zeigt, ob das Abo aktiv ist. Im Demo-Modus
+  je 1000 Kontrakte. `werkzeuge\EODHD pruefen.bat` zeigt, ob das Abo aktiv ist. Im Demo-Modus
   sind die Ketten berechnet – amerikanisch bewertet (Barone-Adesi/Whaley: kein Put unter seinem
   inneren Wert), mit Skew und höherer IV vor Quartalszahlen; Verfälle an US-Feiertagen am
   Handelstag davor.
@@ -163,7 +189,7 @@ Futures (Index, Rohstoffe, Zinsen) sind mit der IBKR-Anbindung geplant: `docs/PL
   Strom seit dem Start des Terminals gesehen hat, füllt diese Lücke.
 - **Demo:** ein simulierter Strom (jede Sekunde ein Kurs) mit denselben Regeln: Aktien, Devisen
   und Krypto live, Indizes verzögert.
-- `EODHD-pruefen-Windows.bat` zeigt, ob Minutendaten und der WebSocket mit dem eigenen Schlüssel
+- `werkzeuge\EODHD pruefen.bat` zeigt, ob Minutendaten und der WebSocket mit dem eigenen Schlüssel
   freigeschaltet sind (US, Europa, Devisen). `REALTIME=off` in der `.env` schaltet den Strom ab.
 
 ## Volumenprofil und Market Profile
@@ -653,10 +679,10 @@ je Reihe nimmt das Terminal die Methode, die im Rückblick-Test besser war (Hinw
 Terminal-Server.
 
 Chronos-2 einrichten (einmalig, ca. 1–2 GB Download):
-1. Terminal einmal mit `Start-Windows.bat` gestartet haben.
-2. **`Prognose-installieren-Windows.bat`** doppelklicken. Es installiert PyTorch und Chronos-2, lädt
+1. Terminal einmal mit `Market Terminal starten` gestartet haben.
+2. **`werkzeuge\Prognose installieren.bat`** doppelklicken. Es installiert PyTorch und Chronos-2, lädt
    das Modell (ca. 0,5 GB) und macht eine Probe-Prognose.
-3. Terminal neu starten (`Stop-Windows.bat`, dann `Start-Windows.bat`). Das Modell lädt beim Start im
+3. Terminal neu starten (`Market Terminal beenden`, dann wieder starten). Das Modell lädt beim Start im
    Hintergrund (rund 10 Sekunden); bis dahin rechnet die Statistik.
 
 Danach braucht die Prognose kein Internet mehr. Speicher: etwa 1 GB Arbeitsspeicher, solange das
@@ -684,7 +710,7 @@ Einrichten (einmalig):
    **Llama 3.1 8B Instruct** oder **Mistral Small** (in LM Studio mit Hammer-Symbol gekennzeichnet).
    Faustregel: 8B-Modelle brauchen etwa 6–8 GB Grafik- oder Arbeitsspeicher.
 2. In LM Studio links **„Developer“** öffnen und **„Start Server“** einschalten.
-3. **`LLM-pruefen-Windows.bat`** doppelklicken (Mac/Linux:
+3. **`werkzeuge\KI pruefen.bat`** doppelklicken (Mac/Linux:
    `cd backend && .venv/bin/python -m scripts.verify_llm`). Das Programm prüft Server, Modell,
    JSON-Ausgabe und Werkzeuge, misst die Zeiten und gibt Empfehlungen.
 4. Terminal starten. Unten rechts steht dann **„KI: LM Studio · Modellname“**.

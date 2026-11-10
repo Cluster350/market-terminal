@@ -18,7 +18,7 @@ from app.forecast.simple import SimpleEngine
 
 def main() -> int:
     if not installed():
-        print("  Das Zusatzpaket fehlt (chronos-forecasting). Bitte Prognose-installieren-Windows.bat ausführen.")
+        print("  Das Zusatzpaket fehlt (chronos-forecasting). Bitte werkzeuge\\Prognose installieren.bat ausführen.")
         return 1
     print(f"  Modell {settings.forecast_model} laden (beim ersten Mal Download, bitte warten) …")
     t0 = time.time()

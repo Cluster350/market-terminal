@@ -1,0 +1,96 @@
+MARKET TERMINAL - SO STARTEST UND BEDIENST DU DAS TERMINAL
+==========================================================
+
+Das Terminal ist keine .exe: Es laeuft als kleiner Server auf deinem Rechner
+und zeigt sich in einem eigenen Fenster ohne Adressleiste (wenn dein
+Standardbrowser Edge oder Chrome ist, sonst als Tab im Browser).
+Gestartet wird es mit einem Doppelklick.
+
+
+1) EINMALIG VORBEREITEN (nur vor dem allerersten Start)
+-------------------------------------------------------
+- Python installieren:  https://www.python.org/downloads/
+  Im Installer unten "Add python.exe to PATH" anhaken!
+- Node.js (Version LTS) installieren:  https://nodejs.org/  - einfach durchklicken.
+
+
+2) STARTEN
+----------
+- Doppelklick auf  "Market Terminal starten"  (in diesem Ordner).
+- Beim ersten Mal richtet sich alles ein. Ein schwarzes Fenster zeigt den
+  Fortschritt (einige Minuten). Danach oeffnet sich das Terminal.
+- Dabei entsteht auf dem Desktop das Symbol "Market Terminal"
+  (MT, orange auf schwarz) und im Startmenue der Ordner "Market Terminal".
+  AB DANN NUR NOCH DAS DESKTOP-SYMBOL DOPPELKLICKEN.
+- Warnt Windows ("Der Computer wurde durch Windows geschuetzt"):
+  "Weitere Informationen" -> "Trotzdem ausfuehren".
+- Laeuft das Terminal schon, oeffnet ein Doppelklick nur sein Fenster.
+
+
+3) BEENDEN
+----------
+- Doppelklick auf  "Market Terminal beenden"  (in diesem Ordner oder im
+  Startmenue unter "Market Terminal").
+- Nur das Fenster schliessen reicht nicht: Das Terminal laeuft im Hintergrund
+  weiter und prueft deine Kursalarme. Ein neuer Doppelklick aufs Symbol oeffnet
+  das Fenster wieder.
+
+
+4) BEDIENEN (im Terminal-Fenster)
+---------------------------------
+- Befehlszeile oben (Taste / ): Wertpapier und Funktion eintippen, Enter.
+  Beispiele:  AAPL US GP   (Kurschart)
+              SAP GY DES   (Beschreibung)
+              MSFT US DCF  (innerer Wert mit KI-Persona "Damodaran")
+              HELP         (alle Funktionen und Tastenkuerzel)
+- Alt+1 bis Alt+5: Seiten AKTIE, MAKRO, SCREENER, NEWS, DEPOT
+  (oder die orangen Reiter oben links).
+- Alt+M: aktives Feld gross / klein.   Alt+Pfeil links/rechts: Feld wechseln.
+- Jedes Feld hat oben rechts ein Auswahlfeld fuer die Funktion und "CSV" fuer
+  den Export nach Excel.
+- Ohne EODHD-Schluessel zeigt das Terminal Demo-Daten (fiktive Firmen).
+
+
+5) ECHTE KURSE (EODHD)
+----------------------
+- Die Datei ".env" in diesem Ordner mit dem Editor oeffnen
+  (Rechtsklick -> "Oeffnen mit" -> Editor). Sie entsteht beim ersten Start.
+- Hinter  EODHD_API_KEY=  deinen Schluessel von eodhd.com eintragen, speichern.
+- Pruefen:  werkzeuge\EODHD pruefen.bat  doppelklicken.
+- Terminal beenden und wieder starten.
+
+
+6) KI-HELFER (freiwillig)
+-------------------------
+- LM Studio starten, ein Modell laden, unter "Developer" den Server starten.
+  Das Terminal nutzt es dann automatisch (ASK, BRIEF, News, DCF-Persona).
+- Pruefen:  werkzeuge\KI pruefen.bat
+
+
+7) DER ORDNER "werkzeuge"
+-------------------------
+- Starten mit Fenster.bat      Start mit sichtbarem Fenster (alle Meldungen,
+                               gut wenn etwas nicht klappt).
+- Desktop-Symbol anlegen.vbs   Symbol neu anlegen, z. B. nach dem Verschieben
+                               des Ordners oder einer neuen Version.
+- EODHD pruefen.bat            prueft den Datenzugang.
+- KI pruefen.bat               prueft LM Studio.
+- Prognose installieren.bat    Zusatzpaket fuer die Prognose (ca. 1-2 GB).
+- Terminal oeffnen.vbs         oeffnet nur das Fenster.
+
+Lieber ein normaler Browser-Tab statt eigenem Fenster: in ".env" die Zeile
+MT_APP_FENSTER=0  eintragen. Adresse im Browser: http://127.0.0.1:8000
+
+
+8) NEUE VERSION
+---------------
+- Neue ZIP-Datei herunterladen und entpacken.
+- Die Datei ".env" aus dem alten Ordner in den neuen kopieren (enthaelt den Schluessel).
+- Im neuen Ordner "Market Terminal starten" doppelklicken. Das Desktop-Symbol
+  zeigt danach automatisch auf den neuen Ordner; den alten Ordner kannst du
+  loeschen.
+- Beim ersten Start nach einem Update richtet sich das Terminal kurz neu ein.
+
+
+Bei Problemen: werkzeuge\Starten mit Fenster.bat doppelklicken und ein Foto
+des schwarzen Fensters schicken. Das Protokoll steht in market-terminal.log.

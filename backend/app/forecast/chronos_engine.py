@@ -81,5 +81,5 @@ def _explain(exc: Exception) -> str:
     if "huggingface" in text.lower() or "connection" in text.lower() or "resolve" in text.lower():
         return "Modell konnte nicht geladen werden (beim ersten Start ist Internet nötig, ca. 0,5 GB)."
     if isinstance(exc, ImportError):
-        return "Zusatzpaket fehlt – Prognose-installieren-Windows.bat ausführen."
+        return "Zusatzpaket fehlt – werkzeuge\\Prognose installieren.bat ausführen."
     return f"Chronos-2 nicht geladen: {text[:160]}"

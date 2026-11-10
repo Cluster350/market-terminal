@@ -1,10 +1,11 @@
 @echo off
-rem Market Terminal starten (Windows): Doppelklick genuegt.
+rem Market Terminal mit sichtbarem Fenster starten (zeigt alle Meldungen, gut zur Fehlersuche).
+rem Normalerweise startet man ueber "Market Terminal starten" im Hauptordner bzw. das Desktop-Symbol.
 rem Beim ersten Start werden Python-Pakete und die Oberflaeche eingerichtet (einige Minuten).
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 title Market Terminal
-rem Im Hintergrund gestartet (Start-Windows-Hintergrund.vbs): nicht auf Tastendruck warten,
+rem Im Hintergrund gestartet ("Market Terminal starten.vbs"): nicht auf Tastendruck warten,
 rem sondern bei Fehlern das Protokoll im Editor zeigen
 set "PAUSE=pause"
 if defined MT_HIDDEN set "PAUSE=rem"
@@ -104,19 +105,20 @@ if not exist ".env" (
 
 echo.
 echo  Market Terminal laeuft auf http://127.0.0.1:8000
-echo  Der Browser oeffnet sich gleich. Zum Beenden dieses Fenster schliessen.
+echo  Das Terminal-Fenster oeffnet sich gleich. Zum Beenden dieses Fenster schliessen.
 echo  KI-Helfer: LM Studio starten ^(Developer, Start Server^), dann nutzt das Terminal es automatisch.
 echo.
-start "" cmd /c "timeout /t 4 /nobreak >nul & start http://127.0.0.1:8000"
+rem Oberflaeche oeffnen, sobald der Server antwortet (eigenes App-Fenster, sonst Standardbrowser)
+start "" wscript //nologo "%~dp0Terminal oeffnen.vbs"
 cd backend
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-if errorlevel 1 if defined MT_HIDDEN start "" notepad "%~dp0market-terminal.log"
+if errorlevel 1 if defined MT_HIDDEN start "" notepad "%~dp0..\market-terminal.log"
 goto :eof
 
 :fehler
 echo.
 echo  Beim Einrichten ist ein Fehler aufgetreten (siehe Meldungen oben).
 echo  Internetverbindung pruefen und die Datei erneut starten.
-if defined MT_HIDDEN start "" notepad "%~dp0market-terminal.log"
+if defined MT_HIDDEN start "" notepad "%~dp0..\market-terminal.log"
 %PAUSE%
 exit /b 1

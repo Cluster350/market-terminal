@@ -81,7 +81,7 @@ class ForecastService:
         if self.mode == "off":
             message = "Prognose ausgeschaltet (FORECAST_MODE=off)."
         elif self.mode in ("auto", "chronos") and not self.installed and self.chronos is None:
-            message = "Chronos-2 ist nicht installiert – es rechnet die eingebaute Statistik. Zusatzpaket: Prognose-installieren-Windows.bat."
+            message = "Chronos-2 ist nicht installiert – es rechnet die eingebaute Statistik. Zusatzpaket: werkzeuge\\Prognose installieren.bat."
         elif self.chronos is not None and getattr(self.chronos, "loading", False):
             message = "Chronos-2 lädt … bis dahin rechnet die eingebaute Statistik."
         elif self.chronos is not None and getattr(self.chronos, "error", None):

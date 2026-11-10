@@ -1,9 +1,9 @@
 @echo off
 rem Prueft mit dem eigenen EODHD-Schluessel (aus .env), ob alle Datenarten ankommen.
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if not exist "backend\.venv\Scripts\python.exe" (
-  echo  Bitte zuerst "Start-Windows.bat" einmal ausfuehren.
+  echo  Bitte zuerst "Market Terminal starten" im Hauptordner einmal doppelklicken.
   pause
   exit /b 1
 )
