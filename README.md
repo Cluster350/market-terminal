@@ -485,6 +485,77 @@ auf 13 Stellen überein, Länge, Trendende und Veränderung exakt. Grundlage war
 mlfinpy, denn mlfinlab selbst ist inzwischen kostenpflichtig. Bei einer perfekten Geraden wäre der t-Wert
 unendlich; er wird bei 999 begrenzt. Keine Empfehlung.
 
+## Innerer Wert nach Damodaran (DCF) mit KI-Persona
+
+Die Funktion **DCF** (Befehl z. B. `QBIT US DCF`, auch `DAMODARAN`, `INNERERWERT`, `FAIRVALUE`) bewertet eine Aktie
+nach Aswath Damodarans veröffentlichter Methode. In **DES** steht der Wert als „Innerer Wert (DCF)“; ein Klick öffnet
+DCF. Im **BWT-Detail** hat jede Firma einen Verweis „DCF“.
+
+**Grundsatz: Der Code rechnet, die KI denkt und erklärt.** Alle Zahlen kommen aus dem Rechenkern des Terminals. Die
+KI-Persona bekommt die fertige Bewertung als Mappe und darf nur deren Zahlen verwenden.
+
+**Was gerechnet wird:**
+- **Bereinigung („Buchhaltung ist Rohstoff“):**
+  - F&E wird als Investition aktiviert, mit Abschreibungsdauer je Branche (Pharma 10 Jahre, Software 3, sonst meist 5).
+    Daraus ergeben sich bereinigtes operatives Ergebnis und Forschungsvermögen.
+  - Aktienbasierte Vergütung bleibt Aufwand und wird nicht zurückgerechnet.
+  - Leasing wird nicht gesondert bereinigt (IFRS 16 / ASC 842).
+- **Kapitalkosten Schritt für Schritt:**
+  - risikoloser Zins aus der Zinskurve der Berichtswährung (Euro: Bundesanleihe 10 Jahre)
+  - Branchenbeta ohne Verschuldung, mit der Verschuldung der Firma umgerechnet
+  - Aktien-Risikoprämie und Länderrisiko
+  - Fremdkapitalkosten über die Zinsdeckung und ein synthetisches Rating
+- **FCFF-DCF über 10 Jahre mit Story-Hebeln (wie Damodarans Ginzu-Tabelle):**
+  - Umsatzwachstum (Jahr 1, Jahre 2–5, danach Übergang)
+  - Zielmarge und das Jahr, in dem sie erreicht wird
+  - Umsatz je eingesetztem Kapital (bestimmt die Reinvestition)
+  - Kapitalkosten
+  - Endwachstum, höchstens der risikolose Zins
+  - Kapitalrendite im Endwert (Startwert = Kapitalkosten)
+  - Ausfallwahrscheinlichkeit
+  - Die Reinvestition eines Jahres finanziert das Wachstum des Folgejahres. So ist Wachstum mit Rendite gleich
+    Kapitalkosten wertneutral (geprüft).
+- **Bandbreite statt Punktwert:** 1.500 Läufe mit gestreuten Hebeln, Ergebnis P10 bis P90 und der Anteil der Läufe über
+  dem Kurs.
+- **Rückwärts-DCF („Was muss man glauben?“):** welches Umsatzwachstum bzw. welche Zielmarge den heutigen Kurs erklärt.
+- **Weitere Prüfungen:** Wachstumsqualität (Rendite auf neues Kapital gegen Kapitalkosten), Lebenszyklus und als
+  Gegenprobe die Multiplikatoren. Multiplikatoren sind „Pricing“, nicht Wert.
+- **Bedienung:** Hebel im Bildschirm ändern (Enter). Geänderte Hebel sind orange, ↺ setzt zurück. Der CSV-Export
+  enthält die 10-Jahres-Rechnung, die Hebel und alle Tabellen.
+
+**KI-Persona „Damodaran“:**
+- **Kennzeichnung:** ausdrücklich *nicht* Aswath Damodaran selbst und keine Anlageberatung.
+- **Bewertung einordnen:** in festen Abschnitten – Story und Lebenszyklus, die vier Treiber, Wert gegen Preis, Was
+  muss man glauben?, Risiken, Fazit.
+- **Story → Zahlen:** Du schreibst eine Story, die Persona schlägt Story-Hebel vor. Der Rechenkern rechnet den Wert
+  unter dieser Story nach, mit Prüfung nach den „3 P“ (möglich, plausibel, wahrscheinlich). Übernommen wird **erst
+  per Klick**.
+- **Rückfragen** im Chat.
+- **Zahlenprüfung:** Zahlen, die nicht aus der Bewertung stammen, werden markiert (wie in ASK). Kauf- oder
+  Verkaufsempfehlungen gibt sie nicht.
+- **Modelle:** Mit LM Studio antwortet das geladene Sprachmodell, ohne LM Studio die Demo-KI (regelbasiert).
+- **Anpassen:** Die Persona-Beschreibung steht in `backend/app/ai/personas/damodaran.md` und kann angepasst werden.
+- **ASK:** Auch in ASK lässt sich fragen, z. B. „Was ist der innere Wert von QBIT US?“ (Werkzeug `innerer_wert`).
+
+**Parameter:**
+- **Eingebaut:** gerundete Richtwerte, angelehnt an Damodarans frei veröffentlichte Daten (Stand Januar 2025):
+  Aktien-Risikoprämie 4,33 %, Länderrisiko, Steuersätze, Rating-Tabelle und Branchenwerte.
+- **Aktualisierung:** Im Echtbetrieb lädt das Terminal Damodarans Tabellen (HTML-Fassungen von histimpl, ctryprem,
+  Betas, margin, capex) automatisch, wenn sie fehlen oder älter als ein halbes Jahr sind. Manuell geht das mit
+  `POST /api/intrinsic/params/refresh`. Gespeichert wird in `PORTFOLIO_DIR/damodaran.json`, übernommen werden nur
+  plausible Werte.
+- **Woher es kommt:** Im DCF-Bildschirm steht, ob Richtwerte oder geladene Daten gelten.
+- **Wichtig:** Von der Entwicklungsumgebung aus war Damodarans Seite nicht erreichbar. Das Lesen der Tabellen ist daher
+  nur mit nachgebauten Beispieltabellen getestet. Ändert sich der Aufbau seiner Seiten, bleiben die bisherigen Werte.
+
+**Grenzen:**
+- **Finanzfirmen:** Banken, Versicherungen und andere Finanzfirmen werden nicht bewertet. Bei ihnen ist Fremdkapital
+  Rohstoff, Damodaran bewertet sie über das Eigenkapital.
+- **Fehlende Daten:** Minderheiten und Mitarbeiteroptionen fehlen in den Daten.
+- **Basis:** die letzten 12 Monate. F&E-Jahre vor der Datenhistorie werden fortgeschrieben und gekennzeichnet.
+- **Kurse in anderer Währung** (z. B. ADRs) werden mit dem Devisenkurs des Terminals in die Berichtswährung umgerechnet.
+- **Demo-Modus:** Die Firmen und Kurse sind künstlich, die Werte also nur zum Ausprobieren.
+
 ## CSV-Export (für Excel)
 
 Jedes Fenster hat oben rechts den Knopf **CSV**. Ein Klick speichert alles, was das Fenster gerade zeigt, als

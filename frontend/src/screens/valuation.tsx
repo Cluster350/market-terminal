@@ -510,7 +510,12 @@ function Members({ d }: { d: ValDetail }) {
           {d.members.map((m) => (
             <tr key={m.ticker} title={m.notes.join(" · ") || undefined}>
               <td>
-                <TickerLink ticker={m.ticker} /> <span className="muted">{m.name}</span>
+                <TickerLink ticker={m.ticker} /> <span className="muted">{m.name}</span>{" "}
+                <span title="Innerer Wert nach Damodarans Methode (DCF) öffnen">
+                  <TickerLink ticker={m.ticker} open="DCF">
+                    DCF
+                  </TickerLink>
+                </span>
               </td>
               <td className="num muted">{fmtBig(m.mcap, 0)}</td>
               {past.map((y) => (

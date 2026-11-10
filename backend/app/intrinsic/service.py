@@ -427,7 +427,7 @@ def build(inp: Inputs, params: Params, overrides: dict[str, Any], *, simulate: b
     b.append(IvRow(label="= Wert des Eigenkapitals", value=out.equity_value,
                    note="ohne Minderheiten und Mitarbeiteroptionen (nicht in den Daten)"))
     b.append(IvRow(label="÷ Aktien", value=shares, unit="num"))
-    b.append(IvRow(label="= Wert je Aktie", value=out.value_per_share))
+    b.append(IvRow(label="= Wert je Aktie", value=out.value_per_share, unit="num", note=res.currency or ""))
     res.value_per_share = _fin(out.value_per_share)
     res.terminal_share = _fin(out.terminal_share)
     if res.price and res.value_per_share is not None:

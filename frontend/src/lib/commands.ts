@@ -6,7 +6,7 @@ import { countryCode } from "./intents";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG" | "CRYP" | "FCTR";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG" | "CRYP" | "FCTR" | "DCF";
 
 export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "Depot" | "System";
 
@@ -28,6 +28,7 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "ANR", title: "Analysten", group: "Aktie", needsTicker: true, desc: "Empfehlungen und Kursziel" },
   { code: "CN", title: "Firmen-News", group: "Aktie", needsTicker: true, desc: "Nachrichten zum Wertpapier" },
   { code: "RV", title: "Peer-Vergleich", group: "Aktie", needsTicker: true, desc: "Bewertung und Performance gegenüber Branchen-Peers" },
+  { code: "DCF", title: "Innerer Wert", group: "Aktie", needsTicker: true, desc: "Innerer Wert je Aktie nach Damodarans Methode: Story-Hebel, Bandbreite, Rückwärts-DCF, Kapitalkosten – mit KI-Persona „Damodaran“" },
   { code: "OMON", title: "Optionen", group: "Aktie", needsTicker: true, desc: "Optionsmarkt einer US-Aktie: implizite Volatilität, erwartete Bewegung, Put/Call, Open Interest je Strike, Kette, Smile" },
   { code: "TPO", title: "Market Profile", group: "Aktie", needsTicker: true, desc: "Market Profile je Handelstag (30-Minuten-Buchstaben) oder Volumen je Preisstufe, mit POC, Value Area und erster Stunde" },
   { code: "TOP", title: "News-Terminal", group: "News", needsTicker: false, desc: "Nachrichtenstrom mit Filtern, Suche und Leseansicht" },
@@ -88,6 +89,7 @@ const ALIASES: Record<string, FnCode> = {
   BITCOIN: "CRYP", XBT: "CRYP", CRYPTOS: "CRYP",
   FAKTOR: "FCTR", FAKTOREN: "FCTR", FACTOR: "FCTR", FACTORS: "FCTR", STIL: "FCTR", STILE: "FCTR", STYLE: "FCTR", STYLES: "FCTR",
   SMARTBETA: "FCTR", VALUE: "FCTR", MOMENTUM: "FCTR", FCT: "FCTR",
+  INNERERWERT: "DCF", INTRINSIC: "DCF", DAMODARAN: "DCF", FAIRVALUE: "DCF", DCFV: "DCF", IVAL: "DCF",
   BRIEFING: "BRIEF", MORGEN: "BRIEF", MORGENBRIEFING: "BRIEF", MORNING: "BRIEF", BRIEFUNG: "BRIEF",
 };
 

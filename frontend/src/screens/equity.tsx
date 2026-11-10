@@ -2,7 +2,10 @@
 
 import { useState, type ReactNode } from "react";
 import { bandTestText, gapText, useStockBands } from "../lib/valuation";
-import { Change, Empty, Kv, Q, Seg, Spark, Table, useNow } from "../components/ui";
+import { Change, Empty, Kv, Q, Seg, Spark, Table, TickerLink, useNow } from "../components/ui";
+import { useIntrinsic, type Levers } from "../lib/intrinsic";
+
+const NO_LEVERS: Levers = {};
 import {
   countryDe,
   DASH,
@@ -74,6 +77,7 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
   const q = useCompany(ticker);
   const quote = useQuotes(ticker ? [ticker] : []).data?.[0];
   const bands = useStockBands(ticker, true);
+  const iv = useIntrinsic(ticker, NO_LEVERS);
   const [more, setMore] = useState(false);
   return (
     <div className="panel-body">
@@ -115,6 +119,20 @@ function CompanyDES({ ticker }: { ticker: string | null }) {
                       ["Enterprise Value", fmtBig(c.valuation.ev)],
                       ["KGV (TTM)", fmt(c.valuation.pe, 1)],
                       ["KGV erwartet", fmt(c.valuation.forwardPe, 1)],
+                      ...(iv.data && iv.data.state === "ok" && iv.data.ticker === c.ticker
+                        ? ([
+                            [
+                              <span title="Innerer Wert je Aktie nach Damodarans Methode (DCF) mit den Startwerten der Story-Hebel – Klick öffnet DCF mit Bandbreite, Rückwärts-DCF und KI-Persona">
+                                Innerer Wert (DCF)
+                              </span>,
+                              <TickerLink ticker={c.ticker} open="DCF">
+                                {fmtPrice(iv.data.valuePerShare)}
+                                {iv.data.currency && iv.data.currency !== c.currency ? ` ${iv.data.currency}` : ""}{" "}
+                                <span className={tone(iv.data.valueGap)}>({gapText(iv.data.valueGap)})</span>
+                              </TickerLink>,
+                            ],
+                          ] as [ReactNode, ReactNode][])
+                        : []),
                       ...(bands.data
                         ? ([
                             [
