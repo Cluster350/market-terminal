@@ -2,7 +2,7 @@
 // Rückwärts-DCF und der KI-Persona „Damodaran“. Gerechnet wird im Rechenkern; die KI ordnet ein und schlägt Hebel vor
 // (übernommen wird erst per Klick).
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import EChart, { AXIS, TOOLTIP, type EOption } from "../components/EChart";
 import { Empty, ErrorState, Loading } from "../components/ui";
 import { aiErrorText, engineLabel } from "../lib/ai";
@@ -12,8 +12,10 @@ import { DASH, displayTicker, fmt, fmtBig, fmtPct, fmtPrice, isNum, tone } from 
 import {
   askCoach,
   changedLevers,
+  distAxisBounds,
   inputToLever,
   leverToInput,
+  parseLeverInput,
   useIntrinsic,
   type CoachResult,
   type IntrinsicResult,
@@ -81,6 +83,7 @@ function distOption(d: NonNullable<IntrinsicResult["distribution"]>, value: numb
   if (isNum(value)) marks.push({ xAxis: value, lineStyle: { color: "#ececec", width: 1.5 }, label: { formatter: `Wert ${fmt(value, 2)}`, color: "#ececec" } });
   if (isNum(d.p10)) marks.push({ xAxis: d.p10, lineStyle: { color: "#777", type: "dashed" }, label: { formatter: "P10", color: "#888" } });
   if (isNum(d.p90)) marks.push({ xAxis: d.p90, lineStyle: { color: "#777", type: "dashed" }, label: { formatter: "P90", color: "#888" } });
+  const bounds = distAxisBounds(d.bins, [price, value]); // Kurs und Wert immer im sichtbaren Bereich
   return {
     animation: false,
     grid: { left: 36, right: 14, top: 26, bottom: 24 },
@@ -93,7 +96,14 @@ function distOption(d: NonNullable<IntrinsicResult["distribution"]>, value: numb
         return b ? `${fmt(b.lo, 2)} – ${fmt(b.hi, 2)} ${cur}<br/>${b.n} von ${d.runs} Läufen` : "";
       },
     },
-    xAxis: { type: "value", ...AXIS, scale: true, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => fmt(v, 0) } },
+    xAxis: {
+      type: "value",
+      ...AXIS,
+      scale: true,
+      min: bounds.min,
+      max: bounds.max,
+      axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => fmt(v, 0) },
+    },
     yAxis: { type: "value", ...AXIS, axisLabel: { show: false }, splitLine: { show: false } },
     series: [
       {
@@ -111,11 +121,21 @@ function LeverInput({ lv, onCommit }: { lv: IvLever; onCommit: (v: number | null
   const shown = leverToInput(lv, lv.value);
   const [text, setText] = useState(String(shown).replace(".", ","));
   useEffect(() => setText(String(shown).replace(".", ",")), [shown]);
+  // Nach eigener Eingabe den Wert zeigen, mit dem gerechnet wurde – auch wenn er gleich bleibt, weil der Rechenkern
+  // begrenzt hat (z. B. Endwachstum über dem risikolosen Zins); sonst stünde weiter die verworfene Eingabe im Feld
+  const committed = useRef(false);
+  useEffect(() => {
+    if (!committed.current) return;
+    committed.current = false;
+    setText(String(shown).replace(".", ","));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lv]);
   const changed = Math.abs(lv.value - lv.default) > 1e-9;
   const commit = () => {
-    const v = Number(text.replace(",", "."));
-    if (!Number.isFinite(v)) return setText(String(shown).replace(".", ","));
+    const v = parseLeverInput(text);
+    if (v === null) return setText(String(shown).replace(".", ","));
     if (Math.abs(v - shown) < 1e-9) return;
+    committed.current = true;
     onCommit(inputToLever(lv, v));
   };
   const unit = lv.unit === "pct" ? "%" : lv.unit === "x" ? "×" : "";
@@ -419,19 +439,26 @@ export function DCF({ ticker }: ScreenProps) {
           )}
           <Block title="Was muss man glauben? (Rückwärts-DCF)" hint="Welche Annahme den heutigen Kurs rechtfertigt, wenn alles andere gleich bleibt.">
             <div className="small dcf-text">
-              {rv && isNum(rv.growth) ? (
+              {!rv ? (
+                isNum(d.price) ? DASH : "Ohne Kurs in der Berichtswährung ist kein Rückwärts-DCF möglich."
+              ) : (
                 <>
-                  Der Kurs unterstellt <b>{pct(rv.growth)}</b> Umsatzwachstum pro Jahr in den Jahren 1–5 (Umsatz in Jahr 10 rund{" "}
-                  <b>{fmt(rv.revenueMultiple10y, 1)}×</b> so hoch wie heute)
+                  {isNum(rv.growth) ? (
+                    <>
+                      Der Kurs unterstellt <b>{pct(rv.growth)}</b> Umsatzwachstum pro Jahr in den Jahren 1–5 (Umsatz in Jahr 10 rund{" "}
+                      <b>{fmt(rv.revenueMultiple10y, 1)}×</b> so hoch wie heute)
+                    </>
+                  ) : (
+                    "Kein Wachstum im geprüften Bereich (−30 % bis +100 % p. a.) erklärt den Kurs"
+                  )}
+                  {/* die Zielmarge gilt auch, wenn kein Wachstum den Kurs erklärt (Rechenkern liefert beide getrennt) */}
                   {isNum(rv.margin) ? (
                     <>
-                      {" "}– oder bei den gewählten Wachstumsraten eine Zielmarge von <b>{pct(rv.margin)}</b>
+                      {" "}– {isNum(rv.growth) ? "oder " : ""}bei den gewählten Wachstumsraten eine Zielmarge von <b>{pct(rv.margin)}</b>
                     </>
                   ) : null}
-                  . Ist das möglich, plausibel, wahrscheinlich?
+                  {isNum(rv.growth) || isNum(rv.margin) ? ". Ist das möglich, plausibel, wahrscheinlich?" : "."}
                 </>
-              ) : (
-                "Kein Wachstum im geprüften Bereich (−30 % bis +100 % p. a.) erklärt den Kurs."
               )}
             </div>
           </Block>
@@ -451,7 +478,7 @@ export function DCF({ ticker }: ScreenProps) {
           </div>
           <Block title="Die nächsten 10 Jahre">
             <div className="dcf-years">
-              <table className="t" data-export-title={`DCF ${d.name} – 10 Jahre`}>
+              <table className="t" data-csv-skip="" /* CSV: vollständige Werte über useCsvExport (sonst doppelt) */>
                 <thead>
                   <tr>
                     <th>Jahr</th>

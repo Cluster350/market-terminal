@@ -25,6 +25,7 @@ from ..errors import BadRequest
 from ..intrinsic.models import IntrinsicResult
 from ..intrinsic.service import LEVER_SPECS, IntrinsicService
 from ..models import Model
+from ..services.util import round_price
 from .agent import unverified_numbers
 from .client import LLMClient, strip_think
 from .models import ChatTurn
@@ -87,6 +88,14 @@ def _r(x: Optional[float], d: int = 2) -> Optional[float]:
     return None if x is None or not math.isfinite(x) else round(x, d)
 
 
+def _px(x: Optional[float]) -> Optional[float]:
+    """Betrag je Aktie: zwei Nachkommastellen, unter 1 vier, Kleinstkurse mit gültigen Stellen (sonst 0,0 bei Pennystocks,
+    z. B. Londoner Kurse in Pence nach der Umrechnung in Pfund)."""
+    if x is None or not math.isfinite(x):
+        return None
+    return round(x, 2) if abs(x) >= 1 else round_price(x, 4)
+
+
 def _pct(x: Optional[float], d: int = 2) -> Optional[float]:
     return None if x is None or not math.isfinite(x) else round(x * 100, d)
 
@@ -110,11 +119,11 @@ def dossier(res: IntrinsicResult) -> dict[str, Any]:
         "vergleichsbranche": res.industry_used,
         "land": res.country,
         "lebenszyklus": {"phase": res.lifecycle.label, "hinweis": res.lifecycle.text} if res.lifecycle else None,
-        "kurs": _r(res.price),
-        "wert_je_aktie": _r(res.value_per_share),
+        "kurs": _px(res.price),
+        "wert_je_aktie": _px(res.value_per_share),
         "wert_zu_kurs_pct": _pct(res.value_gap, 1),
         "bandbreite_je_aktie": {
-            "p10": _r(d.p10), "p50": _r(d.p50), "p90": _r(d.p90),
+            "p10": _px(d.p10), "p50": _px(d.p50), "p90": _px(d.p90),
             "anteil_laeufe_ueber_kurs_pct": _pct(d.share_above_price, 0),
         } if d else None,
         "endwert_anteil_am_wert_pct": _pct(res.terminal_share, 0),
@@ -318,6 +327,14 @@ def _de(x: Optional[float], digits: int = 1) -> str:
     return f"{x:,.{digits}f}".replace(",", " ").replace(".", ",").replace(" ", ".")
 
 
+def _dp(x: Optional[float]) -> int:
+    """Nachkommastellen für Beträge je Aktie (wie die Kursanzeige des Terminals): Kleinstkurse nicht als 0,00."""
+    a = abs(x) if x is not None and math.isfinite(x) else 1.0
+    if 0 < a < 0.01:
+        return min(10, math.ceil(-math.log10(a)) + 3)
+    return 2 if a >= 1 or a == 0 else 4
+
+
 def demo_comment(res: IntrinsicResult) -> list[CoachSection]:
     lc = res.lifecycle
     q = res.quality
@@ -338,9 +355,9 @@ def demo_comment(res: IntrinsicResult) -> list[CoachSection]:
             f"Das Risiko steckt in den Kapitalkosten."
         )),
         CoachSection(title="Wert gegen Preis", text=(
-            f"Wert je Aktie {_de(res.value_per_share, 2)} {cur} gegen einen Kurs von {_de(res.price, 2)} {cur}"
+            f"Wert je Aktie {_de(res.value_per_share, _dp(res.value_per_share))} {cur} gegen einen Kurs von {_de(res.price, _dp(res.price))} {cur}"
             + (f" ({'+' if gap >= 0 else ''}{_de(gap * 100)} %)." if gap is not None else ".")
-            + (f" Die Bandbreite reicht von {_de(d.p10, 2)} (P10) bis {_de(d.p90, 2)} {cur} (P90); "
+            + (f" Die Bandbreite reicht von {_de(d.p10, _dp(d.p10))} (P10) bis {_de(d.p90, _dp(d.p90))} {cur} (P90); "
                f"in {_de((d.share_above_price or 0) * 100, 0)} % der Läufe liegt der Wert über dem Kurs." if d and d.p10 is not None else "")
             + " Der Kurs ist ein Preis, kein Wert – die Lücke ist die These, nicht ihr Beweis."
         )),

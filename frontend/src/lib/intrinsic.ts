@@ -3,6 +3,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { IS_STATIC, qs, request } from "./api";
+import { isNum } from "./format";
 import type { AiEngine } from "./ai";
 
 export type LeverUnit = "pct" | "x" | "year";
@@ -139,6 +140,14 @@ export const askCoach = (
 export const leverToInput = (lv: { unit: LeverUnit }, v: number) => (lv.unit === "pct" ? Math.round(v * 10000) / 100 : lv.unit === "year" ? Math.round(v) : Math.round(v * 100) / 100);
 export const inputToLever = (lv: { unit: LeverUnit }, v: number) => (lv.unit === "pct" ? v / 100 : lv.unit === "year" ? Math.round(v) : v);
 
+/** Eingabe eines Hebelfelds lesen (Dezimalkomma). Leer oder keine Zahl → null: das Feld zeigt wieder den Wert.
+ * (Number("") ist 0 – Leeren und Wegklicken setzte den Hebel sonst auf 0.) */
+export function parseLeverInput(text: string): number | null {
+  if (!text.trim()) return null;
+  const v = Number(text.trim().replace(",", "."));
+  return Number.isFinite(v) ? v : null;
+}
+
 /** Nur die Hebel, die vom Startwert abweichen (so bleibt die Abfrage bei Startwerten ein GET). */
 export function changedLevers(levers: Levers, defaults: IvLever[]): Levers {
   const out: Levers = {};
@@ -147,4 +156,20 @@ export function changedLevers(levers: Levers, defaults: IvLever[]): Levers {
     if (!d || Math.abs(d.default - v) > 1e-9) out[k] = v;
   }
   return out;
+}
+
+/**
+ * Achsengrenzen des Histogramms „Wert als Bandbreite“: Kurs und Wert müssen sichtbar sein – Hilfslinien außerhalb der
+ * Achse zeichnet ECharts nicht (bei großer Lücke fehlte sonst die Kurs-Markierung). Liegen beide im Datenbereich,
+ * bleibt die Achse automatisch (undefined).
+ */
+export function distAxisBounds(bins: { lo: number; hi: number }[], marks: (number | null | undefined)[]) {
+  const xs = marks.filter(isNum);
+  const lo = Math.min(...xs);
+  const hi = Math.max(...xs);
+  const pad = bins.length ? (Math.max(bins[bins.length - 1].hi, hi) - Math.min(bins[0].lo, lo)) * 0.04 : 0;
+  return {
+    min: (e: { min: number }) => (lo < e.min ? lo - pad : undefined),
+    max: (e: { max: number }) => (hi > e.max ? hi + pad : undefined),
+  };
 }

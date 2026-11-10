@@ -202,8 +202,9 @@ def check_levers(lev: Levers, base: Base) -> tuple[Levers, list[str]]:
     warn: list[str] = []
     lev = replace(lev)
     if lev.growth_terminal > base.riskfree + 1e-12:
+        rf_text = f"{base.riskfree * 100:.2f}".replace(".", ",")  # Dezimalkomma wie in allen übrigen Hinweisen
         warn.append(
-            f"Endwachstum auf den risikolosen Zins ({base.riskfree * 100:.2f} %) begrenzt – sonst würde die Firma auf Dauer "
+            f"Endwachstum auf den risikolosen Zins ({rf_text} %) begrenzt – sonst würde die Firma auf Dauer "
             "schneller wachsen als die Wirtschaft."
         )
         lev.growth_terminal = base.riskfree

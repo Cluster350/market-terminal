@@ -247,7 +247,10 @@ def build(inp: Inputs, params: Params, overrides: dict[str, Any], *, simulate: b
     q_periods = inp.quarterly.periods if inp.quarterly else []
 
     # Basis: letzte 12 Monate, wenn die Quartale neuer sind als das Geschäftsjahr; sonst das Geschäftsjahr
-    use_ttm = bool(q_periods) and bool(periods) and q_periods[0] > periods[0] and _sum4(q_inc.get("totalRevenue")) is not None
+    # (beide Summen nötig: fehlte das operative Ergebnis eines Quartals, gab es sonst gar keine Bewertung, obwohl das
+    # Geschäftsjahr vollständig ist)
+    use_ttm = (bool(q_periods) and bool(periods) and q_periods[0] > periods[0] and _sum4(q_inc.get("totalRevenue")) is not None
+               and _sum4(q_inc.get("operatingIncome")) is not None)
     if use_ttm:
         revenue = _sum4(q_inc.get("totalRevenue"))
         ebit = _sum4(q_inc.get("operatingIncome"))
@@ -270,10 +273,12 @@ def build(inp: Inputs, params: Params, overrides: dict[str, Any], *, simulate: b
         return res
 
     # Historie: Wachstum und Margen
-    revs = [v for v in (inc.get("totalRevenue") or []) if v is not None]
+    # je Geschäftsjahr an seiner Stelle: Lücken nicht herausfiltern, sonst rückt ein älteres Jahr nach und zwei Jahre
+    # Wachstum gelten als eines (ein negativer Umsatz gäbe bei der Kubikwurzel eine komplexe Zahl)
+    r0, r1, r3 = (_first(inc.get("totalRevenue"), i) for i in (0, 1, 3))
     ops = inc.get("operatingIncome") or []
-    growth_last = revs[0] / revs[1] - 1 if len(revs) >= 2 and revs[1] > 0 else None
-    growth_3y = (revs[0] / revs[3]) ** (1 / 3) - 1 if len(revs) >= 4 and revs[3] > 0 else growth_last
+    growth_last = r0 / r1 - 1 if r0 is not None and r1 and r1 > 0 else None
+    growth_3y = (r0 / r3) ** (1 / 3) - 1 if r0 is not None and r0 >= 0 and r3 and r3 > 0 else growth_last
     for i, p in enumerate(periods[:5]):
         r = _first(inc.get("totalRevenue"), i)
         o = _first(ops, i)
@@ -378,7 +383,8 @@ def build(inp: Inputs, params: Params, overrides: dict[str, Any], *, simulate: b
     g_term = inp.riskfree
     g1 = growth_last if growth_last is not None else 0.03
     if growth_3y is not None:
-        g1 = (g1 + growth_3y) / 2
+        # fehlt das Vorjahr, nur der 3-Jahres-Schnitt (nicht mit dem Platzhalter 3 % mitteln)
+        g1 = (g1 + growth_3y) / 2 if growth_last is not None else growth_3y
     g1 = min(max(g1, -0.10), 0.40)
     g25 = (g1 + g_term) / 2 if g1 > g_term else g1
     target = ind.margin if margin_adj <= 0 else margin_adj + (ind.margin - margin_adj) * 0.5
@@ -388,9 +394,19 @@ def build(inp: Inputs, params: Params, overrides: dict[str, Any], *, simulate: b
         failure_prob=0.0, failure_proceeds=0.5,
     )
     lev = Levers(**asdict(defaults))
-    for key, *_ in LEVER_SPECS:
+    for key, label, unit, lo, hi, *_ in LEVER_SPECS:
         v = overrides.get(key)
         if isinstance(v, (int, float)) and math.isfinite(v):
+            # auf den erlaubten Bereich begrenzen (wie die Vorschläge der Persona); ein Startwert außerhalb bleibt
+            # erreichbar. Sonst z. B. Kapitalkosten −100 % → Division durch null im Abzinsen (Fehler 500)
+            d = float(getattr(defaults, key))
+            lo, hi = min(lo, d), max(hi, d)
+            if not lo <= v <= hi:
+                def f(x: float) -> str:
+                    return f"{round(x * 100, 2):g} %".replace(".", ",") if unit == "pct" else f"{round(x, 2):g}".replace(".", ",")
+
+                res.warnings.append(f"„{label}“ auf den erlaubten Bereich {f(lo)} bis {f(hi)} begrenzt.")
+                v = min(max(float(v), lo), hi)
             setattr(lev, key, int(round(v)) if key == "margin_year" else float(v))
     nol = 0.0
     if ebit < 0:

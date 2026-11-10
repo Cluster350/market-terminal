@@ -242,7 +242,9 @@ def apply_loaded(p: Params, data: dict) -> Params:
     if isinstance(crps, dict) and crps:
         countries = dict(p.countries)
         for code, c in countries.items():
-            v = crps.get(c.code) or crps.get(c.name)
+            v = crps.get(c.code)
+            if v is None:  # nicht „or“: eine geladene Prämie von 0 % (Aaa-Land) muss den Richtwert ersetzen
+                v = crps.get(c.name)
             if isinstance(v, (int, float)) and 0 <= v <= 0.25:
                 countries[code] = replace(c, crp=float(v))
         p.countries, p.country_source = countries, f"{src} (Länderrisiko)"

@@ -416,11 +416,12 @@ async def ask(t: Terminal, req: AskRequest) -> AskResult:
             lines.append(res.get("fehler") or res.get("hinweis") or "Keine Bewertung verfügbar.")
         else:
             cur = res.get("waehrung") or ""
-            lines.append(f"{res['firma']}: innerer Wert {de(res['wert_je_aktie'], 2)} {cur} je Aktie gegen einen Kurs von "
-                         f"{de(res['kurs'], 2)} {cur} ({pct(res['wert_zu_kurs_pct'])}) – Methode nach Damodaran (DCF).")
+            dg = _price_digits(res.get("kurs"))  # Pennystocks nicht als 0,00
+            lines.append(f"{res['firma']}: innerer Wert {de(res['wert_je_aktie'], dg)} {cur} je Aktie gegen einen Kurs von "
+                         f"{de(res['kurs'], dg)} {cur} ({pct(res['wert_zu_kurs_pct'])}) – Methode nach Damodaran (DCF).")
             b = res.get("bandbreite_je_aktie") or {}
             if b.get("p10") is not None:
-                lines.append(f"- Bandbreite (P10 bis P90): {de(b['p10'], 2)} bis {de(b['p90'], 2)} {cur}.")
+                lines.append(f"- Bandbreite (P10 bis P90): {de(b['p10'], dg)} bis {de(b['p90'], dg)} {cur}.")
             rv = res.get("rueckwaerts_dcf") or {}
             if rv.get("umsatzwachstum_pa_jahre_1_bis_5_pct") is not None:
                 lines.append(f"- Der Kurs unterstellt rund {de(rv['umsatzwachstum_pa_jahre_1_bis_5_pct'], 1)} % Umsatzwachstum pro Jahr in den Jahren 1–5.")

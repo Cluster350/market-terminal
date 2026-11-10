@@ -83,6 +83,8 @@ Echte Daten statt Demo:
 Mac/Linux: im Terminal in den Projektordner wechseln und `./start.sh` ausführen.
 
 Neue Version installieren:
+- Zuerst das laufende Terminal beenden (`Market Terminal beenden`) – sonst öffnet der Doppelklick nur das Fenster
+  der alten Version, und die neue richtet sich nicht ein.
 - Neue ZIP-Datei herunterladen und entpacken, die Datei **`.env`** aus dem alten Ordner in den
   neuen kopieren (sie enthält den Schlüssel) und dort `Market Terminal starten` doppelklicken.
   Das Desktop-Symbol zeigt danach automatisch auf den neuen Ordner.
@@ -546,7 +548,8 @@ KI-Persona bekommt die fertige Bewertung als Mappe und darf nur deren Zahlen ver
 - **Rückwärts-DCF („Was muss man glauben?“):** welches Umsatzwachstum bzw. welche Zielmarge den heutigen Kurs erklärt.
 - **Weitere Prüfungen:** Wachstumsqualität (Rendite auf neues Kapital gegen Kapitalkosten), Lebenszyklus und als
   Gegenprobe die Multiplikatoren. Multiplikatoren sind „Pricing“, nicht Wert.
-- **Bedienung:** Hebel im Bildschirm ändern (Enter). Geänderte Hebel sind orange, ↺ setzt zurück. Der CSV-Export
+- **Bedienung:** Hebel im Bildschirm ändern (Enter). Geänderte Hebel sind orange, ↺ setzt zurück. Werte außerhalb des
+  erlaubten Bereichs werden begrenzt (mit Hinweis), ein leeres Feld zählt nicht als 0. Der CSV-Export
   enthält die 10-Jahres-Rechnung, die Hebel und alle Tabellen.
 
 **KI-Persona „Damodaran“:**

@@ -28,7 +28,8 @@ Function Running()
   On Error Resume Next
   Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
   http.setTimeouts 1000, 1000, 1000, 1000
-  http.Open "GET", URL & "/api/status", False
+  ' Adresse ohne Netzabruf: /api/status fragt im EODHD-Modus jedes Mal EODHD (kann laenger als 1 s dauern)
+  http.Open "GET", URL & "/api/realtime/status", False
   http.Send
   If Err.Number = 0 Then
     If http.Status = 200 Then Running = True

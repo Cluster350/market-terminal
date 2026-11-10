@@ -84,6 +84,8 @@ MT_APP_FENSTER=0  eintragen. Adresse im Browser: http://127.0.0.1:8000
 
 8) NEUE VERSION
 ---------------
+- Zuerst das laufende Terminal beenden ("Market Terminal beenden"). Sonst oeffnet
+  der Doppelklick nur das Fenster der alten Version, und die neue richtet sich nicht ein.
 - Neue ZIP-Datei herunterladen und entpacken.
 - Die Datei ".env" aus dem alten Ordner in den neuen kopieren (enthaelt den Schluessel).
 - Im neuen Ordner "Market Terminal starten" doppelklicken. Das Desktop-Symbol
