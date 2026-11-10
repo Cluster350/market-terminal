@@ -129,29 +129,33 @@ class IntrinsicService:
 
     # --- Daten ----------------------------------------------------------------
 
+    async def _bond_10y(self, cc: str) -> Optional[tuple[float, str]]:
+        """Letzte Rendite der zehnjährigen Staatsanleihe (in %) und Name der Zinskurve aus GC. Geholt wird nur diese
+        eine Kursreihe, nicht die ganze Kurve mit zehn Laufzeiten (spart neun Abrufe je Währung)."""
+        entry = self.t.p.catalog.curves.get(cc)
+        ticker = next((t for tenor, _, t in entry[1] if tenor == "10Y"), None) if entry else None
+        if ticker is None:
+            return None
+        try:
+            h = await self.t.history(ticker)
+        except TerminalError:
+            return None
+        closes = [x for _, x in zip(h.t, h.c) if x is not None]
+        return (closes[-1], entry[0]) if closes else None
+
     async def _riskfree(self, currency: Optional[str]) -> tuple[float, str, list[str]]:
         warn: list[str] = []
         cc = CURVE_BY_CURRENCY.get(currency or "")
         if cc:
-            try:
-                curves = await self.t.curves([cc])
-                for c in curves:
-                    if c.country == cc:
-                        y = next((p.y for p in c.points if p.tenor == "10Y" and p.y is not None), None)
-                        if y is not None:
-                            return y / 100, f"Staatsanleihe {c.name} 10 Jahre (GC)", warn
-            except TerminalError:
-                pass
+            hit = await self._bond_10y(cc)
+            if hit is not None:
+                return hit[0] / 100, f"Staatsanleihe {hit[1]} 10 Jahre (GC)", warn
         if currency in FALLBACK_RF:
             return FALLBACK_RF[currency], f"Richtwert 10-jährige Staatsanleihe ({currency}), keine Zinskurve im Terminal", warn
         warn.append(f"Kein risikoloser Zins für {currency or 'die Berichtswährung'} – US-Staatsanleihe als Ersatz.")
-        try:
-            for c in await self.t.curves(["US"]):
-                y = next((p.y for p in c.points if p.tenor == "10Y" and p.y is not None), None)
-                if y is not None:
-                    return y / 100, "Staatsanleihe USA 10 Jahre (Ersatz)", warn
-        except TerminalError:
-            pass
+        hit = await self._bond_10y("US")
+        if hit is not None:
+            return hit[0] / 100, "Staatsanleihe USA 10 Jahre (Ersatz)", warn
         return 0.04, "Richtwert 4 % (keine Zinsdaten)", warn
 
     async def _fx(self, from_cur: str, to_cur: str) -> Optional[float]:

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TrendDotsPrimitive } from "../components/trendDots";
 import { dotStyle, dotTier, RANDOM_SHARE_STRONG, randomBaseline, randomQuantile, randomRank, scanParams, STRONG_TIER, T_CAP, trendScan, tscanLevels, vsRandomText } from "./trendscan";
 
 // Prüfreihe ohne Zufall: 40-Balken-Welle + 7-Balken-Welle + leichter Anstieg
@@ -151,5 +152,24 @@ describe("Trend-Scanning (wie mlfinlab trend_scanning_labels)", () => {
     expect(crossing.length).toBeGreaterThan(5);
     expect(crossing.every(({ q }) => q.ret === null && q.diff !== null)).toBe(true);
     expect(r[39].diff!).toBeGreaterThan(0);
+  });
+
+  it("Punkte: Aussehen einmal beim Setzen gerechnet, gezeichnet wie dotStyle, starke zuletzt (oben)", () => {
+    const dots = [
+      { time: 1 as never, price: 10, t: 4, rank: 0.95 },
+      { time: 2 as never, price: 11, t: null, rank: null },
+      { time: 3 as never, price: 12, t: -3, rank: 0.7 },
+    ];
+    const prim = new TrendDotsPrimitive();
+    const fills: string[] = [];
+    const ctx = { set fillStyle(v: string) { fills.push(v); }, beginPath() {}, arc() {}, fill() {} };
+    const chart = { timeScale: () => ({ logicalToCoordinate: (l: number) => l * 6, timeToCoordinate: (t: number) => t * 6 }) };
+    prim.attached({ chart, series: { priceToCoordinate: (p: number) => p }, requestUpdate: () => {} } as never);
+    prim.setDots(dots, false);
+    expect(prim.dots.map((d) => d.time)).toEqual([2, 3, 1]);
+    expect(prim.dots.map((d) => d.style)).toEqual([null, dotStyle(-3, 0.7), dotStyle(4, 0.95)]);
+    prim.paneViews()[0].renderer().draw({ useMediaCoordinateSpace: (f: (a: unknown) => void) => f({ context: ctx, mediaSize: { width: 100 } }) } as never);
+    // noch offen: dunkler Punkt; sonst dunkler Rand (ab etwas Farbe) und Punkt in der Farbe aus dotStyle
+    expect(fills).toEqual(["#4a4a4a", "#0a0a0a", dotStyle(-3, 0.7).color, "#0a0a0a", dotStyle(4, 0.95).color]);
   });
 });

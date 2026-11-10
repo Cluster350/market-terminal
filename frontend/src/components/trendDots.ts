@@ -26,6 +26,9 @@ export interface TrendDot {
   rank: number | null;
 }
 
+/** Punkt mit vorab gerechnetem Aussehen; style null = noch kein Ergebnis */
+type StyledDot = TrendDot & { style: ReturnType<typeof dotStyle> | null };
+
 /** noch kein Ergebnis: kleiner dunkelgrauer Punkt */
 const OPEN = { radius: 1.5, color: "#4a4a4a" };
 const BACKGROUND = "#0a0a0a";
@@ -56,11 +59,11 @@ class Renderer implements ISeriesPrimitivePaneRenderer {
         if (x === null || x < -12 || x > mediaSize.width + 12) continue;
         const y = series.priceToCoordinate(d.price);
         if (y === null) continue;
-        if (d.t === null || d.rank === null) {
+        const st = d.style;
+        if (st === null) {
           circle(ctx, x, y, OPEN.radius * f, OPEN.color);
           continue;
         }
-        const st = dotStyle(d.t, d.rank);
         const r = st.radius * f;
         if (st.mix > 0.05) circle(ctx, x, y, r + 1.3 * f, BACKGROUND); // dunkler Rand trennt eng liegende Punkte
         circle(ctx, x, y, r, st.color);
@@ -83,7 +86,7 @@ class PaneView implements ISeriesPrimitivePaneView {
 export class TrendDotsPrimitive implements ISeriesPrimitive<Time> {
   chart: IChartApiBase<Time> | null = null;
   series: ISeriesApi<SeriesType> | null = null;
-  dots: TrendDot[] = [];
+  dots: StyledDot[] = [];
   hollow = false;
   private requestUpdate: (() => void) | null = null;
   private views = [new PaneView(this)];
@@ -106,7 +109,10 @@ export class TrendDotsPrimitive implements ISeriesPrimitive<Time> {
 
   /** Punkte setzen; hollow = Rückblick (hohle Punkte). */
   setDots(dots: TrendDot[], hollow: boolean) {
-    this.dots = [...dots].sort((a, b) => (a.rank ?? -1) - (b.rank ?? -1));
+    // Farbe und Größe hängen nur an t und Rang: einmal hier rechnen, nicht bei jedem Neuzeichnen (Fadenkreuz, Zoom)
+    this.dots = dots
+      .map((d) => ({ ...d, style: d.t === null || d.rank === null ? null : dotStyle(d.t, d.rank) }))
+      .sort((a, b) => (a.rank ?? -1) - (b.rank ?? -1));
     this.hollow = hollow;
     try {
       this.requestUpdate?.();

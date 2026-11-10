@@ -286,3 +286,34 @@ def test_api_financials_excluded_and_unknown(client):
 def test_api_params_status(client):
     r = client.get("/api/intrinsic/params").json()
     assert r["erp"] == pytest.approx(Params().erp) and r["loaded_at"] is None and "Richtwert" in r["erp_source"]
+
+
+def test_riskfree_loads_only_the_ten_year_bond():
+    # Für den risikolosen Zins genügt die zehnjährige Anleihe – nicht die ganze Zinskurve (zehn Kursabrufe je Währung)
+    from app.intrinsic.service import IntrinsicService
+    from app.services.terminal import Terminal
+
+    prov = DemoProvider(now_fn=lambda: dt.datetime(2026, 10, 28, 15, 0, tzinfo=UTC))
+    calls: list[str] = []
+    load = prov.history
+
+    async def history(ticker):
+        calls.append(ticker)
+        return await load(ticker)
+
+    prov.history = history  # type: ignore[method-assign]
+    t = Terminal(prov)
+    svc = IntrinsicService(t, None)
+
+    async def run():
+        rf, src, warn = await svc._riskfree("USD")
+        assert calls == ["US10Y.GBOND"] and warn == [] and src == "Staatsanleihe USA 10 Jahre (GC)"
+        # gleicher Wert wie der 10-Jahres-Punkt der Zinskurve in GC
+        us = (await t.curves(["US"]))[0]
+        assert rf == next(p.y for p in us.points if p.tenor == "10Y") / 100
+        rf2, src2, warn2 = await svc._riskfree("BRL")  # ohne eigene Kurve und Richtwert: US-Anleihe als Ersatz
+        assert rf2 == rf and src2 == "Staatsanleihe USA 10 Jahre (Ersatz)" and "Ersatz" in warn2[0]
+        rf3, src3, _ = await svc._riskfree("CHF")
+        assert "Richtwert" in src3 and rf3 > 0
+
+    asyncio.run(run())
