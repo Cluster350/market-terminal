@@ -77,6 +77,22 @@ def _rng(*parts: Any) -> random.Random:
     return random.Random(_seed(*parts))
 
 
+def _story_draw(ticker: str, kind: str, size: int, slot: int) -> tuple[random.Random, Optional[int]]:
+    """Zufallsquelle und Termin (Ordinalzahl des Tages) einer Unternehmensmeldung im Fenster ``slot``."""
+    r = _rng("story", ticker, kind, size, slot)
+    start = slot * size
+    # Termin im ersten Teil des Fensters: zwei Meldungen benachbarter Fenster liegen so
+    # mindestens ein Drittel des Fensters auseinander (nicht an zwei Tagen hintereinander)
+    weekdays = [o for o in range(start, start + max(1, 2 * size // 3)) if dt.date.fromordinal(o).weekday() < 5]
+    return r, (weekdays[r.randrange(len(weekdays))] if weekdays else None)
+
+
+@lru_cache(maxsize=16384)
+def _story_slot(ticker: str, kind: str, size: int, slot: int) -> tuple[Optional[int]]:
+    """Nur der Termin aus ``_story_draw`` – hängt allein von den Argumenten ab und wird deshalb gemerkt."""
+    return (_story_draw(ticker, kind, size, slot)[1],)
+
+
 def business_days(start: dt.date, end: dt.date) -> list[dt.date]:
     days: list[dt.date] = []
     d = start
@@ -1627,12 +1643,14 @@ class DemoProvider:
         self._fund_cache[key] = out  # type: ignore[index]
         return out
 
-    def _news_day(self, day: dt.date) -> list[NewsItem]:
+    def _news_day(self, day: dt.date, reports: Optional[dict[dt.date, list[tuple[str, dict]]]] = None) -> list[NewsItem]:
+        """Meldungen eines Tages. ``reports``: Berichtstermine aus ``_report_index`` (der Feed über mehrere Tage
+        reicht sie durch, statt den Veröffentlichungsstand aller Unternehmen je Tag neu zu prüfen)."""
         items: list[NewsItem] = []
         weekend = day.weekday() >= 5
         # Quartalszahlen erscheinen genau an den Berichtsterminen aus ERN
         if not weekend:
-            for i, (t, rec) in enumerate(self._report_index().get(day, [])):
+            for i, (t, rec) in enumerate((self._report_index() if reports is None else reports).get(day, [])):
                 items.extend(self._earnings_story(_COMPANY[t], rec, day, i))
         # Unternehmensmeldungen: je Unternehmen und Meldungsart höchstens eine pro Zeitfenster,
         # an einem festen Werktag (sonst stufte "ein Analyst" denselben Titel zweimal am Tag hoch)
@@ -1710,6 +1728,7 @@ class DemoProvider:
         return items
 
     @staticmethod
+    @lru_cache(maxsize=None)
     def _news_scale(c: tuple) -> float:
         """Kleinere Unternehmen erscheinen seltener in den Nachrichten (längere Fenster)."""
         biggest = max(x[5] for x in D.COMPANIES)
@@ -1720,13 +1739,12 @@ class DemoProvider:
         """Meldung ``kind`` zu ``ticker`` an ``day``? Höchstens eine je Fenster, nur an Werktagen."""
         size = max(1, round(window))
         slot = day.toordinal() // size
-        r = _rng("story", ticker, kind, size, slot)
-        start = slot * size
-        # Termin im ersten Teil des Fensters: zwei Meldungen benachbarter Fenster liegen so
-        # mindestens ein Drittel des Fensters auseinander (nicht an zwei Tagen hintereinander)
-        weekdays = [o for o in range(start, start + max(1, 2 * size // 3)) if dt.date.fromordinal(o).weekday() < 5]
-        if not weekdays or dt.date.fromordinal(weekdays[r.randrange(len(weekdays))]) != day:
+        # Der Termin eines Fensters steht fest und ist gemerkt: Der Feed fragt je Abruf jedes Unternehmen, jede
+        # Meldungsart und zehn Tage ab (rund 2.400 Fragen), fast immer mit der Antwort „nicht heute“.
+        if _story_slot(ticker, kind, size, slot)[0] != day.toordinal():
             return None
+        # Treffer: frische Zufallsquelle im selben Zustand wie nach der Terminwahl (der Aufrufer zieht weiter aus ihr)
+        r, _ = _story_draw(ticker, kind, size, slot)
         return r, r.randint(7 * 60, 21 * 60)
 
     @staticmethod
@@ -1870,9 +1888,10 @@ class DemoProvider:
         now = self.now()
         cutoff = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         items: list[NewsItem] = []
+        reports = self._report_index()
         for k in range(0, 10):
             day = now.date() - dt.timedelta(days=k)
-            items.extend(n for n in self._news_day(day) if n.date <= cutoff)
+            items.extend(n for n in self._news_day(day, reports) if n.date <= cutoff)
         if tickers:
             wanted = set(tickers)
             items = [n for n in items if wanted.intersection(n.symbols)]

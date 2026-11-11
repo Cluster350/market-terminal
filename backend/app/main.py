@@ -112,6 +112,11 @@ def make_provider(cfg: Settings) -> Provider:
     return DemoProvider()
 
 
+# Der Server ist nur lokal erreichbar: Übertragene Bytes kosten nichts, Rechenzeit schon. Stufe 9 (Standard von
+# Starlette) brauchte für einen Kursverlauf (170 KB) rund 20 ms, Stufe 1 unter 2 ms bei etwa 9 % mehr Bytes.
+GZIP_LEVEL = 1
+
+
 class _GZipExceptStream(GZipMiddleware):
     """GZip für alle Antworten außer dem Echtzeit-Strom: Komprimierung würde die Ereignisse puffern."""
 
@@ -266,7 +271,7 @@ def create_app(
         await prov.close()
 
     app = FastAPI(title="Market Terminal API", version="1.0.0", lifespan=lifespan, default_response_class=SafeJSONResponse)
-    app.add_middleware(_GZipExceptStream, minimum_size=2048)
+    app.add_middleware(_GZipExceptStream, minimum_size=2048, compresslevel=GZIP_LEVEL)
 
     @app.middleware("http")
     async def flags(request: Request, call_next):
