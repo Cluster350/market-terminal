@@ -151,15 +151,18 @@ export function mergePosition(positions: Position[], add: Position): { positions
   return { positions: next, merged: true };
 }
 
-/** Zahl in deutscher oder englischer Schreibweise (1.234,5 / 1,234.5 / 1234,5). */
-export function parseNumber(raw: string): number | null {
+/**
+ * Zahl in deutscher oder englischer Schreibweise (1.234,5 / 1,234.5 / 1234,5).
+ * ``dotDecimal``: der Punkt ist sicher das Dezimalzeichen (kommagetrennte CSV) – „150.125“ bleibt dann 150,125.
+ */
+export function parseNumber(raw: string, dotDecimal = false): number | null {
   let s = raw.trim().replace(/\s|€|\$|£|%/g, "");
   if (!s) return null;
   const comma = s.lastIndexOf(",");
   const dot = s.lastIndexOf(".");
   if (comma > dot) s = s.replace(/\./g, "").replace(",", ".");
   else if (dot > comma && comma >= 0) s = s.replace(/,/g, "");
-  else if (comma < 0 && /^-?[1-9]\d{0,2}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ""); // 1.000 = tausend, aber 0.865 bleibt 0,865
+  else if (comma < 0 && !dotDecimal && /^-?[1-9]\d{0,2}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ""); // 1.000 = tausend, aber 0.865 bleibt 0,865
   const x = Number(s);
   return Number.isFinite(x) ? x : null;
 }
@@ -200,7 +203,7 @@ export function parseCsv(text: string): CsvResult {
     const cells = line.split(sep).map((c) => c.trim().replace(/^"(.*)"$/, "$1"));
     if (n === 0 && /ticker|symbol|wertpapier|isin|name/i.test(cells[0])) return; // Kopfzeile
     const ticker = normalizeTicker(cells[0] ?? "");
-    const qty = parseNumber(cells[1] ?? "");
+    const qty = parseNumber(cells[1] ?? "", sep === ",");
     if (!ticker) {
       errors.push(`Zeile ${n + 1}: Ticker „${cells[0] ?? ""}“ nicht erkannt.`);
       return;
@@ -209,7 +212,7 @@ export function parseCsv(text: string): CsvResult {
       errors.push(`Zeile ${n + 1}: Stückzahl fehlt.`);
       return;
     }
-    const cost = cells[2] ? parseNumber(cells[2]) : null;
+    const cost = cells[2] ? parseNumber(cells[2], sep === ",") : null;
     if (cells[2] && (cost === null || cost <= 0)) {
       errors.push(`Zeile ${n + 1}: Einstandskurs „${cells[2]}“ ungültig – ohne Kurs übernommen.`);
     }

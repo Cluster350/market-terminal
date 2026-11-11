@@ -148,6 +148,11 @@ export function parseLeverInput(text: string): number | null {
   return Number.isFinite(v) ? v : null;
 }
 
+/** Wurde genau dieser Hebelwert schon abgefragt? Dann ändert eine erneute Eingabe nichts an der Antwort. */
+export function leverAlreadySent(sent: number | undefined, next: number): boolean {
+  return sent !== undefined && Math.abs(sent - next) < 1e-9;
+}
+
 /** Nur die Hebel, die vom Startwert abweichen (so bleibt die Abfrage bei Startwerten ein GET). */
 export function changedLevers(levers: Levers, defaults: IvLever[]): Levers {
   const out: Levers = {};

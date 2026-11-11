@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changedLevers, distAxisBounds, inputToLever, leverToInput, parseLeverInput, type IvLever } from "./intrinsic";
+import { changedLevers, distAxisBounds, inputToLever, leverAlreadySent, leverToInput, parseLeverInput, type IvLever } from "./intrinsic";
 
 const lv = (key: string, unit: IvLever["unit"], value: number, def = value): IvLever => ({ key, label: key, value, default: def, unit, min: 0, max: 1, step: 0.01, hint: "" });
 
@@ -18,6 +18,14 @@ describe("DCF-Hebel", () => {
     expect(parseLeverInput("")).toBeNull();
     expect(parseLeverInput("   ")).toBeNull();
     expect(parseLeverInput("abc")).toBeNull();
+  });
+  it("erkennt eine wiederholte Eingabe (Feld zeigte sonst weiter 999 statt der begrenzten 25)", () => {
+    const wacc = lv("wacc", "pct", 0.25, 0.0962); // Antwort nach der Eingabe 999: auf 25 % begrenzt
+    expect(leverAlreadySent(9.99, inputToLever(wacc, 999))).toBe(true);
+    expect(leverAlreadySent(9.99, inputToLever(wacc, 20))).toBe(false);
+    expect(leverAlreadySent(undefined, inputToLever(wacc, 999))).toBe(false);
+    // Jahre werden gerundet: 3,4 nach 3,4 ist dieselbe Abfrage
+    expect(leverAlreadySent(3, inputToLever(lv("margin_year", "year", 3, 5), 3.4))).toBe(true);
   });
   it("schickt nur Hebel, die vom Startwert abweichen", () => {
     const defs = [lv("growth_next", "pct", 0.1, 0.1), lv("wacc", "pct", 0.09, 0.09)];

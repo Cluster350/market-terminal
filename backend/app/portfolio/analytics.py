@@ -322,7 +322,9 @@ async def analyze(t: Terminal, p: Portfolio, risk: bool = True) -> Analytics:
     pnl = sum(x for x, _ in with_cost) if with_cost else None
     summary = Summary(
         value=total, positions_value=positions_value, cash=p.cash, invested=invested,
-        day_pnl=day_pnl, day_pnl_pct=day_pnl / (total - day_pnl) * 100 if day_pnl is not None and total - day_pnl else None,
+        # Betrag des Vortageswerts: Bei negativem Depotwert (Leerverkäufe, Kredit) hätte der Prozentwert sonst das
+        # umgekehrte Vorzeichen des Betrags („−43,76 · +2,62 %“)
+        day_pnl=day_pnl, day_pnl_pct=day_pnl / abs(total - day_pnl) * 100 if day_pnl is not None and total - day_pnl else None,
         pnl=pnl, pnl_pct=pnl / invested * 100 if pnl is not None and invested else None, count=len(positions),
     )
     for r in rows:

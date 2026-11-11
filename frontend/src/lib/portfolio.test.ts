@@ -63,6 +63,16 @@ describe("CSV", () => {
     expect(parseCsv(csv).positions[0]).toMatchObject({ ticker: "SAP.XETRA", quantity: 12.5, cost: 182.25, opened: "2024-03-15" });
   });
 
+  it("liest in kommagetrennten Zeilen den Punkt als Dezimalzeichen (150.125 war 150125)", () => {
+    const r = parseCsv("Ticker,Quantity,Price\nNWND US,1.500,150.125\nSAP GR,10,99.5");
+    expect(r.positions[0]).toMatchObject({ ticker: "NWND.US", quantity: 1.5, cost: 150.125 });
+    expect(r.positions[1]).toMatchObject({ quantity: 10, cost: 99.5 });
+    // mit Semikolon oder Tab bleibt 1.000 die deutsche Tausenderschreibweise
+    expect(parseCsv("NWND US;1.000;150,125").positions[0]).toMatchObject({ quantity: 1000, cost: 150.125 });
+    expect(parseNumber("1.000")).toBe(1000);
+    expect(parseNumber("1.000", true)).toBe(1);
+  });
+
   it("nennt Zeilennummern je Ticker und lehnt unmögliche Daten ab", () => {
     const r = parseCsv("NWND US; 10; 100; 31.02.2024\nSAP GR; 5\nNWND US; 5; 120");
     expect(r.lines["NWND.US"]).toEqual([1, 3]);

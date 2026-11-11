@@ -15,6 +15,7 @@ import {
   distAxisBounds,
   inputToLever,
   leverToInput,
+  leverAlreadySent,
   parseLeverInput,
   useIntrinsic,
   type CoachResult,
@@ -117,7 +118,7 @@ function distOption(d: NonNullable<IntrinsicResult["distribution"]>, value: numb
   };
 }
 
-function LeverInput({ lv, onCommit }: { lv: IvLever; onCommit: (v: number | null) => void }) {
+function LeverInput({ lv, sent, onCommit }: { lv: IvLever; sent?: number; onCommit: (v: number | null) => void }) {
   const shown = leverToInput(lv, lv.value);
   const [text, setText] = useState(String(shown).replace(".", ","));
   useEffect(() => setText(String(shown).replace(".", ",")), [shown]);
@@ -135,8 +136,12 @@ function LeverInput({ lv, onCommit }: { lv: IvLever; onCommit: (v: number | null
     const v = parseLeverInput(text);
     if (v === null) return setText(String(shown).replace(".", ","));
     if (Math.abs(v - shown) < 1e-9) return;
+    const next = inputToLever(lv, v);
+    // Dieselbe Eingabe noch einmal (z. B. erneut 999 nach der Begrenzung auf 25): Es kommt keine neue Antwort,
+    // also gleich wieder den gerechneten Wert zeigen – sonst bliebe die verworfene Eingabe im Feld stehen
+    if (leverAlreadySent(sent, next)) return setText(String(shown).replace(".", ","));
     committed.current = true;
-    onCommit(inputToLever(lv, v));
+    onCommit(next);
   };
   const unit = lv.unit === "pct" ? "%" : lv.unit === "x" ? "×" : "";
   return (
@@ -427,7 +432,7 @@ export function DCF({ ticker }: ScreenProps) {
         <div className="dcf-levers">
           <div className="section-title" title="Die Story in Zahlen. Startwerte aus Historie und Branche; ändern und mit Enter bestätigen.">Story-Hebel</div>
           {d.levers.map((lv) => (
-            <LeverInput key={lv.key} lv={lv} onCommit={(v) => setLever(lv.key, v)} />
+            <LeverInput key={lv.key} lv={lv} sent={levers[lv.key]} onCommit={(v) => setLever(lv.key, v)} />
           ))}
           <div className="xs dim" style={{ marginTop: 6 }}>Geänderte Hebel sind orange markiert; ↺ setzt zurück.</div>
         </div>
