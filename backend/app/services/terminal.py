@@ -534,7 +534,7 @@ class Terminal:
         if group == "rates":
             await asyncio.gather(*(bond(iso, cc) for iso, _, cc, _, _ in WORLD if cc))
             note = "Rendite zehnjähriger Staatsanleihen; Veränderung in Basispunkten gegenüber vor einem Monat."
-        else:
+        elif group == "macro":  # nicht bei „equity“: dort überschrieb der Makro-Hinweis den Text zu den Aktienindizes
             table = await self.countries(countries={iso: name for iso, name, _, _, _ in WORLD})
             for row in table.rows:
                 if row.country in out:

@@ -145,7 +145,8 @@ def _hostname(value: Optional[str]) -> Optional[str]:
     if v.startswith("["):
         end = v.find("]")
         return v[1:end] if end > 0 else None
-    return v.rsplit(":", 1)[0] if ":" in v else v
+    v = v.rsplit(":", 1)[0] if ":" in v else v
+    return v[:-1] if v.endswith(".") else v  # „localhost.“ (voll ausgeschriebener Name) ist derselbe Rechner
 
 
 def _origin_host(origin: str) -> Optional[str]:
