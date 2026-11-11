@@ -62,3 +62,18 @@ def test_day_pnl_percent_has_sign_of_amount(client):
         assert s.day_pnl and s.day_pnl_pct
         assert (s.day_pnl > 0) == (s.day_pnl_pct > 0)
         assert abs(s.day_pnl_pct) == pytest.approx(abs(s.day_pnl / (s.value - s.day_pnl)) * 100)
+
+
+def test_no_weights_when_portfolio_value_is_negative(client):
+    """Bei negativem Depotwert (Kredit größer als das Depot) bekam eine Kaufposition ein negatives Gewicht."""
+    import asyncio
+
+    from app.portfolio.analytics import analyze
+    from app.portfolio.models import Portfolio, Position
+
+    t = client.app.state.terminal
+    a = asyncio.run(analyze(t, Portfolio(base="EUR", cash=-1e6, positions=[Position(ticker="NWND.US", quantity=10, cost=50)])))
+    assert a.summary.value < 0 and all(r.weight is None for r in a.rows)
+    assert all(s.weight == 0 for slices in a.allocation.values() for s in slices)
+    a = asyncio.run(analyze(t, Portfolio(base="EUR", cash=100, positions=[Position(ticker="NWND.US", quantity=10, cost=50)])))
+    assert a.rows[0].weight and a.rows[0].weight > 0

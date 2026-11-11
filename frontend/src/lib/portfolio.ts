@@ -144,7 +144,7 @@ export function mergePosition(positions: Position[], add: Position): { positions
     cost = old.cost ?? add.cost;
   }
   const opened = [old.opened, add.opened].filter((d): d is string => !!d).sort()[0] ?? null;
-  const merged: Position = { ...old, quantity: qty, cost: cost === null ? null : Math.round(cost * 10000) / 10000, opened, note: old.note || add.note };
+  const merged: Position = { ...old, quantity: qty, cost: cost === null ? null : Math.round(cost * 10000) / 10000, opened, note: old.note || add.note, currency: old.currency ?? add.currency };
   const next = positions.slice();
   if (qty === 0) next.splice(i, 1);
   else next[i] = merged;
@@ -165,6 +165,18 @@ export function parseNumber(raw: string, dotDecimal = false): number | null {
   else if (comma < 0 && !dotDecimal && /^-?[1-9]\d{0,2}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ""); // 1.000 = tausend, aber 0.865 bleibt 0,865
   const x = Number(s);
   return Number.isFinite(x) ? x : null;
+}
+
+/**
+ * Kursmarke lesen, wenn ein Vergleichskurs bekannt ist: „1.163“ kann 1163 oder 1,163 heißen. Gewählt wird die Lesart,
+ * die näher am Kurs liegt (EUR/USD bei 1,16 → 1,163; DAX bei 24 000 und „24.500“ → 24500). Ohne Kurs gilt parseNumber.
+ */
+export function parseNear(raw: string, ref: number | null | undefined): number | null {
+  const a = parseNumber(raw);
+  if (a === null || a <= 0 || ref == null || !(ref > 0)) return a;
+  const b = parseNumber(raw, true);
+  if (b === null || b <= 0 || b === a) return a;
+  return Math.abs(Math.log(b / ref)) < Math.abs(Math.log(a / ref)) ? b : a;
 }
 
 /** Datum als JJJJ-MM-TT aus 2026-01-05 oder 05.01.2026. */
@@ -190,7 +202,8 @@ export interface CsvResult {
 }
 
 /**
- * Depotliste aus CSV oder kopierten Tabellenzeilen: Ticker; Stück; Einstandskurs; Kaufdatum; Notiz.
+ * Depotliste aus CSV oder kopierten Tabellenzeilen: Ticker; Stück; Einstandskurs; Kaufdatum; Notiz; Währung
+ * (Währung nur, wenn die Handelswährung von der Börse abweicht).
  * Trennzeichen Semikolon, Tab oder Komma (dann mit Punkt als Dezimaltrenner). Kopfzeile wird erkannt.
  */
 export function parseCsv(text: string): CsvResult {
@@ -224,7 +237,7 @@ export function parseCsv(text: string): CsvResult {
       quantity: qty,
       cost: cost !== null && cost > 0 ? cost : null,
       opened,
-      currency: null,
+      currency: /^[A-Za-z]{3}$/.test(cells[5] ?? "") ? cells[5].toUpperCase() : null,
       note: (cells[4] ?? "").slice(0, 200),
     };
     positions = mergePosition(positions, pos).positions;
@@ -239,7 +252,7 @@ const deDate = (iso: string | null) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5
 
 /** Export im selben Format wie der Import: Terminal-Ticker (SAP GR) und Datum TT.MM.JJJJ. */
 export function toCsv(p: Portfolio): string {
-  const head = "Ticker;Stück;Einstandskurs;Kaufdatum;Notiz";
-  const rows = p.positions.map((x) => [displayTicker(x.ticker), csvNum(x.quantity), csvNum(x.cost), deDate(x.opened), x.note.replace(/[;\r\n]/g, " ")].join(";"));
+  const head = "Ticker;Stück;Einstandskurs;Kaufdatum;Notiz;Währung";
+  const rows = p.positions.map((x) => [displayTicker(x.ticker), csvNum(x.quantity), csvNum(x.cost), deDate(x.opened), x.note.replace(/[;\r\n]/g, " "), x.currency ?? ""].join(";"));
   return [head, ...rows].join("\r\n") + "\r\n";
 }

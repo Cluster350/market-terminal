@@ -312,8 +312,10 @@ async def analyze(t: Terminal, p: Portfolio, risk: bool = True) -> Analytics:
 
     positions_value = sum(now_values.values())
     total = positions_value + p.cash
+    # Gewichte nur bei positivem Depotwert: Bei negativem Gesamtwert (Leerverkäufe, Kredit) bekäme eine
+    # Kaufposition ein negatives Gewicht – dann lieber keines zeigen
     for r in rows:
-        if r.value is not None and total:
+        if r.value is not None and total > 0:
             r.weight = r.value / total * 100
     day = [r.day_pnl for r in rows if r.day_pnl is not None]
     day_pnl = sum(day) if day else None
@@ -342,7 +344,7 @@ async def analyze(t: Terminal, p: Portfolio, risk: bool = True) -> Analytics:
         if p.cash:
             k = p.base if dim == "currency" else "Kasse"
             acc[k] = acc.get(k, 0.0) + p.cash
-        allocation[dim] = sorted((Slice(key=k, value=v, weight=v / total * 100 if total else 0.0) for k, v in acc.items()), key=lambda s: -s.value)
+        allocation[dim] = sorted((Slice(key=k, value=v, weight=v / total * 100 if total > 0 else 0.0) for k, v in acc.items()), key=lambda s: -s.value)
 
     bench = choose_benchmark(p, now_values)
     result = Analytics(

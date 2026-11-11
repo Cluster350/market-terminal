@@ -8,7 +8,7 @@ import { alertStatus, alertsApi, conditionLabel, useAlerts, useAlertsRefresh, ty
 import { normalizeTicker } from "../lib/commands";
 import { displayTicker, fmt, fmtDate, fmtPct, fmtPrice, fmtTime, tone } from "../lib/format";
 import { isBool, usePersistentState } from "../lib/persist";
-import { parseNumber } from "../lib/portfolio";
+import { parseNear } from "../lib/portfolio";
 import { useExampleTickers, useQuotes, useStatus } from "../lib/queries";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
@@ -74,7 +74,7 @@ export function ALRT(_: ScreenProps) {
 
   async function submit() {
     if (!formTicker) return setMsg({ text: `Ticker nicht erkannt (z. B. ${examples[0]}, ${examples[1]}, DAX Index).`, err: true });
-    const level = parseNumber(value);
+    const level = parseNear(value, quote?.last); // „1.163“ bei EUR/USD ist 1,163, nicht 1163
     if (level === null || level <= 0) return setMsg({ text: "Bitte einen Wert größer 0 eingeben.", err: true });
     // „Kurs fällt unter 60“ bei einem Kurs von 58 löste sofort aus – meist ein Versehen
     const last = quote?.last;
@@ -117,7 +117,7 @@ export function ALRT(_: ScreenProps) {
             className="alrt-edit"
             onSubmit={(e) => {
               e.preventDefault();
-              const level = parseNumber(edit.level);
+              const level = parseNear(edit.level, a.level);
               if (level === null || level <= 0) return setMsg({ text: "Bitte einen Wert größer 0 eingeben.", err: true });
               const e2 = edit;
               setEdit(null);

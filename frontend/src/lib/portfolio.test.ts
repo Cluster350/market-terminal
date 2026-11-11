@@ -3,7 +3,7 @@ import { corrColor } from "../screens/portfolio";
 import { PAGES, pageForFn } from "../state/workspace";
 import { exampleQuestions } from "./ai";
 import { resolveFn } from "./commands";
-import { mergePosition, parseCsv, parseDate, parseNumber, toCsv, type Portfolio, type Position } from "./portfolio";
+import { mergePosition, parseCsv, parseDate, parseNear, parseNumber, toCsv, type Portfolio, type Position } from "./portfolio";
 
 const pos = (ticker: string, quantity: number, cost: number | null, opened: string | null = null): Position => ({
   id: ticker, ticker, quantity, cost, opened, currency: null, note: "",
@@ -59,7 +59,7 @@ describe("CSV", () => {
     const p: Portfolio = { version: 1, base: "EUR", benchmark: null, cash: 0, updated: null, sample: false, positions: [pos("SAP.XETRA", 12.5, 182.25, "2024-03-15")] };
     const csv = toCsv(p);
     // Export im Terminal-Format (SAP GR, TT.MM.JJJJ) – der Import liest es wieder ein
-    expect(csv.split("\r\n")[1]).toBe("SAP GR;12,5;182,25;15.03.2024;");
+    expect(csv.split("\r\n")[1]).toBe("SAP GR;12,5;182,25;15.03.2024;;");
     expect(parseCsv(csv).positions[0]).toMatchObject({ ticker: "SAP.XETRA", quantity: 12.5, cost: 182.25, opened: "2024-03-15" });
   });
 
@@ -118,5 +118,22 @@ describe("Seite DEPOT", () => {
   it("schlägt die Depotfrage in ASK vor", () => {
     expect(exampleQuestions(null)[0]).toBe("Wie riskant ist mein Depot?");
     expect(exampleQuestions("SAP GR").slice(0, 3)).toEqual(["Wie steht SAP GR?", "Ist SAP GR teuer im Vergleich zur Branche?", "Wie riskant ist mein Depot?"]);
+  });
+
+  it("behält eine abweichende Handelswährung über Export und Import", () => {
+    const p: Portfolio = { version: 1, base: "EUR", benchmark: null, cash: 0, updated: null, sample: false, positions: [{ ...pos("SAP.XETRA", 10, 100, null), currency: "USD", note: "x" }] };
+    const csv = toCsv(p);
+    expect(csv.split("\r\n")[0]).toBe("Ticker;Stück;Einstandskurs;Kaufdatum;Notiz;Währung");
+    expect(parseCsv(csv).positions[0]).toMatchObject({ currency: "USD", note: "x" });
+    expect(parseCsv("SAP GR;10;100;;Notiz;keine").positions[0].currency).toBeNull();
+  });
+
+  it("liest eine Kursmarke in der Lesart, die näher am Kurs liegt", () => {
+    expect(parseNear("1.163", 1.16)).toBe(1.163); // EUR/USD
+    expect(parseNear("24.500", 24000)).toBe(24500); // DAX
+    expect(parseNear("1.163", null)).toBe(1163); // ohne Kurs wie bisher
+    expect(parseNear("1,163", 1.16)).toBe(1.163);
+    expect(parseNear("182,5", 180)).toBe(182.5);
+    expect(parseNear("abc", 1)).toBeNull();
   });
 });
