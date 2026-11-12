@@ -21,7 +21,8 @@ from ..errors import BadRequest, TerminalError
 from .backtest import Score, apply_scales, evaluate
 from .base import Engine
 from .chronos_engine import DEFAULT_MODEL, ChronosEngine, installed
-from .models import FcBand, FcEngineScore, FcEngineStatus, FcQuality, FcSeries, ForecastResult, ForecastStatus
+from .models import (FcBand, FcEngineScore, FcEngineStatus, FcFeature, FcFeatureEffect, FcQuality, FcSeries,
+                     ForecastResult, ForecastStatus)
 from .simple import SimpleEngine
 
 log = logging.getLogger("terminal.forecast")
@@ -118,6 +119,8 @@ class ForecastService:
         next_consensus: Optional[float] = None,
         note: Optional[str] = None,
         extra: Optional[dict[str, Optional[float]]] = None,
+        features: Optional[Sequence] = None,  # features.Feature – Einflussgrößen, auf ``t`` ausgerichtet
+        feature_notes: Optional[Sequence[str]] = None,
     ) -> ForecastResult:
         engines = self.engines()
         if not engines:
@@ -126,11 +129,19 @@ class ForecastService:
             raise BadRequest(f"Zu wenig Werte für eine Prognose ({len(y)}; mindestens {MIN_POINTS}).")
         sig = hashlib.sha1(
             "|".join([kind, key, str(h), ",".join(e.name for e in engines), ",".join(t[-3:]), ",".join(f"{v:.6g}" for v in y[-3:]),
-                      str(len(y)), str(next_consensus)]).encode()
+                      str(len(y)), str(next_consensus),
+                      ";".join(f"{f.key}:{f.values[-1]}:{f.first}" for f in features or []), ";".join(feature_notes or [])]).encode()
         ).hexdigest()
         hit = self._cache.get(sig)
         if hit and time.time() - hit[0] < CACHE_SECONDS:
             return hit[1]
+
+        if features or feature_notes:
+            result = await self._with_features(
+                engines, list(features or []), list(feature_notes or []), kind=kind, key=key, label=label, unit=unit, freq=freq,
+                t=t, y=y, h=h, future_t=future_t, consensus=consensus, next_consensus=next_consensus, note=note, extra=extra)
+            self._store(sig, result)
+            return result
 
         values = [float(v) for v in y]
         scores: list[Score] = []
@@ -164,10 +175,116 @@ class ForecastService:
             engine=engine.name, engine_label=engine.label, quality=quality, verdict=verdict, verdict_text=text,
             note=note, extra=extra or {},
         )
+        self._store(sig, result)
+        return result
+
+    def _store(self, sig: str, result: ForecastResult) -> None:
         if len(self._cache) > 400:
             self._cache.clear()
         self._cache[sig] = (time.time(), result)
-        return result
+
+    async def _with_features(self, engines: list[Engine], features: list, notes: list[str], *, kind: str, key: str, label: str,
+                             unit: Optional[str], freq: str, t: Sequence[str], y: Sequence[float], h: int, future_t: Sequence[str],
+                             consensus: Optional[Sequence[Optional[float]]], next_consensus: Optional[float],
+                             note: Optional[str], extra: Optional[dict[str, Optional[float]]]) -> ForecastResult:
+        """Prognose mit Einflussgrößen und ehrlicher Vergleich: gleicher Zeitraum, gleicher Rückblick-Test,
+        einmal ohne und einmal mit den gewählten Reihen (dazu jede einzeln)."""
+        start = max((f.first or 0) for f in features) if features else 0
+        if features and len(y) - start < MIN_X_POINTS:
+            notes.append(f"Gemeinsamer Verlauf zu kurz ({len(y) - start} Zeitpunkte, nötig {MIN_X_POINTS}) – Prognose ohne Einflussgrößen.")
+            features = []
+            start = 0
+        values = [float(v) for v in y[start:]]
+        cons = list(consensus[start:]) if consensus is not None else None
+        xs = [[float(v) for v in f.values[start:]] for f in features]
+
+        base_scores = [await asyncio.to_thread(evaluate, e, values, h) for e in engines]
+        bi = _choose(base_scores)
+        base_engine, base = engines[bi], base_scores[bi]
+        base_raw = (await asyncio.to_thread(base_engine.predict, [values], h))[0]
+        base_table = [apply_scales(r, base.scale50, base.scale80) for r in base_raw]
+
+        engine, best, table = base_engine, base, base_table
+        compared = [FcEngineScore(engine=e.name, label=e.label, mae=s.mae, skill=s.skill) for e, s in zip(engines, base_scores)]
+        effect = FcFeatureEffect(mae_base=base.mae, baseline=_band(future_t, h, base_table), base_engine_label=base_engine.label,
+                                 points=len(values), notes=notes)
+        if xs:
+            cand: list[tuple[Engine, Score]] = []
+            for e in engines:
+                if not callable(getattr(e, "predict_x", None)):
+                    continue
+                try:
+                    cand.append((e, await asyncio.to_thread(evaluate, e, values, h, None, xs)))
+                except Exception as exc:  # noqa: BLE001 – ein Motor ohne Einflussgrößen darf die Prognose nicht verhindern
+                    log.warning("Prognose mit Einflussgrößen: %s fällt aus (%s)", e.name, exc)
+            if cand:
+                ci = _choose([s for _, s in cand])
+                engine, best = cand[ci]
+                raw = (await asyncio.to_thread(engine.predict_x, [values], [xs], h))[0]  # type: ignore[attr-defined]
+                table = [apply_scales(r, best.scale50, best.scale80) for r in raw]
+                compared += [FcEngineScore(engine=f"{e.name}+x", label=f"{e.label} mit Einflussgrößen", mae=s.mae, skill=s.skill) for e, s in cand]
+                effect.mae_with = best.mae
+                for f, x in zip(features, xs):
+                    if len(xs) == 1:
+                        alone = best
+                    else:
+                        alone = await asyncio.to_thread(evaluate, engine, values, h, None, [x])
+                    effect.features.append(FcFeature(key=f.key, label=f.label, mae=alone.mae, gain=_gain(alone.mae, base.mae)))
+                effect.gain = _gain(best.mae, base.mae)
+                effect.helps = None if effect.gain is None else effect.gain > 0.01
+            else:
+                notes.append("Kein Rechenverfahren konnte die Einflussgrößen verarbeiten – Prognose ohne sie.")
+        effect.text = _effect_text(effect)
+
+        quality = FcQuality(
+            origins=best.origins, pairs=best.pairs, mae=best.mae, mae_naive=best.mae_naive, skill=best.skill,
+            cover50=best.cover50, cover80=best.cover80, raw_cover80=best.raw_cover80, band_scale=round(best.scale80, 2), compared=compared,
+        )
+        if cons is not None:
+            _consensus_check(quality, best, values, cons)
+        verdict, text = judge(quality, kind)
+        return ForecastResult(
+            kind=kind, key=key, label=label, unit=unit, freq=freq,
+            history=FcSeries(t=list(t), v=[float(v) for v in y]),
+            consensus=FcSeries(t=list(t), v=list(consensus)) if consensus is not None else None,
+            next_consensus=next_consensus, forecast=_band(future_t, h, table),
+            engine=engine.name, engine_label=engine.label, quality=quality, verdict=verdict, verdict_text=text,
+            note=note, extra=extra or {}, features=effect,
+        )
+
+
+MIN_X_POINTS = 12
+
+
+def _band(future_t: Sequence[str], h: int, table: list[list[float]]) -> FcBand:
+    return FcBand(t=list(future_t)[:h], median=[r[2] for r in table], lo50=[r[1] for r in table], hi50=[r[3] for r in table],
+                  lo80=[r[0] for r in table], hi80=[r[4] for r in table])
+
+
+def _gain(mae: Optional[float], base: Optional[float]) -> Optional[float]:
+    return None if mae is None or not base else 1 - mae / base
+
+
+def _effect_text(e: FcFeatureEffect) -> str:
+    """Ergebnis des Vergleichs in Worten."""
+    if not e.features:
+        return "Keine der gewählten Einflussgrößen war nutzbar – Prognose nur aus dem eigenen Verlauf."
+    if e.gain is None:
+        return "Zu wenig Verlauf, um den Nutzen der Einflussgrößen im Rückblick zu prüfen."
+    pct = round(abs(e.gain) * 100)
+    if e.gain > 0.01:
+        text = f"Mit den Einflussgrößen war die Prognose im Rückblick {pct} % genauer als ohne."
+    elif e.gain < -0.01:
+        text = f"Mit den Einflussgrößen war die Prognose im Rückblick {pct} % ungenauer als ohne – sie helfen hier nicht."
+    else:
+        text = "Die Einflussgrößen haben die Prognose im Rückblick weder verbessert noch verschlechtert."
+    if len(e.features) > 1:
+        best = max((f for f in e.features if f.gain is not None), key=lambda f: f.gain or 0.0, default=None)
+        if best is not None and (best.gain or 0) > 0.01:
+            text += f" Am meisten brachte allein: {best.label}."
+    if e.points < 25:
+        text += f" Vorsicht: nur {e.points} gemeinsame Zeitpunkte – Zufallstreffer sind möglich."
+    return text
 
 
 def _choose(scores: list[Score]) -> int:

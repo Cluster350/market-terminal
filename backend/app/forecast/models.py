@@ -49,6 +49,36 @@ class FcQuality(Model):
     consensus_n: int = 0
 
 
+class FcFeature(Model):
+    """Eine Einflussgröße und ihr Nutzen im Rückblick-Test, wenn sie allein dazukommt."""
+
+    key: str
+    label: str
+    mae: Optional[float] = None  # Fehler der Prognose nur mit dieser Einflussgröße
+    gain: Optional[float] = None  # 1 − mae / Fehler ohne Einflussgrößen (> 0: hilft)
+
+
+class FcFeatureEffect(Model):
+    """Vergleich der Prognose mit und ohne die gewählten Einflussgrößen (gleicher Zeitraum, gleicher Test)."""
+
+    features: list[FcFeature] = []
+    mae_base: Optional[float] = None  # Rückblick-Fehler ohne Einflussgrößen
+    mae_with: Optional[float] = None  # … mit allen gewählten
+    gain: Optional[float] = None  # 1 − mae_with / mae_base
+    helps: Optional[bool] = None
+    text: str = ""
+    baseline: Optional[FcBand] = None  # Prognose ohne Einflussgrößen zum Vergleich
+    base_engine_label: Optional[str] = None
+    points: int = 0  # gemeinsame Zeitpunkte von Zielreihe und Einflussgrößen
+    notes: list[str] = []  # nicht nutzbare Einflussgrößen
+
+
+class FcFeatureOption(Model):
+    key: str
+    label: str
+    group: str
+
+
 class ForecastResult(Model):
     kind: str  # macro | event | vol
     key: str
@@ -66,6 +96,7 @@ class ForecastResult(Model):
     verdict_text: str
     note: Optional[str] = None
     extra: dict[str, Optional[float]] = {}  # z. B. implizite Volatilität zum Vergleich
+    features: Optional[FcFeatureEffect] = None  # nur wenn Einflussgrößen gewählt wurden
 
 
 class FcEngineStatus(Model):

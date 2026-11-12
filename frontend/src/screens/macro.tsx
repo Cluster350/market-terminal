@@ -9,10 +9,10 @@ import { isOneOf, isStringList, usePersistentState } from "../lib/persist";
 import { useCalendar, useCommodities, useCountries, useCurves, useFx, useIndices, useSpreads, useStatus } from "../lib/queries";
 import type { EconEvent, MarketRow } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
-import { ForecastPanel } from "../components/ForecastPanel";
+import { FeaturePicker, ForecastPanel } from "../components/ForecastPanel";
 import { useCsvExport } from "../lib/exporter";
 import { IS_STATIC } from "../lib/api";
-import { digitsFor, fcTime, fmtVal, useEventForecast, useMacroForecast, type ForecastResult } from "../lib/forecast";
+import { cleanFeatures, digitsFor, fcTime, fmtVal, isFeatureList, useEventForecast, useMacroForecast, type ForecastResult } from "../lib/forecast";
 import type { ScreenProps } from "./types";
 
 function MarketTable({ rows, grouped, digits }: { rows: MarketRow[]; grouped?: boolean; digits?: number }) {
@@ -409,7 +409,9 @@ export function ECO(_: ScreenProps) {
   const countries = useMemo(() => Array.from(new Set((q.data ?? []).map((e) => e.country))).sort(), [q.data]);
   // Ausgewählter Termin: frühere Veröffentlichungen mit Prognose und Vergleich zum Konsens
   const [sel, setSel] = useState<{ country: string; event: string; date: string } | null>(null);
-  const fc = useEventForecast(sel?.country ?? null, sel?.event ?? null, 3);
+  // Einflussgrößen der Prognose (andere Termine, Kennzahlen, Kursreihen) – gelten für alle Termine, bis man sie ändert
+  const [fx, setFx] = usePersistentState<string[]>("eco.fcx", [], isFeatureList);
+  const fc = useEventForecast(sel?.country ?? null, sel?.event ?? null, 3, cleanFeatures(fx));
 
   return (
     <>
@@ -513,6 +515,7 @@ export function ECO(_: ScreenProps) {
             <button type="button" className="tool eco-fc-close" aria-label="Prognose schließen" onClick={() => setSel(null)}>
               ×
             </button>
+            <FeaturePicker kind="event" country={sel.country} value={cleanFeatures(fx)} onChange={setFx} />
             <ForecastPanel q={fc} maxHist={30}>{(r) => <ConsensusCompare r={r} />}</ForecastPanel>
           </div>
         )}
@@ -586,7 +589,8 @@ export function ECST(_: ScreenProps) {
   // Unterer Bereich: Ländervergleich oder Verlauf mit Prognose für das markierte Land
   const [view, setView] = usePersistentState<"compare" | "forecast">("ecst.view", "compare", isOneOf(["compare", "forecast"] as const));
   const showForecast = view === "forecast" && !IS_STATIC;
-  const fc = useMacroForecast(showForecast ? mark : null, focus, 3);
+  const [fx, setFx] = usePersistentState<string[]>("ecst.fcx", [], isFeatureList);
+  const fc = useMacroForecast(showForecast ? mark : null, focus, 3, cleanFeatures(fx));
   // CSV: Kennzahlen je Land mit Jahr der Angabe, dazu der Verlauf je Land und Kennzahl
   useCsvExport(() => {
     const d = q.data;
@@ -724,7 +728,12 @@ export function ECST(_: ScreenProps) {
                 </div>
                 <div style={{ flex: 1, minHeight: 0 }}>
                   {showForecast ? (
-                    mark ? <ForecastPanel q={fc} maxHist={16} /> : <Empty>Land in der Tabelle anklicken: Verlauf der Kennzahl mit Prognose für die nächsten drei Jahre.</Empty>
+                    mark ? (
+                      <div className="fc-wrap">
+                        <FeaturePicker kind="macro" country={mark} value={cleanFeatures(fx)} onChange={setFx} />
+                        <ForecastPanel q={fc} maxHist={16} />
+                      </div>
+                    ) : <Empty>Land in der Tabelle anklicken: Verlauf der Kennzahl mit Prognose für die nächsten drei Jahre.</Empty>
                   ) : (
                     option && <EChart option={option} csv={false} />
                   )}

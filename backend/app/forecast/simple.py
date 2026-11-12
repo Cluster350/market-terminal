@@ -99,6 +99,79 @@ def predict_one(y: Sequence[float], h: int) -> list[list[float]]:
     return rows
 
 
+MIN_X_POINTS = 12  # kürzere Reihen: Einflussgrößen bleiben unberücksichtigt
+RIDGE = 0.25  # Stärke der Dämpfung je Beobachtung (schützt bei wenigen Werten vor Zufallstreffern)
+
+
+def _solve(a: list[list[float]], b: list[float]) -> list[float]:
+    """Lineares Gleichungssystem (klein, symmetrisch positiv definit) per Gauß mit Pivotsuche."""
+    n = len(b)
+    m = [row[:] + [b[i]] for i, row in enumerate(a)]
+    for i in range(n):
+        p = max(range(i, n), key=lambda r: abs(m[r][i]))
+        if abs(m[p][i]) < 1e-12:
+            return [0.0] * n
+        m[i], m[p] = m[p], m[i]
+        for r in range(i + 1, n):
+            f = m[r][i] / m[i][i]
+            for c in range(i, n + 1):
+                m[r][c] -= f * m[i][c]
+    out = [0.0] * n
+    for i in range(n - 1, -1, -1):
+        out[i] = (m[i][n] - sum(m[i][c] * out[c] for c in range(i + 1, n))) / m[i][i]
+    return out
+
+
+def _feats(xs: Sequence[Sequence[float]], o: int) -> list[float]:
+    """Merkmale am Startpunkt ``o`` (bekannt ist alles bis o−1): je Einflussgröße Niveau und letzte Veränderung."""
+    out: list[float] = []
+    for x in xs:
+        out.append(x[o - 1])
+        out.append(x[o - 1] - x[o - 2])
+    return out
+
+
+def predict_one_x(y: Sequence[float], xs: Sequence[Sequence[float]], h: int) -> list[list[float]]:
+    """Wie predict_one, dazu Einflussgrößen: Der Fehler des gedämpften Trends in der Vergangenheit wird durch
+    die Einflussgrößen erklärt (gedämpfte Regression je Vorlaufzeit) und die Prognose um den erklärten Teil
+    verschoben. Die Bänder bleiben die der Grundmethode; der Rückblick-Test kalibriert sie neu."""
+    y = [float(v) for v in y]
+    rows = predict_one(y, h)
+    n = len(y)
+    if n < MIN_X_POINTS or not xs:
+        return rows
+    params = fit(y)
+    start = max(3, n // 3)
+    origins = list(range(start, n))
+    raw = [_feats(xs, o) for o in origins]
+    p = len(raw[0])
+    mean = [sum(r[j] for r in raw) / len(raw) for j in range(p)]
+    sd = [math.sqrt(sum((r[j] - mean[j]) ** 2 for r in raw) / len(raw)) or 1.0 for j in range(p)]
+    z = [[(r[j] - mean[j]) / sd[j] for j in range(p)] for r in raw]
+    now = [(v - mean[j]) / sd[j] for j, v in enumerate(_feats(xs, n))]
+    now = [min(3.0, max(-3.0, v)) for v in now]  # Ausreißer der Einflussgröße nicht blind fortschreiben
+    points = [point(y[:o], min(h, n - o), params) for o in origins]
+    for k in range(h):
+        zs, res = [], []
+        for i, o in enumerate(origins):
+            if o + k < n:
+                zs.append(z[i])
+                res.append(y[o + k] - points[i][k])
+        m = len(res)
+        if m < 2 * p + 4:
+            continue
+        rmean = sum(res) / m
+        lam = RIDGE * m
+        a = [[sum(r[i] * r[j] for r in zs) + (lam if i == j else 0.0) for j in range(p)] for i in range(p)]
+        b = [sum(r[i] * (e - rmean) for r, e in zip(zs, res)) for i in range(p)]
+        w = _solve(a, b)
+        adj = sum(wi * v for wi, v in zip(w, now))
+        spread = math.sqrt(sum((e - rmean) ** 2 for e in res) / m)
+        adj = min(2 * spread, max(-2 * spread, adj))
+        rows[k] = [q + adj for q in rows[k]]
+    return rows
+
+
 # Standardnormal-Quantile zu LEVELS (0.1, 0.25, 0.5, 0.75, 0.9)
 _Z = (-1.2815515655446004, -0.6744897501960817, 0.0, 0.6744897501960817, 1.2815515655446004)
 
@@ -112,3 +185,6 @@ class SimpleEngine:
 
     def predict(self, series: list[list[float]], h: int) -> list[list[list[float]]]:
         return [predict_one(s, h) for s in series]
+
+    def predict_x(self, series: list[list[float]], covs: list[list[list[float]]], h: int) -> list[list[list[float]]]:
+        return [predict_one_x(s, cs, h) for s, cs in zip(series, covs)]

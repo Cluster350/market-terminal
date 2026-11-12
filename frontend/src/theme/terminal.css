@@ -757,6 +757,18 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .fc-foot > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-cmp { display: flex; gap: 14px; flex-wrap: wrap; padding: 0 10px 2px; }
 .fc-cmp b { color: var(--value); }
+/* Einflussgrößen der Prognose: Auswahlzeile und Ergebnis des Vergleichs mit/ohne */
+.fc-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fc-wrap .fc, .eco-fc .fc { flex: 1 1 auto; height: auto; }
+.fc-x { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 10px 0; flex: 0 0 auto; }
+.fc-x form { display: contents; }
+.fc-x select.field { max-width: 22ch; }
+.fc-x-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 0 2px 0 5px; border: 1px solid var(--label); color: var(--label); white-space: nowrap; }
+.fc-x-chip button { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 3px; font: inherit; }
+.fc-x-chip button:hover { color: var(--value); }
+.fc-x-effect { padding: 0 10px 1px; flex: 0 0 auto; cursor: help; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-wrap { overflow: hidden; }
+.eco-fc .fc-x { padding-right: 34px; }
 .eco-fc { flex: 0 0 50%; min-height: 220px; border-top: 1px solid var(--rule); position: relative; display: flex; flex-direction: column; }
 .eco-fc-close { position: absolute; right: 6px; top: 2px; z-index: 2; }
 .eco-fc .fc-head { padding-right: 34px; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comparedText, digitsFor, fanData, fcTime, fmtVal, qualityLine, verdictClass, verdictLabel, type FcQuality, type ForecastResult } from "./forecast";
+import { cleanFeatures, comparedText, digitsFor, fanData, gainText, isFeatureList, xQuery, fcTime, fmtVal, qualityLine, verdictClass, verdictLabel, type FcQuality, type ForecastResult } from "./forecast";
 
 const quality = (over: Partial<FcQuality> = {}): FcQuality => ({
   origins: 20, pairs: 50, mae: 0.16, maeNaive: 0.24, skill: 0.33, cover50: 0.5, cover80: 0.79, rawCover80: 0.7, bandScale: 1.2,
@@ -74,5 +74,33 @@ describe("Schwankungskegel", () => {
     expect(c.up1[21].value).toBeCloseTo(100 * Math.exp(s), 6);
     expect(c.lo2[21].value).toBeCloseTo(100 * Math.exp(-2 * s), 6);
     expect(c.up1[21].time).toBe("2026-12-07");
+  });
+});
+
+describe("Prognose: Einflussgrößen", () => {
+  it("bereinigt die Auswahl und baut die Abfrage", () => {
+    expect(cleanFeatures([" WTI.COMM ", "", "WTI.COMM", 5, "m:USA:gdp_growth_annual"])).toEqual(["WTI.COMM", "m:USA:gdp_growth_annual"]);
+    expect(cleanFeatures(["a", "b", "c", "d", "e", "f"])).toHaveLength(5);
+    expect(cleanFeatures("kaputt")).toEqual([]);
+    expect(isFeatureList(["a"])).toBe(true);
+    expect(isFeatureList([1])).toBe(false);
+    expect(isFeatureList(Array(6).fill("a"))).toBe(false);
+    expect(xQuery([])).toBe("");
+    expect(xQuery(["SPY US", "e:US:CPI & Co"])).toBe("&x=SPY%20US&x=e%3AUS%3ACPI%20%26%20Co");
+  });
+  it("zeigt den Nutzen mit Vorzeichen", () => {
+    expect(gainText(0.124)).toBe("+12 %");
+    expect(gainText(-0.05)).toBe("−5 %");
+    expect(gainText(0)).toBe("±0 %");
+    expect(gainText(null)).toBe("–");
+  });
+  it("zeichnet die Vergleichslinie ohne Einflussgrößen nur, wenn welche genutzt wurden", () => {
+    const base = { t: ["2026", "2027"], median: [9, 8], lo50: [8, 7], hi50: [10, 9], lo80: [7, 6], hi80: [11, 10] };
+    const fx = { features: [{ key: "k", label: "K", mae: 1, gain: 0.1 }], maeBase: 1, maeWith: 0.9, gain: 0.1, helps: true, text: "", baseline: base, baseEngineLabel: "S", points: 30, notes: [] };
+    const d = fanData(result({ features: fx }));
+    expect(d.baseline?.slice(-2)).toEqual([9, 8]);
+    expect(d.baseline?.[d.splitIndex - 1]).toBe(d.hist[d.splitIndex - 1]); // beginnt am letzten Ist-Wert
+    expect(fanData(result({ features: { ...fx, features: [] } })).baseline).toBeNull();
+    expect(fanData(result()).baseline).toBeNull();
   });
 });

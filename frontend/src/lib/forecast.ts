@@ -42,6 +42,35 @@ export interface FcQuality {
   consensusN: number;
 }
 
+export interface FcFeature {
+  key: string;
+  label: string;
+  mae: number | null;
+  gain: number | null;
+}
+
+/** Vergleich der Prognose mit und ohne die gewählten Einflussgrößen (gleicher Rückblick-Test). */
+export interface FcFeatureEffect {
+  features: FcFeature[];
+  maeBase: number | null;
+  maeWith: number | null;
+  gain: number | null;
+  helps: boolean | null;
+  text: string;
+  baseline: FcBand | null;
+  baseEngineLabel: string | null;
+  points: number;
+  notes: string[];
+}
+
+export interface FcFeatureOption {
+  key: string;
+  label: string;
+  group: string;
+}
+
+export const MAX_FEATURES = 5;
+
 export type Verdict = "gut" | "knapp" | "schwach" | "wenig";
 
 export interface ForecastResult {
@@ -61,6 +90,7 @@ export interface ForecastResult {
   verdictText: string;
   note: string | null;
   extra: Record<string, number | null>;
+  features?: FcFeatureEffect | null;
 }
 
 export interface ForecastStatus {
@@ -75,30 +105,66 @@ export interface ForecastStatus {
 
 export const forecastApi = {
   status: () => request<ForecastStatus>("/forecast/status"),
-  macro: (country: string, indicator: string, h = 3) => request<ForecastResult>(`/forecast/macro${qs({ country, indicator, h })}`, undefined, { timeoutMs: 60_000 }),
-  event: (country: string, event: string, h = 3) => request<ForecastResult>(`/forecast/event${qs({ country, event, h })}`, undefined, { timeoutMs: 90_000 }),
+  macro: (country: string, indicator: string, h = 3, x: string[] = []) =>
+    request<ForecastResult>(`/forecast/macro${qs({ country, indicator, h })}${xQuery(x)}`, undefined, { timeoutMs: x.length ? 180_000 : 60_000 }),
+  event: (country: string, event: string, h = 3, x: string[] = []) =>
+    request<ForecastResult>(`/forecast/event${qs({ country, event, h })}${xQuery(x)}`, undefined, { timeoutMs: x.length ? 240_000 : 90_000 }),
+  features: (kind: "macro" | "event", country: string) => request<FcFeatureOption[]>(`/forecast/features${qs({ kind, country })}`),
   vol: (ticker: string, h = 3, iv?: number | null) =>
     request<ForecastResult>(`/forecast/vol/${encodeURIComponent(ticker)}${qs({ h, iv: iv ?? undefined })}`, undefined, { timeoutMs: 60_000 }),
 };
+
+/** Einflussgrößen als wiederholter Parameter x (hinter den übrigen Parametern). */
+export const xQuery = (x: string[]) => x.map((k) => `&x=${encodeURIComponent(k)}`).join("");
+
+/** Auswahl bereinigen: ohne Leeres und Doppeltes, höchstens MAX_FEATURES. */
+export function cleanFeatures(x: unknown): string[] {
+  if (!Array.isArray(x)) return [];
+  const out: string[] = [];
+  for (const k of x) {
+    const s = typeof k === "string" ? k.trim() : "";
+    if (s && s.length <= 140 && !out.includes(s)) out.push(s);
+  }
+  return out.slice(0, MAX_FEATURES);
+}
+
+export const isFeatureList = (x: unknown): x is string[] => Array.isArray(x) && x.length <= MAX_FEATURES && x.every((k) => typeof k === "string" && k.length <= 140);
+
+/** Nutzen einer Einflussgröße in Worten: „+12 %“ genauer, „−5 %“ ungenauer. */
+export function gainText(gain: number | null | undefined): string {
+  if (gain === null || gain === undefined) return "–";
+  const pct = Math.round(gain * 100);
+  return `${pct > 0 ? "+" : pct < 0 ? "−" : "±"}${Math.abs(pct)} %`;
+}
+
+export const useFeatureOptions = (kind: "macro" | "event", country: string | null) =>
+  useQuery({
+    queryKey: ["fc-features", kind, country],
+    queryFn: () => forecastApi.features(kind, country!),
+    enabled: !IS_STATIC && !!country,
+    staleTime: 3_600_000,
+    retry: noRetry,
+  });
 
 const noRetry = (n: number, e: Error) => !(e instanceof ApiError && e.status >= 400 && e.status < 600) && n < 1;
 
 export const useForecastStatus = () =>
   useQuery({ queryKey: ["forecast-status"], queryFn: forecastApi.status, enabled: !IS_STATIC, staleTime: 15_000, refetchInterval: (q) => (q.state.data?.engines.some((e) => e.loading) ? 3000 : 60_000) });
 
-export const useMacroForecast = (country: string | null, indicator: string, h = 3) =>
+export const useMacroForecast = (country: string | null, indicator: string, h = 3, x: string[] = []) =>
   useQuery({
-    queryKey: ["fc-macro", country, indicator, h],
-    queryFn: () => forecastApi.macro(country!, indicator, h),
+    queryKey: ["fc-macro", country, indicator, h, x.join("|")],
+    queryFn: () => forecastApi.macro(country!, indicator, h, x),
+    placeholderData: keepPreviousData,
     enabled: !IS_STATIC && !!country,
     staleTime: 3_600_000,
     retry: noRetry,
   });
 
-export const useEventForecast = (country: string | null, event: string | null, h = 3) =>
+export const useEventForecast = (country: string | null, event: string | null, h = 3, x: string[] = []) =>
   useQuery({
-    queryKey: ["fc-event", country, event, h],
-    queryFn: () => forecastApi.event(country!, event!, h),
+    queryKey: ["fc-event", country, event, h, x.join("|")],
+    queryFn: () => forecastApi.event(country!, event!, h, x),
     enabled: !IS_STATIC && !!country && !!event,
     staleTime: 600_000,
     retry: noRetry,
@@ -171,6 +237,7 @@ export interface FanData {
   lo50: (number | null)[];
   band50: (number | null)[];
   consensus: (number | null)[] | null;
+  baseline: (number | null)[] | null; // Prognose ohne Einflussgrößen (nur wenn welche gewählt sind)
   splitIndex: number; // erster Prognosepunkt
 }
 
@@ -207,6 +274,7 @@ export function fanData(r: ForecastResult, maxHist = 36): FanData {
     lo50,
     band50: diff(hi50, lo50),
     consensus,
+    baseline: r.features?.baseline && r.features.features.length ? pad(r.features.baseline.median) : null,
     splitIndex: n,
   };
 }

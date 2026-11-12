@@ -104,7 +104,9 @@ def origins_for(n: int, h: int, min_train: int) -> list[int]:
     return list(range(n - count, n))
 
 
-def evaluate(engine: Engine, y: Sequence[float], h: int, min_train: Optional[int] = None) -> Score:
+def evaluate(engine: Engine, y: Sequence[float], h: int, min_train: Optional[int] = None,
+             x: Optional[Sequence[Sequence[float]]] = None) -> Score:
+    """``x``: Einflussgrößen (je so lang wie ``y``); an jedem Startpunkt sieht der Motor nur deren Vergangenheit."""
     y = [float(x) for x in y]
     n = len(y)
     min_train = min_train or max(8, n // 2)
@@ -112,7 +114,10 @@ def evaluate(engine: Engine, y: Sequence[float], h: int, min_train: Optional[int
     score = Score(engine=engine.name)
     if not starts:
         return score
-    preds = engine.predict([y[:o] for o in starts], h)
+    if x:
+        preds = engine.predict_x([y[:o] for o in starts], [[list(c[:o]) for c in x] for o in starts], h)  # type: ignore[attr-defined]
+    else:
+        preds = engine.predict([y[:o] for o in starts], h)
     err, err_naive, in50, in80 = [], [], 0, 0
     err1: list[float] = []
     for o, table in zip(starts, preds):

@@ -66,7 +66,22 @@ class ChronosEngine:
             raise RuntimeError("Chronos-2 ist nicht geladen.")
         import numpy as np
 
-        inputs = [np.asarray(s, dtype=np.float32) for s in series]
+        return self._run([np.asarray(s, dtype=np.float32) for s in series], h)
+
+    def predict_x(self, series: list[list[float]], covs: list[list[list[float]]], h: int) -> list[list[list[float]]]:
+        """Mit Einflussgrößen: Chronos-2 nimmt sie als „past_covariates“ (nur Vergangenheit) entgegen."""
+        if self.pipe is None:
+            raise RuntimeError("Chronos-2 ist nicht geladen.")
+        import numpy as np
+
+        inputs = [
+            {"target": np.asarray(s, dtype=np.float32),
+             "past_covariates": {f"x{j}": np.asarray(c, dtype=np.float32) for j, c in enumerate(cs)}}
+            for s, cs in zip(series, covs)
+        ]
+        return self._run(inputs, h)
+
+    def _run(self, inputs: list, h: int) -> list[list[list[float]]]:
         with self._lock:
             quantiles, _ = self.pipe.predict_quantiles(inputs, prediction_length=h, quantile_levels=list(LEVELS))
         out: list[list[list[float]]] = []

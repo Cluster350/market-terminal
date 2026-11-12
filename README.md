@@ -675,6 +675,18 @@ tatsächlich kam – gegen die einfache Regel „bleibt wie zuletzt“ und mit d
 Waren die Bänder früher zu eng, werden sie verbreitert. „Rückblick: schwach“ heißt: Die Prognose war
 früher nicht besser als „bleibt wie zuletzt“ – dann mit Vorsicht lesen.
 
+**Einflussgrößen (ECST und ECO):** Über der Prognose lassen sich bis zu fünf weitere Reihen dazunehmen –
+z. B. bei der Inflation der Ölpreis, Gold, der S&P 500 und die Rendite zehnjähriger Anleihen. Zur Wahl
+stehen Vorschläge (Rohstoffe, Aktienindex, Zinsen, Devisen, andere Kennzahlen und Konjunkturtermine des
+Landes) oder jeder Ticker per Eingabe. Die Auswahl bleibt gespeichert, bis man sie ändert.
+- Das Terminal rechnet die Prognose **mit und ohne** die gewählten Reihen im selben Rückblick-Test und sagt
+  in Worten, ob sie geholfen hätten („12 % genauer“ oder „helfen hier nicht“), dazu den Nutzen jeder Reihe
+  allein. Die gepunktete graue Linie ist die Prognose ohne Einflussgrößen.
+- Es zählt nur, was zum jeweiligen Zeitpunkt bekannt war: Kurse gehen als Veränderung in % ein (Jahresschnitt
+  gegen Vorjahr bzw. die rund drei Monate vor einem Termin), Renditen und Kennzahlen als Niveau.
+- Grenzen: Bei Jahresreihen gibt es wenige Datenpunkte – mit vielen Zusatzreihen passt sich ein Modell
+  leicht an Zufall an. Reihen mit weniger als 10 gemeinsamen Zeitpunkten werden nicht genutzt (Hinweis in Rot).
+
 **Zwei Methoden, Auto-Auswahl:** Die eingebaute Statistik (gedämpfter Trend) ist immer da.
 **Chronos-2** (Amazon, frei nutzbar, läuft auf dem eigenen Rechner ohne Grafikkarte) ist meist genauer;
 je Reihe nimmt das Terminal die Methode, die im Rückblick-Test besser war (Hinweis beim Darüberfahren

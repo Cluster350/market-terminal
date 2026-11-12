@@ -30,3 +30,6 @@ class Engine(Protocol):
     def ready(self) -> bool: ...
 
     def predict(self, series: list[list[float]], h: int) -> list[list[list[float]]]: ...
+
+    # Optional: ``predict_x(series, covs, h)`` – wie predict, dazu je Reihe eine Liste von Einflussgrößen
+    # (jede so lang wie die Reihe, nur Vergangenheit). Motoren ohne diese Methode rechnen ohne Einflussgrößen.
