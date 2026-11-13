@@ -764,12 +764,13 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .fc-x form { display: contents; }
 .fc-x select.field { max-width: 22ch; }
 .fc-x-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 0 2px 0 5px; border: 1px solid var(--label); color: var(--label); white-space: nowrap; }
+.fc-x-name { max-width: 30ch; overflow: hidden; text-overflow: ellipsis; }
 .fc-x-chip button { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 3px; font: inherit; }
 .fc-x-chip button:hover { color: var(--value); }
 .fc-x-effect { padding: 0 10px 1px; flex: 0 0 auto; cursor: help; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fc-wrap { overflow: hidden; }
+.fc-wrap { overflow: hidden auto; } /* kleines Panel, Auswahl über mehrere Zeilen: Urteil und Fußzeile bleiben erreichbar */
 .eco-fc .fc-x { padding-right: 34px; }
-.eco-fc { flex: 0 0 50%; min-height: 220px; border-top: 1px solid var(--rule); position: relative; display: flex; flex-direction: column; }
+.eco-fc { flex: 0 0 50%; min-height: 220px; border-top: 1px solid var(--rule); position: relative; display: flex; flex-direction: column; overflow: hidden auto; }
 .eco-fc-close { position: absolute; right: 6px; top: 2px; z-index: 2; }
 .eco-fc .fc-head { padding-right: 34px; }
 

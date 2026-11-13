@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanFeatures, comparedText, digitsFor, fanData, gainText, isFeatureList, xQuery, fcTime, fmtVal, qualityLine, verdictClass, verdictLabel, type FcQuality, type ForecastResult } from "./forecast";
+import { cleanFeatures, comparedText, digitsFor, fanData, featureLabel, gainText, sameSeries, isFeatureList, xQuery, fcTime, fmtVal, qualityLine, verdictClass, verdictLabel, type FcQuality, type ForecastResult } from "./forecast";
 
 const quality = (over: Partial<FcQuality> = {}): FcQuality => ({
   origins: 20, pairs: 50, mae: 0.16, maeNaive: 0.24, skill: 0.33, cover50: 0.5, cover80: 0.79, rawCover80: 0.7, bandScale: 1.2,
@@ -102,5 +102,23 @@ describe("Prognose: Einflussgrößen", () => {
     expect(d.baseline?.[d.splitIndex - 1]).toBe(d.hist[d.splitIndex - 1]); // beginnt am letzten Ist-Wert
     expect(fanData(result({ features: { ...fx, features: [] } })).baseline).toBeNull();
     expect(fanData(result()).baseline).toBeNull();
+  });
+  it("beschriftet Reihen eines anderen Landes mit Länderkürzel statt mit dem rohen Schlüssel", () => {
+    const opts = [
+      { key: "m:ESP:gdp_growth_annual", label: "BIP-Wachstum (Jahreswert)", group: "Kennzahlen" },
+      { key: "WTI.COMM", label: "WTI-Öl (USD/bbl)", group: "Rohstoffe" },
+    ];
+    expect(featureLabel("WTI.COMM", opts)).toBe("WTI-Öl (USD/bbl)");
+    expect(featureLabel("m:ESP:gdp_growth_annual", opts)).toBe("BIP-Wachstum (Jahreswert)");
+    expect(featureLabel("m:IND:gdp_growth_annual", opts)).toBe("BIP-Wachstum IND");
+    expect(featureLabel("m:IND:gdp_growth_annual", [])).toBe("gdp_growth_annual IND");
+    expect(featureLabel("e:us:CPI: Kern & Co", opts)).toBe("CPI: Kern & Co US");
+    expect(featureLabel("SPY.US", opts)).toBe("SPY.US");
+  });
+  it("lässt die bisherige Prognose nur für dieselbe Reihe stehen", () => {
+    expect(sameSeries(["fc-macro", "IND", "gdp", 3, "WTI.COMM"], ["fc-macro", "IND", "gdp", 3])).toBe(true);
+    expect(sameSeries(["fc-macro", "IND", "gdp", 3, ""], ["fc-macro", "ESP", "gdp", 3])).toBe(false);
+    expect(sameSeries(["fc-macro", "IND", "gdp", 3, ""], ["fc-macro", "IND", "cpi", 3])).toBe(false);
+    expect(sameSeries(undefined, ["fc-macro", "IND", "gdp", 3])).toBe(false);
   });
 });

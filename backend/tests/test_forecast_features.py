@@ -148,3 +148,68 @@ def test_resolve_limits_and_duplicates(client):
     feats, notes = run(fx.resolve(t, ["m:USA:gdp_growth_annual", "m:usa:gdp_growth_annual", " "], dates, "year"))
     assert len(feats) == 1 and notes == []
     assert all(v is None or isinstance(v, float) for v in feats[0].values)
+
+
+def test_annual_values_count_only_once_published():
+    """Jahreswerte erscheinen erst Monate später: bei Terminen zählt das Vorjahr erst ab Juli."""
+    by = {2022: 2.0, 2023: 3.0, 2024: 4.0}
+    assert align_annual(by, ["2025-01-15", "2025-06-30", "2025-07-01", "2025-12-01"], "release") == [3.0, 3.0, 4.0, 4.0]
+    assert align_annual(by, ["2023-03-01", "2022-12-31"], "release") == [None, None]
+
+
+def test_partial_first_year_is_not_an_annual_average():
+    """Beginnt der Kursverlauf mitten im Jahr, gibt es für dieses Jahr keinen Jahresdurchschnitt."""
+    pairs = [("2023-11-15", 50.0), ("2023-12-15", 50.0)] + [(f"{y}-{m:02d}-15", 100.0 * (y - 2022)) for y in (2024, 2025) for m in range(1, 13)]
+    assert align_prices(pairs, ["2023", "2024", "2025"], "year", level=True) == [None, 200.0, 300.0]
+    chg = align_prices(pairs, ["2023", "2024", "2025"], "year", level=False)
+    assert chg[:2] == [None, None] and chg[2] == pytest.approx(50.0)
+
+
+def test_one_short_feature_does_not_discard_the_others():
+    x, y = leading()
+    t = [f"{1900 + i}" for i in range(len(y))]
+    fs = ForecastService(mode="simple")
+    feats = [Feature("lead", "Vorläufer", list(x)), Feature("s", "kurz", [None] * (len(y) - 10) + x[-10:])]
+    r = run(fs.forecast(kind="macro", key="k", label="L", unit="%", freq="year", t=t, y=y, h=1, future_t=["1990"], features=feats))
+    f = r.features
+    assert [q.key for q in f.features] == ["lead"] and f.helps and f.points == len(y)
+    assert len(f.notes) == 1 and f.notes[0].startswith("kurz: ") and "zu kurz" in f.notes[0]
+
+
+def test_note_when_no_engine_can_use_features():
+    class Plain:
+        name, label = "chronos", "plain"
+
+        def ready(self):
+            return True
+
+        def predict(self, series, h):
+            return [[[s[-1]] * 5 for _ in range(h)] for s in series]
+
+    x, y = leading()
+    fs = ForecastService(mode="chronos", chronos=Plain())
+    r = run(fs.forecast(kind="macro", key="k", label="L", unit=None, freq="year", t=[str(i) for i in range(len(y))], y=y, h=1,
+                        future_t=["x"], features=[Feature("lead", "Vorläufer", list(x))]))
+    assert r.features.features == [] and any("Kein Rechenverfahren" in n for n in r.features.notes)
+
+
+def test_target_itself_is_never_a_feature(client):
+    """Auch in anderer Schreibweise (klein, mit Leerzeichen) zählt die Zielreihe nicht als Einflussgröße."""
+    for key in ("m:usa:inflation_consumer_prices_annual", " m:USA:inflation_consumer_prices_annual "):
+        q = urllib.parse.urlencode([("country", "USA"), ("indicator", "inflation_consumer_prices_annual"), ("x", key), ("x", "m:USA:gdp_growth_annual")])
+        f = client.get(f"/api/forecast/macro?{q}").json()["features"]
+        assert [x["key"] for x in f["features"]] == ["m:USA:gdp_growth_annual"]
+        assert len(f["notes"]) == 1 and "Zielreihe selbst" in f["notes"][0]
+    opts = client.get("/api/forecast/features?kind=event&country=US").json()
+    name = next(o["label"] for o in opts if o["group"] == "Konjunkturtermine")
+    q = urllib.parse.urlencode([("country", "US"), ("event", name), ("x", f"e:us:{name}")])
+    f = client.get(f"/api/forecast/event?{q}").json()["features"]
+    assert f["features"] == [] and "Zielreihe selbst" in f["notes"][0]
+
+
+def test_short_market_series_keeps_macro_features(client):
+    """Jahresreihe: eine Kursreihe mit zu wenig Jahren fällt weg, die Kennzahlen bleiben nutzbar."""
+    q = urllib.parse.urlencode([("country", "USA"), ("indicator", "inflation_consumer_prices_annual"),
+                                ("x", "m:USA:gdp_growth_annual"), ("x", "US10Y.GBOND")])
+    f = client.get(f"/api/forecast/macro?{q}").json()["features"]
+    assert [x["key"] for x in f["features"]] == ["m:USA:gdp_growth_annual"] and len(f["notes"]) == 1 and "US10Y" in f["notes"][0]

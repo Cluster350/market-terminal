@@ -24,8 +24,9 @@ from ..services.tickers import display, normalize
 from .models import FcFeatureOption
 
 MAX_FEATURES = 5
-MIN_OVERLAP = 10  # so viele Zeitpunkte der Zielreihe müssen mit allen Einflussgrößen übrig bleiben
+MIN_OVERLAP = 12  # so viele Zeitpunkte der Zielreihe müssen mit allen Einflussgrößen übrig bleiben
 LOOKBACK_DAYS = 63  # Handelstage (rund drei Monate) für die Kursveränderung vor einem Termin
+ANNUAL_PUBLISHED_MONTH = 7  # Jahreswerte gelten bei Terminen erst ab Juli des Folgejahres als bekannt (Veröffentlichungsverzug)
 
 
 @dataclass
@@ -64,6 +65,8 @@ def align_prices(pairs: Sequence[tuple[str, float]], target_t: Sequence[str], fr
         for d, c in pairs:
             sums.setdefault(_year(d), []).append(c)
         avg = {y: sum(v) / len(v) for y, v in sums.items()}
+        if pairs and int(pairs[0][0][5:7]) > 1:
+            avg.pop(_year(pairs[0][0]), None)  # angebrochenes erstes Jahr: kein Jahresdurchschnitt
         out: list[Optional[float]] = []
         for t in target_t:
             y = _year(t)
@@ -85,13 +88,15 @@ def align_prices(pairs: Sequence[tuple[str, float]], target_t: Sequence[str], fr
 
 
 def align_annual(by_year: dict[int, float], target_t: Sequence[str], freq: str) -> list[Optional[float]]:
-    """Jahreswerte: bei Jahresreihen dasselbe Jahr, bei Terminen das letzte abgeschlossene Jahr davor."""
+    """Jahreswerte: bei Jahresreihen dasselbe Jahr, bei Terminen das letzte Jahr, dessen Wert am Termin schon
+    veröffentlicht war (Vorjahr ab Juli, davor das Jahr davor – Jahreswerte erscheinen erst Monate später)."""
     if freq == "year":
         return [by_year.get(_year(t)) for t in target_t]
     years = sorted(by_year)
     out: list[Optional[float]] = []
     for t in target_t:
-        i = bisect.bisect_left(years, _year(t)) - 1
+        known = _year(t) - (0 if int(t[5:7] or 1) >= ANNUAL_PUBLISHED_MONTH else 1)  # erstes noch nicht bekanntes Jahr
+        i = bisect.bisect_left(years, known) - 1
         out.append(by_year[years[i]] if i >= 0 else None)
     return out
 
@@ -149,9 +154,11 @@ async def _one(t: Terminal, key: str, target_t: Sequence[str], freq: str) -> Fea
     return Feature(ticker, label, align_prices(pairs, target_t, freq, level))
 
 
-async def resolve(t: Terminal, keys: Sequence[str], target_t: Sequence[str], freq: str) -> tuple[list[Feature], list[str]]:
+async def resolve(t: Terminal, keys: Sequence[str], target_t: Sequence[str], freq: str,
+                  exclude: Optional[str] = None) -> tuple[list[Feature], list[str]]:
     """Einflussgrößen laden und auf die Zielreihe bringen. Liefert die nutzbaren Reihen und Hinweise zu
-    denen, die nicht nutzbar waren (unbekannt, zu kurz, ohne Bewegung)."""
+    denen, die nicht nutzbar waren (unbekannt, zu kurz, ohne Bewegung). ``exclude``: Schlüssel der Zielreihe
+    selbst – sie ist keine Einflussgröße (gleich in welcher Schreibweise sie gewählt wurde)."""
     out: list[Feature] = []
     notes: list[str] = []
     seen: set[str] = set()
@@ -170,6 +177,9 @@ async def resolve(t: Terminal, keys: Sequence[str], target_t: Sequence[str], fre
         if f.key in seen:
             continue
         seen.add(f.key)
+        if exclude is not None and f.key == exclude:
+            notes.append(f"{f.label}: ist die Zielreihe selbst – nicht als Einflussgröße nutzbar.")
+            continue
         f.values = _fill(f.values)
         vals = [v for v in f.values if v is not None]
         if len(vals) < MIN_OVERLAP:

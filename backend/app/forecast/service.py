@@ -189,11 +189,16 @@ class ForecastService:
                              note: Optional[str], extra: Optional[dict[str, Optional[float]]]) -> ForecastResult:
         """Prognose mit Einflussgrößen und ehrlicher Vergleich: gleicher Zeitraum, gleicher Rückblick-Test,
         einmal ohne und einmal mit den gewählten Reihen (dazu jede einzeln)."""
+        # Eine zu kurze Reihe fällt allein weg (mit Hinweis) – die übrigen bleiben nutzbar
+        usable = []
+        for f in features:
+            own = len(y) - (f.first if f.first is not None else len(y))
+            if own < MIN_X_POINTS:
+                notes.append(f"{f.label}: gemeinsamer Verlauf zu kurz ({own} Zeitpunkte, nötig {MIN_X_POINTS}) – nicht berücksichtigt.")
+            else:
+                usable.append(f)
+        features = usable
         start = max((f.first or 0) for f in features) if features else 0
-        if features and len(y) - start < MIN_X_POINTS:
-            notes.append(f"Gemeinsamer Verlauf zu kurz ({len(y) - start} Zeitpunkte, nötig {MIN_X_POINTS}) – Prognose ohne Einflussgrößen.")
-            features = []
-            start = 0
         values = [float(v) for v in y[start:]]
         cons = list(consensus[start:]) if consensus is not None else None
         xs = [[float(v) for v in f.values[start:]] for f in features]
@@ -233,7 +238,7 @@ class ForecastService:
                 effect.gain = _gain(best.mae, base.mae)
                 effect.helps = None if effect.gain is None else effect.gain > 0.01
             else:
-                notes.append("Kein Rechenverfahren konnte die Einflussgrößen verarbeiten – Prognose ohne sie.")
+                effect.notes.append("Kein Rechenverfahren konnte die Einflussgrößen verarbeiten – Prognose ohne sie.")
         effect.text = _effect_text(effect)
 
         quality = FcQuality(

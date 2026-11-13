@@ -13,6 +13,7 @@ import {
   comparedText,
   digitsFor,
   fanData,
+  featureLabel,
   fcTime,
   fmtVal,
   gainText,
@@ -131,15 +132,15 @@ export function FeaturePicker({ kind, country, value, onChange }: { kind: "macro
     for (const o of opts) if (!value.includes(o.key)) m.set(o.group, [...(m.get(o.group) ?? []), o]);
     return Array.from(m.entries());
   }, [opts, value]);
-  const labelOf = (k: string) => opts.find((o) => o.key === k)?.label ?? k.replace(/^[me]:[A-Za-z]+:/, "");
+  const labelOf = (k: string) => featureLabel(k, opts);
   return (
     <div className="fc-x" data-csv-skip="">
       <span className="xs muted" title="Zusätzliche Reihen, die das Modell mit einbezieht (z. B. Ölpreis, Gold, Zinsen bei der Inflation). Der Rückblick-Test prüft, ob sie die Prognose früher verbessert hätten.">
         Einflussgrößen:
       </span>
       {value.map((k) => (
-        <span key={k} className="fc-x-chip">
-          {labelOf(k)}
+        <span key={k} className="fc-x-chip" title={labelOf(k)}>
+          <span className="fc-x-name">{labelOf(k)}</span>
           <button type="button" aria-label={`${labelOf(k)} entfernen`} onClick={() => onChange(value.filter((v) => v !== k))}>
             ×
           </button>
@@ -210,7 +211,7 @@ export function ForecastPanel({ q, children, maxHist, height }: { q: UseQueryRes
   const last = r.forecast.t.length - 1;
   const quality = qualityLine(r.quality, digits) + (r.quality.bandScale > 1.15 ? ` · Bänder nach dem Rückblick-Test ×${fmt(r.quality.bandScale, 1)} verbreitert` : "");
   return (
-    <div className="fc">
+    <div className="fc" style={q.isPlaceholderData ? { opacity: 0.55 } : undefined} aria-busy={q.isPlaceholderData || undefined}>
       <div className="fc-head">
         <b>{r.label}</b>
         <EngineBadge r={r} />

@@ -137,6 +137,20 @@ export function gainText(gain: number | null | undefined): string {
   return `${pct > 0 ? "+" : pct < 0 ? "−" : "±"}${Math.abs(pct)} %`;
 }
 
+/** Beschriftung einer gewählten Einflussgröße; Reihen eines anderen Landes (nach einem Länderwechsel) mit Länderkürzel. */
+export function featureLabel(key: string, opts: FcFeatureOption[]): string {
+  const hit = opts.find((o) => o.key === key);
+  if (hit) return hit.label;
+  const m = /^([me]):([A-Za-z]+):(.+)$/.exec(key);
+  if (!m) return key;
+  const [, kind, cc, name] = m;
+  const same = kind === "m" ? opts.find((o) => o.key.startsWith("m:") && o.key.split(":")[2] === name) : undefined;
+  return `${same ? same.label.replace(/ \(Jahreswert\)$/, "") : name} ${cc.toUpperCase()}`;
+}
+
+/** Beginnt der Abfrageschlüssel mit denselben Teilen? (dieselbe Reihe – nur die Einflussgrößen sind anders) */
+export const sameSeries = (key: readonly unknown[] | undefined, head: readonly unknown[]) => !!key && head.every((v, i) => key[i] === v);
+
 export const useFeatureOptions = (kind: "macro" | "event", country: string | null) =>
   useQuery({
     queryKey: ["fc-features", kind, country],
@@ -155,7 +169,8 @@ export const useMacroForecast = (country: string | null, indicator: string, h = 
   useQuery({
     queryKey: ["fc-macro", country, indicator, h, x.join("|")],
     queryFn: () => forecastApi.macro(country!, indicator, h, x),
-    placeholderData: keepPreviousData,
+    // bisherige Prognose nur stehen lassen, wenn sich allein die Einflussgrößen ändern – nie die eines anderen Landes
+    placeholderData: (prev, q) => (sameSeries(q?.queryKey, ["fc-macro", country, indicator, h]) ? prev : undefined),
     enabled: !IS_STATIC && !!country,
     staleTime: 3_600_000,
     retry: noRetry,

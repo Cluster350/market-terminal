@@ -683,9 +683,10 @@ Landes) oder jeder Ticker per Eingabe. Die Auswahl bleibt gespeichert, bis man s
   in Worten, ob sie geholfen hätten („12 % genauer“ oder „helfen hier nicht“), dazu den Nutzen jeder Reihe
   allein. Die gepunktete graue Linie ist die Prognose ohne Einflussgrößen.
 - Es zählt nur, was zum jeweiligen Zeitpunkt bekannt war: Kurse gehen als Veränderung in % ein (Jahresschnitt
-  gegen Vorjahr bzw. die rund drei Monate vor einem Termin), Renditen und Kennzahlen als Niveau.
+  gegen Vorjahr bzw. die rund drei Monate vor einem Termin), Renditen und Kennzahlen als Niveau. Jahreswerte
+  zählen bei Terminen erst ab Juli des Folgejahres (sie werden erst Monate später veröffentlicht).
 - Grenzen: Bei Jahresreihen gibt es wenige Datenpunkte – mit vielen Zusatzreihen passt sich ein Modell
-  leicht an Zufall an. Reihen mit weniger als 10 gemeinsamen Zeitpunkten werden nicht genutzt (Hinweis in Rot).
+  leicht an Zufall an. Reihen mit weniger als 12 gemeinsamen Zeitpunkten werden nicht genutzt (Hinweis in Rot).
 
 **Zwei Methoden, Auto-Auswahl:** Die eingebaute Statistik (gedämpfter Trend) ist immer da.
 **Chronos-2** (Amazon, frei nutzbar, läuft auf dem eigenen Rechner ohne Grafikkarte) ist meist genauer;

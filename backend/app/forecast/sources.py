@@ -37,7 +37,7 @@ async def macro(fs: ForecastService, t: Terminal, country: str, indicator: str, 
     label, unit = known[indicator]
     last = pts[-1][0]
     # die Zielreihe selbst ist keine Einflussgröße
-    feats, notes = await fx.resolve(t, [k for k in x or [] if k != f"m:{cc}:{indicator}"], [str(y) for y, _ in pts], "year")
+    feats, notes = await fx.resolve(t, x or [], [str(y) for y, _ in pts], "year", exclude=f"m:{cc}:{indicator}")
     return await fs.forecast(
         kind="macro", key=f"{cc}:{indicator}", label=f"{label} · {_country_name(t, cc)}", unit=unit, freq="year",
         t=[str(y) for y, _ in pts], y=[v for _, v in pts], h=h, future_t=[str(last + k) for k in range(1, h + 1)],
@@ -69,7 +69,7 @@ async def event(fs: ForecastService, t: Terminal, country: str, name: str, h: in
     first = dt.date.fromisoformat(upcoming.date[:10]) if upcoming else dt.date.fromisoformat(dates[-1]) + dt.timedelta(days=step)
     future = [(first + dt.timedelta(days=step * k)).isoformat() for k in range(h)]
     unit = next((e.unit for _, e in reversed(rows) if e.unit), None)
-    feats, notes = await fx.resolve(t, [k for k in x or [] if k != f"e:{cc}:{name}"], dates, "release")
+    feats, notes = await fx.resolve(t, x or [], dates, "release", exclude=f"e:{cc}:{name}")
     return await fs.forecast(
         kind="event", key=f"{cc}:{name}", label=f"{name} · {cc}", unit=unit, freq="release",
         t=dates, y=[e.actual for _, e in rows], h=h, future_t=future,
