@@ -158,7 +158,7 @@ def predict_one_x(y: Sequence[float], xs: Sequence[Sequence[float]], h: int) -> 
                 zs.append(z[i])
                 res.append(y[o + k] - points[i][k])
         m = len(res)
-        if m < 2 * p + 4:
+        if m < 8:  # die Dämpfung (RIDGE) trägt auch viele Merkmale bei wenigen Werten; nur ganz kurze Reihen auslassen
             continue
         rmean = sum(res) / m
         lam = RIDGE * m

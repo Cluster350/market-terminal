@@ -48,7 +48,7 @@ export function fanOption(r: ForecastResult, maxHist = 36): EOption {
   if (d.baseline) {
     series.push({
       name: "ohne Einflussgrößen", type: "line", data: d.baseline, symbol: "none", silent: true,
-      lineStyle: { color: "#8f8f8f", width: 1, type: "dotted" }, itemStyle: { color: "#8f8f8f" },
+      lineStyle: { color: "#c8c8c8", width: 1.5, type: "dotted" }, itemStyle: { color: "#8f8f8f" },
     });
   }
   if (d.consensus) {
@@ -122,8 +122,17 @@ export function forecastCsv(r: ForecastResult): CsvDataset {
  * Auswahl der Einflussgrößen: Vorschläge (Märkte, Kennzahlen, Termine des Landes) oder ein eigener Ticker.
  * Die gewählten Reihen fließen in die Prognose ein; der Rückblick-Test zeigt, ob sie geholfen hätten.
  */
-export function FeaturePicker({ kind, country, value, onChange }: { kind: "macro" | "event"; country: string | null; value: string[]; onChange: (x: string[]) => void }) {
-  const opts = useFeatureOptions(kind, country).data ?? [];
+export function FeaturePicker({ kind, country, target, unused, value, onChange }: {
+  kind: "macro" | "event";
+  country: string | null;
+  /** Kennzahl bzw. Terminname der Zielreihe: wird nicht als Einflussgröße angeboten */
+  target?: string | null;
+  /** gewählte Reihen, die nicht in die Prognose eingegangen sind (durchgestrichen dargestellt) */
+  unused?: string[];
+  value: string[];
+  onChange: (x: string[]) => void;
+}) {
+  const opts = useFeatureOptions(kind, country, target).data ?? [];
   const [ticker, setTicker] = useState("");
   const full = value.length >= MAX_FEATURES;
   const add = (k: string) => onChange(cleanFeatures([...value, k]));
@@ -139,7 +148,7 @@ export function FeaturePicker({ kind, country, value, onChange }: { kind: "macro
         Einflussgrößen:
       </span>
       {value.map((k) => (
-        <span key={k} className="fc-x-chip" title={labelOf(k)}>
+        <span key={k} className={`fc-x-chip${unused?.includes(k) ? " off" : ""}`} title={unused?.includes(k) ? `${labelOf(k)} – nicht in die Prognose eingegangen (Grund steht unter dem Diagramm)` : labelOf(k)}>
           <span className="fc-x-name">{labelOf(k)}</span>
           <button type="button" aria-label={`${labelOf(k)} entfernen`} onClick={() => onChange(value.filter((v) => v !== k))}>
             ×
@@ -165,7 +174,7 @@ export function FeaturePicker({ kind, country, value, onChange }: { kind: "macro
           setTicker("");
         }}
       >
-        <input className="field" value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="oder Ticker, z. B. SPY US" aria-label="Ticker als Einflussgröße" disabled={full || !country} maxLength={40} style={{ width: "19ch" }} />
+        <input className="field" value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="Ticker, z. B. SPY US" title="Eigene Kursreihe per Ticker (wie in der Befehlszeile), z. B. SPY US oder GOLD Comdty. Namen wie „Gold“ bitte aus der Liste wählen." aria-label="Ticker als Einflussgröße" disabled={full || !country} maxLength={40} style={{ width: "22ch" }} />
       </form>
       {value.length > 0 && (
         <button type="button" className="tool" title="Alle Einflussgrößen entfernen" onClick={() => onChange([])}>
@@ -183,7 +192,7 @@ function FeatureEffect({ r }: { r: ForecastResult }) {
   const digits = digitsFor(r);
   const detail = [
     f.text,
-    f.maeBase !== null && f.maeWith !== null ? `Rückblick-Fehler ohne ${fmt(f.maeBase, digits)} · mit ${fmt(f.maeWith, digits)} (${f.points} gemeinsame Zeitpunkte)` : "",
+    f.maeBase !== null && f.maeWith !== null ? `Rückblick-Fehler ohne ${fmt(f.maeBase, digits + 1)} · mit ${fmt(f.maeWith, digits + 1)} (${f.points} gemeinsame Zeitpunkte)` : "",
     ...f.features.map((x) => `${x.label}: allein ${gainText(x.gain)}`),
     ...f.notes,
   ].filter(Boolean);

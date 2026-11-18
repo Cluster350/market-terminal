@@ -147,11 +147,26 @@ async def _one(t: Terminal, key: str, target_t: Sequence[str], freq: str) -> Fea
                 seen[e.date[:10]] = e.actual
         return Feature(f"e:{cc}:{name}", f"{name} {cc}", align_releases(sorted(seen.items()), target_t, freq))
     ticker = normalize(key)
-    hist = await t.history(ticker)
+    # Jahresreihen brauchen einen langen Kursverlauf (zehn Jahre ergäben nur neun Jahresveränderungen)
+    hist = await (t.history_long(ticker) if freq == "year" else t.history(ticker))
     pairs = [(d, c) for d, c in zip(hist.t, hist.c) if c is not None]
     level = ticker.endswith(".GBOND")  # Renditen als Niveau, Kurse als Veränderung
-    label = f"{display(ticker)} ({'Rendite' if level else 'Veränderung %'})"
+    label = f"{_ticker_name(t, ticker)} ({'Rendite' if level else 'Veränderung %'})"
     return Feature(ticker, label, align_prices(pairs, target_t, freq, level))
+
+
+def _ticker_name(t: Terminal, ticker: str) -> str:
+    """Name wie in der Auswahl (Rohstoff, Index, Devisenpaar, Rendite), sonst die Terminal-Schreibweise."""
+    cat = t.p.catalog
+    for ins in [*cat.commodities, *cat.indices, *cat.fx]:
+        if ins.ticker == ticker:
+            return ins.name
+    for _, _, _, tk, name in WORLD:
+        if tk == ticker and name:
+            return name
+    if ticker.endswith("10Y.GBOND") and ticker[:-9] in cat.curves:
+        return f"Rendite 10 Jahre {cat.curves[ticker[:-9]][0]}"
+    return display(ticker)
 
 
 async def resolve(t: Terminal, keys: Sequence[str], target_t: Sequence[str], freq: str,
@@ -172,7 +187,7 @@ async def resolve(t: Terminal, keys: Sequence[str], target_t: Sequence[str], fre
         try:
             f = await _one(t, key, target_t, freq)
         except TerminalError as exc:
-            notes.append(f"{key}: {exc.message}")
+            notes.append(f"„{key}“ nicht gefunden – bitte einen Ticker wie SPY US oder einen Vorschlag aus der Liste wählen. ({exc.message})")
             continue
         if f.key in seen:
             continue
@@ -183,7 +198,7 @@ async def resolve(t: Terminal, keys: Sequence[str], target_t: Sequence[str], fre
         f.values = _fill(f.values)
         vals = [v for v in f.values if v is not None]
         if len(vals) < MIN_OVERLAP:
-            notes.append(f"{f.label}: zu wenig gemeinsamer Verlauf mit der Zielreihe ({len(vals)} Zeitpunkte, nötig {MIN_OVERLAP}).")
+            notes.append(f"{f.label}: nur {len(vals)} gemeinsame Zeitpunkte mit dieser Reihe, nötig sind {MIN_OVERLAP} – nicht berücksichtigt.")
         elif max(vals) - min(vals) <= 1e-12:
             notes.append(f"{f.label}: ohne Bewegung im Zeitraum – nicht nutzbar.")
         else:
@@ -196,7 +211,11 @@ def common_start(features: Sequence[Feature]) -> int:
     return max((f.first or 0) for f in features) if features else 0
 
 
-async def options(t: Terminal, kind: str, country: str) -> list[FcFeatureOption]:
+async def options(t: Terminal, kind: str, country: str, exclude: Optional[str] = None) -> list[FcFeatureOption]:
+    return [o for o in await _options(t, kind, country) if o.key != exclude]
+
+
+async def _options(t: Terminal, kind: str, country: str) -> list[FcFeatureOption]:
     """Vorschläge für die Auswahl: Märkte (Rohstoffe, Aktienindex, Renditen, Devisen) und andere
     Kennzahlen bzw. Konjunkturtermine desselben Landes. Jeder Ticker geht auch per Eingabe."""
     c = country.strip().upper()

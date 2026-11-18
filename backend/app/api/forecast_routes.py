@@ -44,9 +44,11 @@ async def forecast_features(
     request: Request,
     kind: str = Query("macro", pattern="^(macro|event)$"),
     country: str = Query(..., pattern="^[A-Za-z]{2,3}$"),
+    target: str = Query("", max_length=140, description="Kennzahl bzw. Terminname der Zielreihe – wird nicht vorgeschlagen"),
 ):
     """Vorschläge für Einflussgrößen (Märkte, Kennzahlen, Konjunkturtermine des Landes)."""
-    return await features.options(_t(request), kind, country)
+    exclude = f"{'m' if kind == 'macro' else 'e'}:{country.upper()}:{target}" if target else None
+    return await features.options(_t(request), kind, country, exclude)
 
 
 @router.get("/event", response_model=ForecastResult)

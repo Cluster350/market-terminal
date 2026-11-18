@@ -962,7 +962,35 @@ class DemoProvider:
             )
         return out
 
-    async def history(self, ticker: str) -> History:
+    async def history(self, ticker: str, years: Optional[int] = None) -> History:
+        h = self._history(ticker)
+        return h if not years else self._extend_back(h, years)
+
+    def _extend_back(self, h: History, years: int) -> History:
+        """Verlauf nach hinten verlängern (für Jahresvergleiche der Prognose): fiktive Schlusskurse mit der
+        Schwankung des vorhandenen Verlaufs, fest je Ticker. Renditen laufen additiv, Kurse multiplikativ."""
+        closes = [c for c in h.c if c is not None]
+        first = dt.date.fromisoformat(h.t[0][:10])
+        start = first.replace(year=self.now().year - years, month=1, day=1)
+        if len(closes) < 30 or start >= first:
+            return h
+        rng = _rng("long", h.ticker)
+        additive = h.ticker.endswith(".GBOND") or min(closes) <= 0
+        steps = [(b - a) if additive else math.log(b / a) for a, b in zip(closes, closes[1:])]
+        sd = math.sqrt(sum(s * s for s in steps) / len(steps))
+        days = [d for d in (start + dt.timedelta(days=k) for k in range((first - start).days)) if d.weekday() < 5]
+        back: list[float] = []
+        x = closes[0]
+        for _ in days:
+            step = rng.gauss(0, sd)
+            x = x - step if additive else x / math.exp(step)
+            back.append(x)
+        back.reverse()
+        vals = [_px(v) for v in back]
+        return History(ticker=h.ticker, currency=h.currency, t=[d.isoformat() for d in days] + h.t,
+                       o=vals + h.o, h=vals + h.h, l=vals + h.l, c=vals + h.c, v=[None] * len(vals) + h.v)
+
+    def _history(self, ticker: str) -> History:
         self._require(ticker)
         e = self._effective(ticker)
         r = lambda xs: [None if x is None else _px(x) for x in xs]

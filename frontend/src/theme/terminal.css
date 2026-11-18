@@ -767,7 +767,9 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .fc-x-name { max-width: 30ch; overflow: hidden; text-overflow: ellipsis; }
 .fc-x-chip button { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 3px; font: inherit; }
 .fc-x-chip button:hover { color: var(--value); }
-.fc-x-effect { padding: 0 10px 1px; flex: 0 0 auto; cursor: help; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-x-effect { padding: 0 10px 1px; flex: 0 0 auto; cursor: help; max-height: 4.2em; overflow-y: auto; }
+.fc-x-chip.off { border-color: var(--dim); color: var(--muted); }
+.fc-x-chip.off .fc-x-name { text-decoration: line-through; }
 .fc-wrap { overflow: hidden auto; } /* kleines Panel, Auswahl über mehrere Zeilen: Urteil und Fußzeile bleiben erreichbar */
 .eco-fc .fc-x { padding-right: 34px; }
 .eco-fc { flex: 0 0 50%; min-height: 220px; border-top: 1px solid var(--rule); position: relative; display: flex; flex-direction: column; overflow: hidden auto; }

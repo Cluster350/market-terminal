@@ -207,9 +207,50 @@ def test_target_itself_is_never_a_feature(client):
     assert f["features"] == [] and "Zielreihe selbst" in f["notes"][0]
 
 
-def test_short_market_series_keeps_macro_features(client):
-    """Jahresreihe: eine Kursreihe mit zu wenig Jahren fällt weg, die Kennzahlen bleiben nutzbar."""
-    q = urllib.parse.urlencode([("country", "USA"), ("indicator", "inflation_consumer_prices_annual"),
-                                ("x", "m:USA:gdp_growth_annual"), ("x", "US10Y.GBOND")])
+def test_annual_series_use_long_price_history(client):
+    """Das Beispiel des Nutzers: Inflation mit Öl, Aktien, Gold und Zinsen. Für Jahresreihen lädt die Prognose
+    einen langen Kursverlauf – aus den üblichen zehn Jahren entstünden nur neun Jahresveränderungen (nicht nutzbar)."""
+    keys = ["WTI.COMM", "GSPC.INDX", "GOLD.COMM", "US10Y.GBOND"]
+    q = urllib.parse.urlencode([("country", "USA"), ("indicator", "inflation_consumer_prices_annual")] + [("x", k) for k in keys])
     f = client.get(f"/api/forecast/macro?{q}").json()["features"]
-    assert [x["key"] for x in f["features"]] == ["m:USA:gdp_growth_annual"] and len(f["notes"]) == 1 and "US10Y" in f["notes"][0]
+    assert [x["key"] for x in f["features"]] == keys and f["notes"] == [] and f["points"] >= 20
+    # Namen wie in der Auswahl, nicht die Ticker-Schreibweise
+    assert f["features"][0]["label"].startswith("WTI-Öl") and f["features"][3]["label"] == "Rendite 10 Jahre USA (Rendite)"
+    assert f["maeWith"] is not None and all(x["mae"] is not None for x in f["features"])
+    t = client.app.state.terminal
+    long, short = run(t.history_long("WTI.COMM")), run(t.history("WTI.COMM"))
+    assert long.t[-len(short.t):] == short.t and long.c[-len(short.c):] == short.c  # der bekannte Verlauf bleibt unverändert
+    assert int(short.t[0][:4]) - int(long.t[0][:4]) >= 15 and all(c > 0 for c in long.c)
+    assert run(t.history_long("WTI.COMM")).c == long.c  # fest je Ticker
+
+
+def test_many_features_are_not_silently_ignored():
+    """Vier und mehr Einflussgrößen bei einer Jahresreihe: Die Statistik ließ sie stillschweigend weg
+    (Prognose wie ohne), obwohl einzelne Reihen wirkten."""
+    x, y = leading(n=26, seed=4)
+    rnd = random.Random(8)
+    others = [[rnd.gauss(0, 1) for _ in y] for _ in range(4)]
+    assert predict_one_x(y, [x] + others, 1) != predict_one(y, 1)
+
+
+def test_unknown_ticker_note_and_options_without_target(client):
+    r = client.get("/api/forecast/macro?country=USA&indicator=gdp_growth_annual&x=Gold").json()["features"]
+    assert "nicht gefunden" in r["notes"][0] and "SPY US" in r["notes"][0]
+    opts = client.get("/api/forecast/features?kind=macro&country=USA&target=gdp_growth_annual").json()
+    assert not any(o["key"] == "m:USA:gdp_growth_annual" for o in opts) and any(o["key"] == "m:USA:real_interest_rate" for o in opts)
+    ev = client.get("/api/forecast/features?kind=event&country=US").json()
+    name = next(o["label"] for o in ev if o["group"] == "Konjunkturtermine")
+    q = urllib.parse.urlencode([("kind", "event"), ("country", "us"), ("target", name)])
+    assert not any(o["key"] == f"e:US:{name}" for o in client.get(f"/api/forecast/features?{q}").json())
+
+
+def test_small_differences_are_not_a_finding():
+    from app.forecast.models import FcFeature, FcFeatureEffect
+    from app.forecast.service import _effect_text
+
+    e = FcFeatureEffect(features=[FcFeature(key="k", label="K", gain=0.03)], gain=0.03, points=40)
+    assert _effect_text(e).startswith("Kein klarer Unterschied") and "3 %" in _effect_text(e)
+    e.gain = 0.2
+    assert "20 % genauer" in _effect_text(e)
+    e.gain = -0.2
+    assert "helfen hier nicht" in _effect_text(e)

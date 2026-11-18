@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanFeatures, comparedText, digitsFor, fanData, featureLabel, gainText, sameSeries, isFeatureList, xQuery, fcTime, fmtVal, qualityLine, verdictClass, verdictLabel, type FcQuality, type ForecastResult } from "./forecast";
+import { cleanFeatures, unusedFeatures, comparedText, digitsFor, fanData, featureLabel, gainText, sameSeries, isFeatureList, xQuery, fcTime, fmtVal, qualityLine, verdictClass, verdictLabel, type FcQuality, type ForecastResult } from "./forecast";
 
 const quality = (over: Partial<FcQuality> = {}): FcQuality => ({
   origins: 20, pairs: 50, mae: 0.16, maeNaive: 0.24, skill: 0.33, cover50: 0.5, cover80: 0.79, rawCover80: 0.7, bandScale: 1.2,
@@ -120,5 +120,14 @@ describe("Prognose: Einflussgrößen", () => {
     expect(sameSeries(["fc-macro", "IND", "gdp", 3, ""], ["fc-macro", "ESP", "gdp", 3])).toBe(false);
     expect(sameSeries(["fc-macro", "IND", "gdp", 3, ""], ["fc-macro", "IND", "cpi", 3])).toBe(false);
     expect(sameSeries(undefined, ["fc-macro", "IND", "gdp", 3])).toBe(false);
+  });
+});
+
+describe("Prognose: nicht genutzte Einflussgrößen", () => {
+  it("erkennt gewählte Reihen, die nicht eingegangen sind", () => {
+    const fx = { features: [{ key: "WTI.COMM", label: "Öl", mae: 1, gain: 0 }], maeBase: 1, maeWith: 1, gain: 0, helps: null, text: "", baseline: null, baseEngineLabel: null, points: 20, notes: ["x"] };
+    expect(unusedFeatures(["wti.comm", "GOLD"], { features: fx })).toEqual(["GOLD"]);
+    expect(unusedFeatures(["GOLD"], { features: null })).toEqual([]);
+    expect(unusedFeatures(["GOLD"], undefined)).toEqual([]);
   });
 });

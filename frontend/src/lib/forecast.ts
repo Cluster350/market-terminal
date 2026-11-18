@@ -109,7 +109,8 @@ export const forecastApi = {
     request<ForecastResult>(`/forecast/macro${qs({ country, indicator, h })}${xQuery(x)}`, undefined, { timeoutMs: x.length ? 180_000 : 60_000 }),
   event: (country: string, event: string, h = 3, x: string[] = []) =>
     request<ForecastResult>(`/forecast/event${qs({ country, event, h })}${xQuery(x)}`, undefined, { timeoutMs: x.length ? 240_000 : 90_000 }),
-  features: (kind: "macro" | "event", country: string) => request<FcFeatureOption[]>(`/forecast/features${qs({ kind, country })}`),
+  features: (kind: "macro" | "event", country: string, target?: string | null) =>
+    request<FcFeatureOption[]>(`/forecast/features${qs({ kind, country, target: target ?? undefined })}`),
   vol: (ticker: string, h = 3, iv?: number | null) =>
     request<ForecastResult>(`/forecast/vol/${encodeURIComponent(ticker)}${qs({ h, iv: iv ?? undefined })}`, undefined, { timeoutMs: 60_000 }),
 };
@@ -151,14 +152,23 @@ export function featureLabel(key: string, opts: FcFeatureOption[]): string {
 /** Beginnt der Abfrageschlüssel mit denselben Teilen? (dieselbe Reihe – nur die Einflussgrößen sind anders) */
 export const sameSeries = (key: readonly unknown[] | undefined, head: readonly unknown[]) => !!key && head.every((v, i) => key[i] === v);
 
-export const useFeatureOptions = (kind: "macro" | "event", country: string | null) =>
+/** Vorschläge für die Auswahl; ``target`` (Kennzahl bzw. Terminname der Zielreihe) wird nicht angeboten. */
+export const useFeatureOptions = (kind: "macro" | "event", country: string | null, target?: string | null) =>
   useQuery({
-    queryKey: ["fc-features", kind, country],
-    queryFn: () => forecastApi.features(kind, country!),
+    queryKey: ["fc-features", kind, country, target ?? null],
+    queryFn: () => forecastApi.features(kind, country!, target),
     enabled: !IS_STATIC && !!country,
     staleTime: 3_600_000,
     retry: noRetry,
+    placeholderData: keepPreviousData,
   });
+
+/** Gewählte Reihen, die in die Prognose NICHT eingegangen sind (unbekannt, zu kurz, die Zielreihe selbst). */
+export function unusedFeatures(selected: string[], r: Pick<ForecastResult, "features"> | null | undefined): string[] {
+  if (!r?.features) return [];
+  const used = new Set(r.features.features.map((f) => f.key.toUpperCase()));
+  return selected.filter((k) => !used.has(k.toUpperCase()));
+}
 
 const noRetry = (n: number, e: Error) => !(e instanceof ApiError && e.status >= 400 && e.status < 600) && n < 1;
 

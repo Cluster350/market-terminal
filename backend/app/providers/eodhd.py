@@ -165,8 +165,9 @@ class EODHDProvider:
             out.extend(mapping.quotes(data, chunk))
         return out
 
-    async def history(self, ticker: str) -> History:
-        start = dt.date.today() - dt.timedelta(days=365 * self.settings.history_years + 10)
+    async def history(self, ticker: str, years: Optional[int] = None) -> History:
+        """``years``: abweichende Länge (die Prognose braucht für Jahresreihen mehr als die üblichen zehn Jahre)."""
+        start = dt.date.today() - dt.timedelta(days=365 * (years or self.settings.history_years) + 10)
         data = await self.client.get(
             f"eod/{_path_ticker(ticker)}", {"from": start.isoformat(), "period": "d", "order": "a"}
         )

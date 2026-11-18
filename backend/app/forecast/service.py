@@ -236,10 +236,12 @@ class ForecastService:
                         alone = await asyncio.to_thread(evaluate, engine, values, h, None, [x])
                     effect.features.append(FcFeature(key=f.key, label=f.label, mae=alone.mae, gain=_gain(alone.mae, base.mae)))
                 effect.gain = _gain(best.mae, base.mae)
-                effect.helps = None if effect.gain is None else effect.gain > 0.01
+                effect.helps = None if effect.gain is None or abs(effect.gain) < CLEAR_GAIN else effect.gain > 0
             else:
                 effect.notes.append("Kein Rechenverfahren konnte die Einflussgrößen verarbeiten – Prognose ohne sie.")
         effect.text = _effect_text(effect)
+        if not effect.features and note:
+            note = note.replace(" und den gewählten Einflussgrößen.", ".")
 
         quality = FcQuality(
             origins=best.origins, pairs=best.pairs, mae=best.mae, mae_naive=best.mae_naive, skill=best.skill,
@@ -259,6 +261,7 @@ class ForecastService:
 
 
 MIN_X_POINTS = 12
+CLEAR_GAIN = 0.05  # kleinere Unterschiede im Rückblick gelten nicht als Befund
 
 
 def _band(future_t: Sequence[str], h: int, table: list[list[float]]) -> FcBand:
@@ -277,7 +280,10 @@ def _effect_text(e: FcFeatureEffect) -> str:
     if e.gain is None:
         return "Zu wenig Verlauf, um den Nutzen der Einflussgrößen im Rückblick zu prüfen."
     pct = round(abs(e.gain) * 100)
-    if e.gain > 0.01:
+    if abs(e.gain) < CLEAR_GAIN and abs(e.gain) > 0.01:
+        text = (f"Kein klarer Unterschied: mit den Einflussgrößen im Rückblick {pct} % {'genauer' if e.gain > 0 else 'ungenauer'} "
+                "als ohne – so kleine Abstände entstehen auch durch Zufall.")
+    elif e.gain > 0.01:
         text = f"Mit den Einflussgrößen war die Prognose im Rückblick {pct} % genauer als ohne."
     elif e.gain < -0.01:
         text = f"Mit den Einflussgrößen war die Prognose im Rückblick {pct} % ungenauer als ohne – sie helfen hier nicht."

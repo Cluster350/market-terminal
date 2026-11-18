@@ -12,7 +12,7 @@ import { useWorkspace } from "../state/workspace";
 import { FeaturePicker, ForecastPanel } from "../components/ForecastPanel";
 import { useCsvExport } from "../lib/exporter";
 import { IS_STATIC } from "../lib/api";
-import { cleanFeatures, digitsFor, fcTime, fmtVal, isFeatureList, useEventForecast, useMacroForecast, type ForecastResult } from "../lib/forecast";
+import { cleanFeatures, unusedFeatures, digitsFor, fcTime, fmtVal, isFeatureList, useEventForecast, useMacroForecast, type ForecastResult } from "../lib/forecast";
 import type { ScreenProps } from "./types";
 
 function MarketTable({ rows, grouped, digits }: { rows: MarketRow[]; grouped?: boolean; digits?: number }) {
@@ -515,7 +515,7 @@ export function ECO(_: ScreenProps) {
             <button type="button" className="tool eco-fc-close" aria-label="Prognose schließen" onClick={() => setSel(null)}>
               ×
             </button>
-            <FeaturePicker kind="event" country={sel.country} value={cleanFeatures(fx)} onChange={setFx} />
+            <FeaturePicker kind="event" country={sel.country} target={sel.event} unused={fc.isFetching ? [] : unusedFeatures(cleanFeatures(fx), fc.data)} value={cleanFeatures(fx)} onChange={setFx} />
             <ForecastPanel q={fc} maxHist={30}>{(r) => <ConsensusCompare r={r} />}</ForecastPanel>
           </div>
         )}
@@ -730,7 +730,7 @@ export function ECST(_: ScreenProps) {
                   {showForecast ? (
                     mark ? (
                       <div className="fc-wrap">
-                        <FeaturePicker kind="macro" country={mark} value={cleanFeatures(fx)} onChange={setFx} />
+                        <FeaturePicker kind="macro" country={mark} target={focus} unused={fc.isFetching ? [] : unusedFeatures(cleanFeatures(fx), fc.data)} value={cleanFeatures(fx)} onChange={setFx} />
                         <ForecastPanel q={fc} maxHist={16} />
                       </div>
                     ) : <Empty>Land in der Tabelle anklicken: Verlauf der Kennzahl mit Prognose für die nächsten drei Jahre.</Empty>

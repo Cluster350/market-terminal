@@ -687,6 +687,11 @@ Landes) oder jeder Ticker per Eingabe. Die Auswahl bleibt gespeichert, bis man s
   zählen bei Terminen erst ab Juli des Folgejahres (sie werden erst Monate später veröffentlicht).
 - Grenzen: Bei Jahresreihen gibt es wenige Datenpunkte – mit vielen Zusatzreihen passt sich ein Modell
   leicht an Zufall an. Reihen mit weniger als 12 gemeinsamen Zeitpunkten werden nicht genutzt (Hinweis in Rot).
+- Für Jahreskennzahlen (ECST) lädt das Terminal für Kursreihen einen **30-jährigen Verlauf** (aus den üblichen
+  zehn Jahren entstünden nur neun Jahresvergleiche). Das ist je Ticker ein zusätzlicher EODHD-Abruf; er wird
+  zwischengespeichert. Reicht der Verlauf eines Werts nicht so weit zurück, erscheint ein Hinweis.
+- Nicht genutzte Reihen sind in der Auswahl durchgestrichen; der Grund steht unter dem Diagramm. Unterschiede
+  unter 5 % gelten als „kein klarer Unterschied“, weil sie auch durch Zufall entstehen.
 
 **Zwei Methoden, Auto-Auswahl:** Die eingebaute Statistik (gedämpfter Trend) ist immer da.
 **Chronos-2** (Amazon, frei nutzbar, läuft auf dem eigenen Rechner ohne Grafikkarte) ist meist genauer;

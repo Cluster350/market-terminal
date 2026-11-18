@@ -181,6 +181,11 @@ class Terminal:
     async def history(self, ticker: str) -> History:
         return await self._cached(f"hist:{ticker}", "history", lambda: self.p.history(ticker))
 
+    async def history_long(self, ticker: str, years: int = 30) -> History:
+        """Langer Kursverlauf für Jahresvergleiche (Einflussgrößen der Prognose): Aus zehn Jahren entstehen nur
+        neun Jahresveränderungen – zu wenig. Kostet einen eigenen Abruf, deshalb nur dort verwendet."""
+        return await self._cached(f"histlong:{years}:{ticker}", "history", lambda: self.p.history(ticker, years))
+
     async def options(self, ticker: str) -> list[OptionContract]:
         return await self._cached(f"options:{ticker}", "options", lambda: self.p.options(ticker))
 
