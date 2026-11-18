@@ -1,6 +1,6 @@
 // Fächerdiagramm einer Prognose mit Urteil des Rückblick-Tests (gemeinsam für ECST, ECO und OMON).
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import EChart, { AXIS, TOOLTIP, type EOption } from "./EChart";
 import { Empty, ErrorState, Loading } from "./ui";
@@ -9,6 +9,7 @@ import { normalizeTicker } from "../lib/commands";
 import { fmt } from "../lib/format";
 import { useCsvExport, type CsvDataset } from "../lib/exporter";
 import {
+  busyText,
   cleanFeatures,
   comparedText,
   digitsFor,
@@ -209,21 +210,62 @@ function FeatureEffect({ r }: { r: ForecastResult }) {
   );
 }
 
-export function ForecastPanel({ q, children, maxHist, height }: { q: UseQueryResult<ForecastResult>; children?: (r: ForecastResult) => ReactNode; maxHist?: number; height?: number }) {
+/** Sekunden seit Beginn einer laufenden Berechnung (0, solange nichts läuft). */
+function useElapsed(active: boolean): number {
+  const [s, setS] = useState(0);
+  useEffect(() => {
+    setS(0);
+    if (!active) return;
+    const start = Date.now();
+    const id = window.setInterval(() => setS(Math.floor((Date.now() - start) / 1000)), 500);
+    return () => window.clearInterval(id);
+  }, [active]);
+  return s;
+}
+
+/** Laufende Berechnung in Worten (statt nur grauer Platzhalter). */
+function Busy({ featureCount, seconds, inline }: { featureCount: number; seconds: number; inline?: boolean }) {
+  const status = useForecastStatus().data;
+  const text = busyText(status, featureCount, seconds);
+  return (
+    <span className={`fc-busy xs${inline ? " inline" : ""}`} role="status" aria-live="polite">
+      <span className="fc-spin" aria-hidden="true" />
+      {text}
+    </span>
+  );
+}
+
+export function ForecastPanel({ q, children, maxHist, height, featureCount = 0 }: {
+  q: UseQueryResult<ForecastResult>;
+  children?: (r: ForecastResult) => ReactNode;
+  maxHist?: number;
+  height?: number;
+  /** Zahl der gewählten Einflussgrößen (für den Hinweis während der Berechnung) */
+  featureCount?: number;
+}) {
   const r = q.data;
   const option = useMemo(() => (r ? fanOption(r, maxHist) : null), [r, maxHist]);
   useCsvExport(() => (r ? [forecastCsv(r)] : []));
-  if (q.isPending) return <Loading rows={4} />;
+  const busy = q.isFetching;
+  const seconds = useElapsed(busy);
+  if (q.isPending)
+    return (
+      <div className="fc-pending">
+        <Busy featureCount={featureCount} seconds={seconds} />
+        <Loading rows={3} />
+      </div>
+    );
   if (q.isError) return <FcError error={q.error} onRetry={() => q.refetch()} />;
   if (!r || !option) return null;
   const digits = digitsFor(r);
   const last = r.forecast.t.length - 1;
   const quality = qualityLine(r.quality, digits) + (r.quality.bandScale > 1.15 ? ` · Bänder nach dem Rückblick-Test ×${fmt(r.quality.bandScale, 1)} verbreitert` : "");
   return (
-    <div className="fc" style={q.isPlaceholderData ? { opacity: 0.55 } : undefined} aria-busy={q.isPlaceholderData || undefined}>
+    <div className={`fc${q.isPlaceholderData ? " stale" : ""}`} aria-busy={busy || undefined}>
       <div className="fc-head">
         <b>{r.label}</b>
         <EngineBadge r={r} />
+        {busy && <Busy featureCount={featureCount} seconds={seconds} inline />}
         <span className={`fc-verdict ${verdictClass(r.verdict)}`} title={r.verdictText}>
           {verdictLabel(r.verdict)}
         </span>

@@ -768,6 +768,15 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .fc-x-chip button { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 3px; font: inherit; }
 .fc-x-chip button:hover { color: var(--value); }
 .fc-x-effect { padding: 0 10px 1px; flex: 0 0 auto; cursor: help; max-height: 4.2em; overflow-y: auto; }
+/* Laufende Berechnung der Prognose */
+.fc-pending { display: flex; flex-direction: column; min-height: 0; }
+.fc-pending .fc-busy { padding: 6px 10px 0; }
+.fc-busy { display: inline-flex; align-items: center; gap: 6px; color: var(--label); }
+.fc-busy.inline { color: var(--muted); }
+.fc-spin { width: 9px; height: 9px; border: 1.5px solid var(--dim); border-top-color: var(--label); border-radius: 50%; animation: fc-spin 0.9s linear infinite; flex: 0 0 auto; }
+@keyframes fc-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .fc-spin { animation: none; } }
+.fc.stale .fc-chart, .fc.stale .fc-x-effect, .fc.stale .fc-foot { opacity: 0.45; }
 .fc-x-chip.off { border-color: var(--dim); color: var(--muted); }
 .fc-x-chip.off .fc-x-name { text-decoration: line-through; }
 .fc-wrap { overflow: hidden auto; } /* kleines Panel, Auswahl über mehrere Zeilen: Urteil und Fußzeile bleiben erreichbar */

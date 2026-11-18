@@ -516,7 +516,7 @@ export function ECO(_: ScreenProps) {
               ×
             </button>
             <FeaturePicker kind="event" country={sel.country} target={sel.event} unused={fc.isFetching ? [] : unusedFeatures(cleanFeatures(fx), fc.data)} value={cleanFeatures(fx)} onChange={setFx} />
-            <ForecastPanel q={fc} maxHist={30}>{(r) => <ConsensusCompare r={r} />}</ForecastPanel>
+            <ForecastPanel q={fc} maxHist={30} featureCount={cleanFeatures(fx).length}>{(r) => <ConsensusCompare r={r} />}</ForecastPanel>
           </div>
         )}
       </div>
@@ -731,7 +731,7 @@ export function ECST(_: ScreenProps) {
                     mark ? (
                       <div className="fc-wrap">
                         <FeaturePicker kind="macro" country={mark} target={focus} unused={fc.isFetching ? [] : unusedFeatures(cleanFeatures(fx), fc.data)} value={cleanFeatures(fx)} onChange={setFx} />
-                        <ForecastPanel q={fc} maxHist={16} />
+                        <ForecastPanel q={fc} maxHist={16} featureCount={cleanFeatures(fx).length} />
                       </div>
                     ) : <Empty>Land in der Tabelle anklicken: Verlauf der Kennzahl mit Prognose für die nächsten drei Jahre.</Empty>
                   ) : (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanFeatures, unusedFeatures, comparedText, digitsFor, fanData, featureLabel, gainText, sameSeries, isFeatureList, xQuery, fcTime, fmtVal, qualityLine, verdictClass, verdictLabel, type FcQuality, type ForecastResult } from "./forecast";
+import { busyText, cleanFeatures, unusedFeatures, comparedText, digitsFor, fanData, featureLabel, gainText, sameSeries, isFeatureList, xQuery, fcTime, fmtVal, qualityLine, verdictClass, verdictLabel, type FcQuality, type ForecastResult } from "./forecast";
 
 const quality = (over: Partial<FcQuality> = {}): FcQuality => ({
   origins: 20, pairs: 50, mae: 0.16, maeNaive: 0.24, skill: 0.33, cover50: 0.5, cover80: 0.79, rawCover80: 0.7, bandScale: 1.2,
@@ -131,3 +131,15 @@ describe("Prognose: nicht genutzte Einflussgrößen", () => {
     expect(unusedFeatures(["GOLD"], undefined)).toEqual([]);
   });
 });
+
+describe("Prognose: Hinweis während der Berechnung", () => {
+  const st = (active: string | null, loading = false) => ({ active, engines: [{ name: "chronos", label: "Chronos-2", ready: !loading, loading, error: null }] });
+  it("nennt Verfahren, Einflussgrößen und Dauer", () => {
+    expect(busyText(st("chronos"), 3, 4)).toBe("Prognose wird berechnet (Chronos-2 mit 3 Einflussgrößen und Vergleich ohne) · 4 s …");
+    expect(busyText(st("simple"), 1, 0)).toBe("Prognose wird berechnet (Statistik mit 1 Einflussgröße und Vergleich ohne) …");
+    expect(busyText(st("chronos"), 0, 0)).toBe("Prognose wird berechnet (Chronos-2) …");
+    expect(busyText(st("simple", true), 0, 2)).toBe("Prognose wird berechnet (Statistik) · Chronos-2 lädt noch – bis dahin rechnet die Statistik · 2 s …");
+    expect(busyText(undefined, 2, 0)).toBe("Prognose wird berechnet mit 2 Einflussgrößen und Vergleich ohne …");
+  });
+});
+

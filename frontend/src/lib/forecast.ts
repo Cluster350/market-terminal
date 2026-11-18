@@ -190,6 +190,8 @@ export const useEventForecast = (country: string | null, event: string | null, h
   useQuery({
     queryKey: ["fc-event", country, event, h, x.join("|")],
     queryFn: () => forecastApi.event(country!, event!, h, x),
+    // wie bei den Länderkennzahlen: beim Ändern der Einflussgrößen bleibt die bisherige Prognose abgeblendet stehen
+    placeholderData: (prev, q) => (sameSeries(q?.queryKey, ["fc-event", country, event, h]) ? prev : undefined),
     enabled: !IS_STATIC && !!country && !!event,
     staleTime: 600_000,
     retry: noRetry,
@@ -334,3 +336,18 @@ export function coneLines(lastTime: string, lastClose: number, volPct: number, d
   const line = (z: number) => times.map((time, k) => ({ time, value: at(k, z) }));
   return { up1: line(1), lo1: line(-1), up2: line(2), lo2: line(-2) };
 }
+
+/**
+ * Hinweis, solange eine Prognose rechnet: welches Verfahren, wie viele Einflussgrößen und wie lange schon.
+ * Chronos-2 braucht mit Einflussgrößen einige Sekunden (Rückblick-Test an bis zu 24 Zeitpunkten).
+ */
+export function busyText(status: Pick<ForecastStatus, "active" | "engines"> | null | undefined, featureCount = 0, seconds = 0): string {
+  const loading = status?.engines.some((e) => e.loading);
+  const engine = status?.active === "chronos" ? "Chronos-2" : status?.active ? "Statistik" : null;
+  const what = featureCount > 0 ? ` mit ${featureCount} Einflussgröße${featureCount === 1 ? "" : "n"} und Vergleich ohne` : "";
+  const parts = [`Prognose wird berechnet${engine ? ` (${engine}${what})` : what}`];
+  if (loading) parts.push("Chronos-2 lädt noch – bis dahin rechnet die Statistik");
+  if (seconds >= 1) parts.push(`${seconds} s`);
+  return parts.join(" · ") + " …";
+}
+
