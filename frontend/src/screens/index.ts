@@ -29,6 +29,7 @@ const CRYP = lazy(async () => ({ default: (await import("./crypto")).CRYP }));
 const FCTR = lazy(async () => ({ default: (await import("./factors")).FCTR }));
 const DCF = lazy(async () => ({ default: (await import("./intrinsic")).DCF }));
 const NB = lazy(async () => ({ default: (await import("./notebook")).NB }));
+const STIM = lazy(async () => ({ default: (await import("./sentiment")).STIM }));
 
 export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   GP,
@@ -67,6 +68,7 @@ export const SCREENS: Record<FnCode, ComponentType<ScreenProps>> = {
   FCTR,
   DCF,
   NB,
+  STIM,
   FWD,
   OMON,
 };

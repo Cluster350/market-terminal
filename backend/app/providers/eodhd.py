@@ -293,6 +293,31 @@ class EODHDProvider:
             raise errors[0]
         return sorted(items.values(), key=lambda n: n.date, reverse=True)
 
+    async def sentiments(self, tickers: list[str], start: dt.date) -> dict[str, dict[str, tuple[float, int]]]:
+        """Nachrichtenton (EODHD /sentiments): je Firma und Tag der Ton der Artikel (−1…+1) und ihre Zahl."""
+        out: dict[str, dict[str, tuple[float, int]]] = {}
+        by_upper = {t.upper(): t for t in tickers}
+        for i in range(0, len(tickers), 10):
+            chunk = tickers[i : i + 10]
+            data = await self.client.get("sentiments", {"s": ",".join(chunk), "from": start.isoformat(),
+                                                        "to": dt.date.today().isoformat()}, cost=5)
+            if not isinstance(data, dict):
+                continue
+            for key, rows in data.items():
+                t = by_upper.get(str(key).upper())
+                if t is None or not isinstance(rows, list):
+                    continue
+                day: dict[str, tuple[float, int]] = {}
+                for r in rows:
+                    try:
+                        d, v, n = str(r["date"])[:10], float(r["normalized"]), int(r.get("count") or 0)
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if -1.0 <= v <= 1.0 and n > 0:
+                        day[d] = (v, n)
+                out[t] = day
+        return out
+
     async def calendar(self, start: dt.date, end: dt.date, country: Optional[str]) -> list[EconEvent]:
         params: dict[str, Any] = {"from": start.isoformat(), "to": end.isoformat(), "limit": 1000}
         if country:

@@ -370,6 +370,25 @@ def valuation(kind: str = "sector", region: str = "all") -> Any:
     return _frame(get("/valuation/overview", kind=kind, region=region).get("rows", []), "key")
 
 
+def stimmung(region: str = "us", verlauf: bool = False) -> Any:
+    """Stimmung (wie STIM): Bausteine mit Wert und Rang 0–100 (hoch = sorglos); verlauf=True: Gesamtwert und Index je Tag."""
+    d = get("/sentiment", region=region)
+    if d.get("state") != "ready":
+        raise MTError(d.get("message") or "Das Stimmungsterminal rechnet noch – bitte gleich erneut versuchen.")
+    if verlauf:
+        df = _frame([{"date": t, "gesamt": g, "index": i} for t, g, i in zip(d["dates"], d["totalSeries"], d["indexSeries"])])
+        if pd is not None and len(df):
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.set_index("date")
+        return df
+    rows = [{"baustein": c["label"] + (" ≈" if c.get("approx") else ""), "wert": c.get("value"), "rang": c.get("rank"),
+             "rang_vorwoche": c.get("rank1w"), "im_gesamtwert": c.get("inTotal"), "hinweis": c.get("note")}
+            for c in d["components"]]
+    rows.append({"baustein": "Gesamtwert", "wert": None, "rang": d["total"].get("value"), "rang_vorwoche": d["total"].get("w1"),
+                 "im_gesamtwert": None, "hinweis": d["total"].get("word")})
+    return _frame(rows, "baustein")
+
+
 # --- Prognose ----------------------------------------------------------------------------------
 
 
@@ -452,7 +471,7 @@ def hilfe() -> None:
     """Alle Funktionen mit Kurzbeschreibung."""
     names = ["status", "search", "quotes", "history", "closes", "intraday", "company", "financials", "earnings",
              "dividends", "peers", "dcf", "news", "options", "indices", "fx", "commodities", "crypto", "curves",
-             "calendar", "countries", "worldmap", "rotation", "valuation", "forecast", "forecast_event",
+             "calendar", "countries", "worldmap", "rotation", "valuation", "stimmung", "forecast", "forecast_event",
              "forecast_features", "portfolio", "get"]
     g = globals()
     print(f"Terminal: {URL}\n")

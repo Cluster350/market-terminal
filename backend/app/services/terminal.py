@@ -186,6 +186,14 @@ class Terminal:
         neun Jahresveränderungen – zu wenig. Kostet einen eigenen Abruf, deshalb nur dort verwendet."""
         return await self._cached(f"histlong:{years}:{ticker}", "history", lambda: self.p.history(ticker, years))
 
+    async def sentiments(self, tickers: list[str], start: dt.date) -> dict[str, dict[str, tuple[float, int]]]:
+        """Nachrichtenton je Firma und Tag (Stimmungsterminal); einmal je Tag und Firmenliste geladen."""
+        fn = getattr(self.p, "sentiments", None)
+        if fn is None:
+            return {}
+        key = f"sent:{start.isoformat()}:{','.join(sorted(tickers))}"
+        return await self._cached(key, "history", lambda: fn(tickers, start))
+
     async def options(self, ticker: str) -> list[OptionContract]:
         return await self._cached(f"options:{ticker}", "options", lambda: self.p.options(ticker))
 

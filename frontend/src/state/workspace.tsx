@@ -33,7 +33,7 @@ export interface PageDef {
 
 export const PAGES: PageDef[] = [
   { id: "equity", label: "AKTIE", key: "1", hash: "aktie", layout: "quad", panels: ["GP", "DES", "FA", "CN"], pool: ["GP", "DES", "FA", "CN", "DCF", "RV", "ERN", "HP", "ANR", "DVD", "OMON", "TPO", "ALRT"] },
-  { id: "macro", label: "MAKRO", key: "2", hash: "makro", layout: "quad", panels: ["WMAP", "WEI", "GC", "ECO"], pool: ["WMAP", "WEI", "GC", "ECO", "FX", "FWD", "SPRD", "CMDT", "ECST", "BWT", "RRG", "FCTR", "CRYP", "NB"] },
+  { id: "macro", label: "MAKRO", key: "2", hash: "makro", layout: "quad", panels: ["WMAP", "WEI", "GC", "STIM"], pool: ["WMAP", "WEI", "GC", "STIM", "ECO", "FX", "FWD", "SPRD", "CMDT", "ECST", "BWT", "RRG", "FCTR", "CRYP", "NB"] },
   { id: "screener", label: "SCREENER", key: "3", hash: "screener", layout: "wide", panels: ["EQS", "IMAP", "MOST"], pool: ["EQS", "IMAP", "MOST", "W", "BWT", "RRG", "FCTR", "CRYP"] },
   { id: "news", label: "NEWS", key: "4", hash: "news", layout: "wide", panels: ["TOP", "BRIEF", "ASK"], pool: ["TOP", "BRIEF", "ASK", "W", "EVTS", "ECO"] },
   { id: "depot", label: "DEPOT", key: "5", hash: "depot", layout: "rows", panels: ["PORT", "RISK"], pool: ["PORT", "RISK", "ALRT", "GP", "CN", "W"] },
@@ -107,6 +107,8 @@ type Action =
 const LEGACY_KEY = "mt.workspace.v1";
 const SHARED_KEY = "mt.shared.v1";
 const winKey = (w: string) => `mt.win.v1.${w}`;
+const STIM_MOVED_KEY = "mt.stim-auf-makro";
+const OLD_MACRO: FnCode[] = ["WMAP", "WEI", "GC", "ECO"];
 
 const isFn = (f: unknown): f is FnCode => typeof f === "string" && Object.prototype.hasOwnProperty.call(FN, f);
 const isLayout = (l: unknown): l is Layout => typeof l === "string" && Object.prototype.hasOwnProperty.call(LAYOUT_SLOTS, l);
@@ -180,6 +182,17 @@ export function initial(hash = typeof location !== "undefined" ? location.hash :
         // hasOwnProperty statt "in": "toString" o. Ä. aus manipuliertem Speicher ließe das Panel abstürzen
         if (sp && Array.isArray(sp.panels) && sp.panels.every(isFn) && sp.panels.length === LAYOUT_SLOTS[layout]) {
           pages[p.id] = { layout, panels: sp.panels as FnCode[] };
+        }
+      }
+      // Einmalig: Wer MAKRO noch in der alten Grundaufteilung hat, bekommt dort STIM statt ECO (ECO bleibt in der
+      // Auswahl). Wer ECO später selbst wieder einsetzt, behält es.
+      if (!readJson(STIM_MOVED_KEY)) {
+        const m = pages.macro;
+        if (m.layout === "quad" && m.panels.join() === OLD_MACRO.join()) pages.macro = { layout: "quad", panels: [...PAGE_DEFAULTS.macro.panels] };
+        try {
+          localStorage.setItem(STIM_MOVED_KEY, "1");
+        } catch {
+          /* Speicher gesperrt: dann eben bei jedem Start prüfen */
         }
       }
       // Solo-Fenster sind auf ihre Seite und ein Panel festgelegt (Seite und Layout sind dort

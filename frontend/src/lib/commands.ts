@@ -6,7 +6,7 @@ import { countryCode } from "./intents";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG" | "CRYP" | "FCTR" | "DCF" | "NB";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG" | "CRYP" | "FCTR" | "DCF" | "NB" | "STIM";
 
 export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "Depot" | "System";
 
@@ -46,6 +46,7 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "CMDT", title: "Rohstoffe", group: "Makro", needsTicker: false, desc: "Energie, Metalle, Agrar" },
   { code: "GC", title: "Zinskurven", group: "Makro", needsTicker: false, desc: "Staatsanleihen-Kurven, heute vs. −1M / −1J" },
   { code: "SPRD", title: "Zinsspreads", group: "Makro", needsTicker: false, desc: "2J/10J und Länderspreads in Basispunkten" },
+  { code: "STIM", title: "Stimmung", group: "Makro", needsTicker: false, desc: "Angst & Gier: VIX, Marktbreite, Hochs/Tiefs, sichere Häfen, Put/Call, Nachrichtenton u. a. – jeweils verglichen mit der eigenen Geschichte (USA, Europa)" },
   { code: "ECO", title: "Wirtschaftskalender", group: "Makro", needsTicker: false, desc: "Termine mit Ist, Prognose, Überraschung" },
   { code: "ECST", title: "Länderdaten", group: "Makro", needsTicker: false, desc: "BIP, Inflation, Arbeitslosigkeit, Schulden" },
   { code: "EQS", title: "Aktien-Screener", group: "Screener", needsTicker: false, desc: "Filtern nach Bewertung, Dividende, Momentum" },
@@ -90,6 +91,8 @@ const ALIASES: Record<string, FnCode> = {
   BITCOIN: "CRYP", XBT: "CRYP", CRYPTOS: "CRYP",
   FAKTOR: "FCTR", FAKTOREN: "FCTR", FACTOR: "FCTR", FACTORS: "FCTR", STIL: "FCTR", STILE: "FCTR", STYLE: "FCTR", STYLES: "FCTR",
   SMARTBETA: "FCTR", VALUE: "FCTR", MOMENTUM: "FCTR", FCT: "FCTR",
+  STIMMUNG: "STIM", MOOD: "STIM", SENT: "STIM", SENTIMENT: "STIM", ANGST: "STIM", GIER: "STIM", FEAR: "STIM", GREED: "STIM",
+  FEARGREED: "STIM", MARKTBREITE: "STIM", BREADTH: "STIM",
   NOTEBOOK: "NB", JUPYTER: "NB", JUPYTERLAB: "NB", PYTHON: "NB", NOTIZBUCH: "NB",
   INNERERWERT: "DCF", INTRINSIC: "DCF", DAMODARAN: "DCF", FAIRVALUE: "DCF", DCFV: "DCF", IVAL: "DCF",
   BRIEFING: "BRIEF", MORGEN: "BRIEF", MORGENBRIEFING: "BRIEF", MORNING: "BRIEF", BRIEFUNG: "BRIEF",

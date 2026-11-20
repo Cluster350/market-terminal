@@ -6,7 +6,7 @@ Finanzterminal im Stil von Bloomberg Terminal und Reuters/LSEG Workspace auf Bas
 | Seite | Panels | Inhalt |
 |---|---|---|
 | **1 AKTIE** | GP · DES · FA · CN | Kurschart, Firmenprofil mit Kennzahlen, Finanzberichte, Firmen-News |
-| **2 MAKRO** | WMAP · WEI · GC · ECO | Weltkarte, Weltindizes, Zinskurven, Wirtschaftskalender (FX, ECST, BWT Bewertungstrend über das Auswahlfeld) |
+| **2 MAKRO** | WMAP · WEI · GC · STIM | Weltkarte, Weltindizes, Zinskurven, Stimmung (ECO Wirtschaftskalender, FX, ECST, BWT Bewertungstrend über das Auswahlfeld) |
 | **3 SCREENER** | EQS · IMAP · MOST | Aktien-Screener, Markt-Heatmap, Top-Bewegungen |
 | **4 NEWS** | TOP · BRIEF · ASK | News-Terminal mit KI-Einordnung, Morgenbriefing, KI-Assistent |
 | **5 DEPOT** | PORT · RISK | Eigenes Depot: Wert, Ergebnis, Aufteilung; Risiko mit Schwankung, Beta, VaR, Korrelationen; dazu ALRT (Kursalarme) |
@@ -355,6 +355,38 @@ Mit EODHD: Kurse aus den Krypto-Kursdaten (`BTC-USD.CC` …), umlaufende Menge u
 Krypto-Fundamentaldaten (einmal täglich). Liefert die Quelle keinen Anteil am gesamten Kryptomarkt, bezieht sich
 der Anteil auf die gezeigten Coins (steht so in der Anzeige). Jeder Coin geht auch in GP, Watchlist, Alarmen und
 Depot, z. B. `ETH-USD Curncy`. Liste der Coins: `backend/app/crypto/universe.py`.
+
+## Stimmungsterminal (STIM): Angst & Gier
+
+`STIM` (oder „Stimmung“, „Angst“, „Gier“, „Mood“) beantwortet eine Frage: **Wie ängstlich oder sorglos ist der Markt
+gerade – gemessen an seiner eigenen Geschichte?** Es steht auf der Seite MAKRO unten rechts (ECO bleibt über das
+Auswahlfeld erreichbar). Region **USA** oder **Europa**.
+
+- **Rang 0–100 je Baustein:** Jeder Wert wird mit allen früheren Tagen seit 2015 verglichen (nur Vergangenheit). Rang 70
+  heißt: an 70 von 100 früheren Tagen war die Stimmung ängstlicher. Bei VIX, ø Volatilität und Put/Call ist die Richtung
+  gedreht (hoch = Angst).
+- **Gesamtwert „Angst & Gier“** = Mittel der Ränge, jeder Baustein gleich gewichtet. Farbe: blau = Angst, grau =
+  gewöhnlich (Rang 30–70), magenta = Sorglosigkeit; große Marke unter 5 bzw. über 95.
+- **Bausteine USA (9):** VIX · ø Volatilität · Marktbreite (Anteil über 200-Tage-Schnitt) · Hochs/Tiefs (52 Wochen) ·
+  Trust (Anteil steigender Firmen) · Sichere Häfen (Aktien gegen Staatsanleihen, 20 Tage) · Put/Call ≈ · Risikoaufschlag ≈
+  · Nachrichtenton. **Europa (6):** dieselben ohne VIX, Put/Call und Risikoaufschlag.
+- **Keine Ersatzgrößen:** Was es nur für die USA gibt, steht in Europa sichtbar als „nur USA“ und wird nicht durch etwas
+  Ähnliches vertreten. Der Gesamtwert nennt, aus wie vielen Bausteinen er besteht.
+- **≈ Näherungen:** Put/Call aus den Optionsumsätzen auf SPY und QQQ, Risikoaufschlag aus den ETFs HYG gegen IEF – nicht
+  die offiziellen Zahlen. EODHD liefert nur die Optionskette von heute; das Terminal **zeichnet Put/Call deshalb täglich
+  auf** (`stimmung/putcall.json` im Datenordner). Bis 250 Tage beisammen sind, steht dort „sammelt noch“ und Put/Call
+  zählt noch nicht mit. Der Abruf kostet einmal täglich gut 100 API-Einheiten.
+- **Trend (Kontext):** Abstand des Index zum 125-Tage-Schnitt – nur zum Vergleich, nicht im Gesamtwert.
+- **Maximiert (Alt+M)**: Verlauf als Farbstreifen über dem Index, Zerlegung des Gesamtwerts, Marktbreite mit
+  200-Tage-Index, Hochs/Tiefs, A/D-Linie (markiert Strecken, in denen der Index steigt, die Mehrheit aber nicht mitgeht),
+  Trust, Breadth (Volumen) und TRIN, Wärmebild je Sektor (26 Wochen) und der **Rückblick**: Wie lief der Index nach
+  früheren Phasen mit ähnlicher Stimmung (1/3/6 Monate) – neben „alle Tage“, gezählt nach unabhängigen Episoden, mit
+  Urteil deutlich/schwach/zu wenig Fälle.
+- **Datenbasis:** die Firmen des Bewertungstrends (BWT) der Region; beim ersten Start wartet STIM, bis diese Liste steht.
+  Nachrichtenton aus EODHD (Textauswertung der Artikel zu den 30 größten Firmen).
+
+Sehr hohe oder sehr niedrige Werte kippten früher eher ins Gegenteil – oft erst nach Monaten. STIM beschreibt die Lage,
+es ist keine Empfehlung. CSV: Gesamtwert und Index je Tag, Ränge und Werte je Baustein, Marktbreite.
 
 ## Faktoren (FCTR) und Faktorlast im Depot
 
@@ -727,6 +759,8 @@ mt.history("SAP GR")                                     # Tageskurse
 mt.closes(["SPY US", "GOLD Comdty"]).pct_change().corr()  # Korrelation
 mt.countries("Inflation")                                # Länderkennzahl je Jahr und Land
 mt.forecast("USA", "Inflation", x=["WTI", "Gold", "US10Y.GBOND"])  # Prognose mit Einflussgrößen
+mt.stimmung("us")                                        # Stimmung (STIM): Bausteine mit Rang, Gesamtwert
+mt.stimmung("eu", verlauf=True)                          # Gesamtwert und Index je Tag
 mt.portfolio()                                           # Depot
 mt.hilfe()                                               # alle Funktionen
 ```

@@ -35,6 +35,7 @@ from .api.routes import router
 from .api.stream_routes import router as stream_router
 from .api.rotation_routes import router as rotation_router
 from .api.valuation_routes import router as valuation_router
+from .api.sentiment_routes import router as sentiment_router
 from .cache import TTLCache
 from .config import Settings, settings
 from .crypto.service import CryptoService
@@ -50,6 +51,7 @@ from .realtime.hub import RealtimeHub
 from .services.terminal import Terminal, request_flags
 from .rotation.service import RotationService
 from .valuation.service import ValuationService
+from .sentiment.service import SentimentService
 
 log = logging.getLogger("terminal")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -259,6 +261,7 @@ def create_app(
         app.state.terminal.crypto = app.state.crypto
         app.state.terminal.factors = app.state.factors
         app.state.rotation = RotationService(app.state.terminal, app.state.valuation, app.state.factors)
+        app.state.sentiment = SentimentService(app.state.terminal, app.state.valuation, cfg.portfolio_dir, prov.mode)
         app.state.intrinsic = IntrinsicService(app.state.terminal, cfg.portfolio_dir)
         app.state.intrinsic.start(prov.mode)
         app.state.terminal.intrinsic = app.state.intrinsic
@@ -331,6 +334,7 @@ def create_app(
     app.include_router(factor_router)
     app.include_router(intrinsic_router)
     app.include_router(notebook_router)
+    app.include_router(sentiment_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

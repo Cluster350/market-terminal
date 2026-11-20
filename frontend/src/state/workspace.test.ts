@@ -178,3 +178,31 @@ describe("Seite DEPOT", () => {
     expect(s.pages.depot.panels).toContain("ALRT");
   });
 });
+
+describe("STIM auf MAKRO", () => {
+  const macro = (panels: string[]) => ({ version: 1, page: "macro", pages: { macro: { layout: "quad", panels } } });
+  const store = (saved: unknown, flag: string | null) => {
+    const written: Record<string, string> = {};
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => (k === "mt.win.v1.main" ? JSON.stringify(saved) : k === "mt.stim-auf-makro" ? flag : null),
+      setItem: (k: string, v: string) => {
+        written[k] = v;
+      },
+    });
+    return written;
+  };
+
+  it("ersetzt ECO einmalig durch STIM, wenn MAKRO noch in der alten Grundaufteilung ist", () => {
+    const written = store(macro(["WMAP", "WEI", "GC", "ECO"]), null);
+    expect(initial("").pages.macro.panels).toEqual(["WMAP", "WEI", "GC", "STIM"]);
+    expect(written["mt.stim-auf-makro"]).toBe("1");
+  });
+
+  it("lässt eigene Aufteilungen und spätere Entscheidungen für ECO in Ruhe", () => {
+    store(macro(["WMAP", "ECO", "GC", "FX"]), null);
+    expect(initial("").pages.macro.panels).toEqual(["WMAP", "ECO", "GC", "FX"]);
+    store(macro(["WMAP", "WEI", "GC", "ECO"]), "1");
+    expect(initial("").pages.macro.panels).toEqual(["WMAP", "WEI", "GC", "ECO"]);
+    expect(PAGES.find((p) => p.id === "macro")!.pool).toContain("ECO");
+  });
+});
