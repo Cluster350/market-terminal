@@ -51,7 +51,7 @@ section { display: grid; gap: 12px; min-width: 0; }
 .seg { display: inline-flex; border: 1px solid var(--rule2); font-size: 11px; }
 .seg span { padding: 0 7px; color: var(--muted); }
 .seg span.on { background: #2a1a05; color: var(--label); }
-.frame-q { width: 100%; max-width: 660px; }
+.frame-q { width: 100%; max-width: 740px; }
 .scroll { overflow-x: auto; }
 .q-body { display: grid; grid-template-columns: 196px 1fr; min-height: 300px; }
 .q-left { border-right: 1px solid var(--rule); padding: 10px 12px; display: grid; gap: 6px; align-content: start; }
@@ -111,6 +111,8 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
 .bt tr.off td { color: var(--dim); }
 .bt tr.off td.name::after { content: "  nur USA"; color: var(--dim); font-size: 10px; }
 .bt tr.open td.name { color: var(--muted); }
+.apx { color: var(--label); font-weight: 600; cursor: help; }
+.tiles { grid-template-columns: repeat(5, 1fr) !important; }
 .qs { display: grid; grid-template-columns: 1fr; gap: 16px; }
 .new { color: #000; background: var(--value); font: 600 9.5px var(--mono); padding: 0 4px; margin-left: 6px; letter-spacing: .04em; vertical-align: 1px; }
 .tabs { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--rule2); width: max-content; max-width: 100%; font-size: 11px; }
@@ -149,12 +151,12 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
 
   <section>
     <h2>Ansicht 1 · Viertelpanel, USA und Europa im Vergleich</h2>
-    <p class="muted">Oben die USA mit 6 Bausteinen, darunter Europa mit 5: Der VIX fehlt dort sichtbar, und der Gesamtwert sagt, woraus er besteht. Die Region wird über das Kürzel im Kopf gewählt (Klick wechselt USA → Europa → Deutschland).</p>
+    <p class="muted">Oben die USA mit 8 Bausteinen, darunter Europa mit 5: VIX, Put/Call und Risikoaufschlag gibt es nur für die USA und fehlen dort sichtbar; der Gesamtwert sagt, woraus er besteht. Put/Call und Risikoaufschlag sind Näherungen und tragen überall das Zeichen ≈. Die Region wird über das Kürzel im Kopf gewählt (Klick wechselt USA → Europa → Deutschland).</p>
     <div class="qs">
       <div class="scroll"><div class="panel frame-q" id="panel-us"></div></div>
       <div class="scroll"><div class="panel frame-q" id="panel-eu"></div></div>
     </div>
-    <p class="cap">Gefüllter Punkt = heute, hohler Punkt = vor einer Woche. Überall gilt: links Angst, rechts Gier (beim VIX und der ø Volatilität ist die Richtung dafür gedreht). Grau gesetzte Zeilen zählen nicht zum Gesamtwert.</p>
+    <p class="cap">Gefüllter Punkt = heute, hohler Punkt = vor einer Woche. Überall gilt: links Angst, rechts Gier (bei VIX, ø Volatilität, Put/Call und Risikoaufschlag ist die Richtung dafür gedreht). Grau gesetzte Zeilen zählen nicht zum Gesamtwert.</p>
   </section>
 
   <section>
@@ -163,7 +165,7 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
       <div class="panel frame-m" aria-label="Nachbildung maximierte Ansicht">
         <div class="ph"><span class="fn">STIM</span><span class="t">Stimmung</span><span class="seg"><span class="on">USA</span><span>Europa</span><span>Deutschland</span></span><span class="seg"><span>1 J</span><span>3 J</span><span class="on">5 J</span><span>seit 2015</span></span><span class="sp"></span><span class="dim">Stand 20.11. 22:10 · 312 Firmen</span><span class="tool">CSV</span><span class="tool">⧉</span><span class="tool">▣</span></div>
         <div class="kpis">
-          <div><span class="lbl">Angst &amp; Gier</span><span class="v">38</span><span class="note">eher vorsichtig · 6 Bausteine</span></div>
+          <div><span class="lbl">Angst &amp; Gier</span><span class="v">38</span><span class="note">eher vorsichtig · 8 Bausteine</span></div>
           <div><span class="lbl">VIX</span><span class="v">18,7</span><span class="note">Rang 41 · gewöhnlich</span></div>
           <div><span class="lbl">ø Volatilität</span><span class="v">1,9 %</span><span class="note">Rang 38 · eher unruhig</span></div>
           <div><span class="lbl">Über 200-T-Linie</span><span class="v">47 %</span><span class="note">weniger nur an 31 von 100</span></div>
@@ -175,8 +177,8 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
             <span class="lbl">Gesamtwert</span>
             <svg id="m-scale" width="306" height="40" role="img" aria-label="Skalenbalken mit Marken 1 W, 1 M, 1 J"></svg>
             <span class="lbl">Zerlegung · Pfeil vom Wert vor 1 Monat</span>
-            <svg id="m-dots" width="306" height="210" role="img" aria-label="Zerlegung der Bausteine"></svg>
-            <span class="note">Gleich gewichtet: jeder der 6 Bausteine trägt 1/6. In Europa sind es 5 Bausteine, jeder trägt 1/5.</span>
+            <svg id="m-dots" width="306" height="236" role="img" aria-label="Zerlegung der Bausteine"></svg>
+            <span class="note">Gleich gewichtet: jeder der 8 Bausteine trägt 1/8. In Europa sind es 5, jeder trägt 1/5. ≈ = Näherung (berechnet, nicht die offizielle Zahl).</span>
           </div>
           <div class="m-right">
             <div>
@@ -239,7 +241,8 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
           <tr><td>TRIN <span class="new">NEU</span></td><td>Verhältnis steigende/fallende Aktien zu ihrem Volumen</td><td class="y">ja</td><td class="y">ja</td><td class="y">ja</td><td>nein, zu unruhig</td></tr>
           <tr><td>Nachrichtenton</td><td>Ton der Schlagzeilen zum Markt der Region, −1 bis +1 (EODHD, direkt)</td><td class="y">ja</td><td class="y">ja</td><td class="y">ja</td><td>erst nach Rückblick-Test</td></tr>
           <tr><td>Trend (Kontext)</td><td>Index gegen seinen 125-Tage-Schnitt</td><td class="y">ja</td><td class="y">ja</td><td class="y">ja</td><td>nein, Vergleichszeile</td></tr>
-          <tr><td style="color:var(--muted)">Put/Call · Risikoaufschlag</td><td>Nur als Näherung möglich (aus US-Optionen bzw. zwei Anleihe-ETFs) – <span style="color:var(--value)">offen, siehe Frage 1</span></td><td class="n0">?</td><td class="n0">–</td><td class="n0">–</td><td>offen</td></tr>
+          <tr><td>Put/Call <span class="apx">≈</span></td><td>Absicherungs- gegen Wett-Optionen, 5-Tage-Schnitt. <span style="color:var(--value)">Näherung:</span> gerechnet aus den Optionen auf S&amp;P 500 und Nasdaq 100 (EODHD), nicht die offizielle CBOE-Quote</td><td class="y">ja</td><td class="n0">–</td><td class="n0">–</td><td>ja (USA), gekennzeichnet</td></tr>
+          <tr><td>Risikoaufschlag <span class="apx">≈</span></td><td>Sorge um Firmenpleiten. <span style="color:var(--value)">Näherung:</span> Hochzinsanleihen-ETF gegen Staatsanleihen-ETF über 20 Tage, nicht der echte Zinsaufschlag</td><td class="y">ja</td><td class="n0">–</td><td class="n0">–</td><td>ja (USA), gekennzeichnet</td></tr>
         </tbody>
       </table>
     </div>
@@ -261,6 +264,7 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
     <div class="box">
       <h2>Was dazukommt</h2>
       <ul>
+        <li><em>Kennzeichnung ≈</em> für Näherungen in Tabelle, Kacheln, Zerlegung, CSV und Glossar</li>
         <li><em>Kürzel STIM</em>, Aliasse MOOD, SENT, ANGST, GIER; Region auch per Befehl („STIM EU“, „STIM DE“)</li>
         <li><em>Glossar:</em> Gegenindikator, VIX, ø Volatilität, Marktbreite, 200-Tage-Linie, 52-Wochen-Hoch, A/D-Linie, Trust, Breadth, TRIN, Sicherer Hafen, Episode, Angst-&amp;-Gier-Wert; „Stimmung“ heißt künftig „Nachrichtenton“</li>
         <li><em>Klick-Wege:</em> VIX → GP, Marktbreite → BWT/RRG, Nachrichtenton → CN</li>
@@ -272,10 +276,10 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
   <section>
     <h2>Deine Entscheidung</h2>
     <div class="q">
-      <div><b>1. Put/Call und Risikoaufschlag?</b> <span class="muted">Beide gibt es nur als Näherung (US-Optionen auf S&amp;P 500/Nasdaq 100 bzw. zwei Anleihe-ETFs), und nur für die USA. Mein Vorschlag nach deiner Regel: weglassen. Der Gesamtwert kommt in allen Regionen mit gleich gemessenen Bausteinen aus.</span></div>
-      <div><b>2. Platz auf Seite MAKRO?</b> <span class="muted">Vorschlag: STIM ersetzt in der Grundbelegung ECO (unten rechts); ECO bleibt über die Panel-Auswahl erreichbar.</span></div>
-      <div><b>3. Nachrichtenton im Gesamtwert?</b> <span class="muted">Vorschlag: anzeigen, aber erst mitzählen, wenn der Rückblick-Test zeigt, dass er etwas beiträgt.</span></div>
-      <div><b>4. Deutschland als eigene Region?</b> <span class="muted">Mit etwa 30 Firmen ist die Breite dort grob (ein Prozentpunkt entspricht einer Drittel-Firma). Vorschlag: ja, mit der Firmenzahl im Kopf – oder nur USA und Europa.</span></div>
+      <div><b>Entschieden: Put/Call und Risikoaufschlag</b> <span class="muted">kommen hinein, mit dem Zeichen ≈ und der Erklärung „Näherung“ im Tooltip, nur in der USA-Sicht.</span></div>
+      <div><b>1. Platz auf Seite MAKRO?</b> <span class="muted">Vorschlag: STIM ersetzt in der Grundbelegung ECO (unten rechts); ECO bleibt über die Panel-Auswahl erreichbar.</span></div>
+      <div><b>2. Nachrichtenton im Gesamtwert?</b> <span class="muted">Vorschlag: anzeigen, aber erst mitzählen, wenn der Rückblick-Test zeigt, dass er etwas beiträgt.</span></div>
+      <div><b>3. Deutschland als eigene Region?</b> <span class="muted">Mit etwa 30 Firmen ist die Breite dort grob (ein Prozentpunkt entspricht einer Drittel-Firma). Vorschlag: ja, mit der Firmenzahl im Kopf – oder nur USA und Europa.</span></div>
     </div>
   </section>
 </div>
@@ -304,13 +308,13 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
 
   // --- Viertelpanel je Region ---
   const REG = {
-    us: { label: "USA", firms: 312, total: 38, word: "eher vorsichtig", w1: 44, m1: 51, n: 6, sentence: "niedriger als an 62 von 100 Tagen seit 2015",
-      lage: "Die Stimmung ist eher vorsichtig. Am deutlichsten: nur 47 % der Firmen liegen über ihrem 200-Tage-Schnitt. Die Bausteine sind sich uneinig – 3 von 6 zeigen Vorsicht, die übrigen liegen im gewöhnlichen Bereich.",
-      rows: [["Angstbarometer (VIX)", "18,7", 41, 46, "↑ 1,4"], ["ø Volatilität", "1,9 %", 38, 45, "↑ 0,2"], ["Marktbreite > 200 T", "47 %", 31, 40, "↓ 4 Pp"], ["Hochs gegen Tiefs", "−1,2 %", 35, 41, "↓ 0,9"], ["Trust", "44 %", 44, 51, "↓ 3 Pp"], ["Sichere Häfen", "−1,8 Pp", 39, 44, "↓ 1,1"]],
+    us: { label: "USA", firms: 312, total: 38, word: "eher vorsichtig", w1: 44, m1: 51, n: 8, sentence: "niedriger als an 62 von 100 Tagen seit 2015",
+      lage: "Die Stimmung ist eher vorsichtig. Am deutlichsten: nur 47 % der Firmen liegen über ihrem 200-Tage-Schnitt. 6 von 8 Bausteinen zeigen Vorsicht, VIX und Trust liegen im gewöhnlichen Bereich.",
+      rows: [["Angstbarometer (VIX)", "18,7", 41, 46, "↑ 1,4"], ["ø Volatilität", "1,9 %", 38, 45, "↑ 0,2"], ["Marktbreite > 200 T", "47 %", 31, 40, "↓ 4 Pp"], ["Hochs gegen Tiefs", "−1,2 %", 35, 41, "↓ 0,9"], ["Trust", "44 %", 44, 51, "↓ 3 Pp"], ["Sichere Häfen", "−1,8 Pp", 39, 44, "↓ 1,1"], ["Put/Call <span class=apx>≈</span>", "0,94", 38, 45, "↑ 0,07"], ["Risikoaufschlag <span class=apx>≈</span>", "−0,6 %", 38, 43, "↓ 0,3"]],
       news: ["+0,04", 56, 52, "↑ 0,02"], trend: ["+1,9 %", 58, "↓ 0,8"] },
     eu: { label: "Europa", firms: 248, total: 55, word: "gewöhnlich", w1: 52, m1: 49, n: 5, sentence: "höher als an 55 von 100 Tagen seit 2015",
       lage: "Die Stimmung ist gewöhnlich. Am deutlichsten: 61 % der Firmen liegen über ihrem 200-Tage-Schnitt. Alle 5 Bausteine liegen im gewöhnlichen Bereich.",
-      rows: [["Angstbarometer (VIX)", "–", null, null, ""], ["ø Volatilität", "1,4 %", 52, 50, "↓ 0,1"], ["Marktbreite > 200 T", "61 %", 58, 55, "↑ 2 Pp"], ["Hochs gegen Tiefs", "+0,8 %", 61, 57, "↑ 0,4"], ["Trust", "52 %", 55, 52, "↑ 2 Pp"], ["Sichere Häfen", "+0,6 Pp", 49, 50, "↓ 0,2"]],
+      rows: [["Angstbarometer (VIX)", "–", null, null, ""], ["ø Volatilität", "1,4 %", 52, 50, "↓ 0,1"], ["Marktbreite > 200 T", "61 %", 58, 55, "↑ 2 Pp"], ["Hochs gegen Tiefs", "+0,8 %", 61, 57, "↑ 0,4"], ["Trust", "52 %", 55, 52, "↑ 2 Pp"], ["Sichere Häfen", "+0,6 Pp", 49, 50, "↓ 0,2"], ["Put/Call <span class=apx>≈</span>", "–", null, null, ""], ["Risikoaufschlag <span class=apx>≈</span>", "–", null, null, ""]],
       news: ["−0,02", 47, 49, "↓ 0,03"], trend: ["+3,4 %", 66, "↑ 0,5"] },
   };
   const bar = (rank, prev, w = 150) => {
@@ -330,7 +334,7 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
       <div class="q-body"><div class="q-left"><span class="lbl">Angst &amp; Gier</span><span class="big">${R.total}</span><span class="word">${R.word}</span><svg class="qs-scale" width="172" height="34"></svg>
       <span class="rank">${R.sentence} · aus ${R.n} Bausteinen</span><span class="badge" style="justify-self:start">Rückblick: schwach</span></div>
       <div class="q-right"><p class="lage">${R.lage}</p><table class="bt"><thead><tr><th>Baustein</th><th style="text-align:right">Wert</th><th>Angst ← Rang → Gier</th><th style="text-align:right">1 W</th></tr></thead><tbody></tbody></table></div></div>
-      <div class="foot"><span>Sehr hohe oder sehr niedrige Werte kippten früher eher ins Gegenteil – oft erst nach Monaten. Beschreibung der Lage, keine Empfehlung.</span></div>`;
+      <div class="foot"><span>Sehr hohe oder sehr niedrige Werte kippten früher eher ins Gegenteil – oft erst nach Monaten. Beschreibung der Lage, keine Empfehlung.</span><span>≈ Näherung, berechnet</span></div>`;
     const sc = host.querySelector(".qs-scale"), W = 160, X = 6, xr = (r) => X + r / 100 * W;
     track(sc, X, 12, W, 8);
     dot(sc, xr(R.m1), 16, 4, R.m1, true); dot(sc, xr(R.w1), 16, 4, R.w1, true); dot(sc, xr(R.total), 16, 6, R.total, false);
@@ -354,16 +358,16 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
   }
   // --- Zerlegung ---
   { const s = document.getElementById("m-dots"); const L = 104, W = 170, xr = (r) => L + r / 100 * W;
-    const items = [["VIX", 41, 48, "6,8"], ["ø Volatilität", 38, 47, "6,3"], ["Breite", 31, 55, "5,2"], ["Hochs/Tiefs", 35, 49, "5,8"], ["Trust", 44, 53, "7,3"], ["Sichere Häfen", 39, 54, "6,5"]];
-    [0, 50, 100].forEach((r) => { el("line", { x1: xr(r), x2: xr(r), y1: 4, y2: 180, stroke: r === 50 ? "#3a3a3a" : "#1c1c1c" }, s); txt(s, xr(r), 194, r); });
+    const items = [["VIX", 41, 48, "5,1"], ["ø Volatilität", 38, 47, "4,8"], ["Breite", 31, 55, "3,9"], ["Hochs/Tiefs", 35, 49, "4,4"], ["Trust", 44, 53, "5,5"], ["Sichere Häfen", 39, 54, "4,9"], ["Put/Call ≈", 38, 46, "4,8"], ["Risikoaufschl. ≈", 38, 45, "4,8"]];
+    [0, 50, 100].forEach((r) => { el("line", { x1: xr(r), x2: xr(r), y1: 4, y2: 200, stroke: r === 50 ? "#3a3a3a" : "#1c1c1c" }, s); txt(s, xr(r), 214, r); });
     txt(s, 300, 12, "BEITRAG", { fill: "#ffa028", size: 8.5, anchor: "end" });
-    items.forEach(([n, r, m, c], i) => { const y = 24 + i * 26;
+    items.forEach(([n, r, m, c], i) => { const y = 20 + i * 23;
       txt(s, 0, y + 3.5, n, { fill: "#ececec", size: 10.5, anchor: "start" });
       el("line", { x1: xr(m), x2: xr(r) + 6, y1: y, y2: y, stroke: "#5c5c5c", "stroke-width": 1.2 }, s);
       el("path", { d: `M${xr(r) + 6} ${y - 3} L${xr(r) + 6} ${y + 3} L${xr(r) + 2} ${y} Z`, fill: "#5c5c5c" }, s);
       dot(s, xr(r), y, size(r, 4.5), r, false);
       txt(s, 300, y + 3.5, c, { fill: "#8f8f8f", size: 10, anchor: "end" }); });
-    txt(s, 0, 208, "Beitrag = Rang ÷ 6 · Summe 37,9 ≈ 38", { anchor: "start" });
+    txt(s, 0, 230, "Beitrag = Rang ÷ 8 · Summe 38", { anchor: "start" });
   }
   // --- Farbstreifen + Index ---
   const N = 310, W = 620;
@@ -392,7 +396,7 @@ table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
   }
   // --- Kacheln ---
   { const host = document.getElementById("m-tiles");
-    const tiles = [["VIX", "18,7", "Rang 41", 41], ["ø Volatilität", "1,9 %", "Rang 38", 38], ["Breite", "47 %", "Rang 31", 31], ["Hochs/Tiefs", "−1,2 %", "Rang 35", 35], ["Trust", "44 %", "Rang 44", 44], ["Sichere Häfen", "−1,8 Pp", "Rang 39", 39], ["Nachrichtenton", "+0,04", "zählt noch nicht", -1], ["Trend (Kontext)", "+1,9 %", "kein Rang", -1]];
+    const tiles = [["VIX", "18,7", "Rang 41", 41], ["ø Volatilität", "1,9 %", "Rang 38", 38], ["Breite", "47 %", "Rang 31", 31], ["Hochs/Tiefs", "−1,2 %", "Rang 35", 35], ["Trust", "44 %", "Rang 44", 44], ["Sichere Häfen", "−1,8 Pp", "Rang 39", 39], ["Put/Call ≈", "0,94", "Rang 38 · Näherung", 38], ["Risikoaufschlag ≈", "−0,6 %", "Rang 38 · Näherung", 38], ["Nachrichtenton", "+0,04", "zählt noch nicht", -1], ["Trend (Kontext)", "+1,9 %", "kein Rang", -1]];
     tiles.forEach(([n, v, r, rank]) => {
       const d = document.createElement("div"); d.className = "tile";
       d.innerHTML = `<span class="lbl">${n}</span><span class="v">${v}</span><span class="note">${r}</span>`;

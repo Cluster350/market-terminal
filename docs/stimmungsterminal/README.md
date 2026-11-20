@@ -26,3 +26,8 @@ Schwankung der Einzelaktien (ø Volatilität) darf nicht in Europa den VIX „ve
 Ergänzung aus den TraderFox-Beispielen: Bereich „Marktbreite“ (200-Tage-Index, NHNL, ADL mit Index, Trust, Breadth,
 TRIN nur im Detail) je Region/Sektor; ø Volatilität als eigener Baustein. Wochentags-/Monatszyklen als eigene Funktion
 „Saisonalität“ (mit Vergleich zum Zufall), nicht in STIM.
+
+## Entscheidung (20.11.2026)
+Put/Call (aus Optionen auf S&P 500/Nasdaq 100) und Risikoaufschlag (Hochzins- gegen Staatsanleihen-ETF) kommen hinein –
+überall mit dem Zeichen ≈ und der Erklärung „Näherung, nicht die offizielle Zahl“, nur in der USA-Sicht. Der Gesamtwert
+USA besteht damit aus 8 Bausteinen, Europa aus 5.
