@@ -6,7 +6,7 @@ import { countryCode } from "./intents";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG" | "CRYP" | "FCTR" | "DCF";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG" | "CRYP" | "FCTR" | "DCF" | "NB";
 
 export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "Depot" | "System";
 
@@ -55,6 +55,7 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "RISK", title: "Depot-Risiko", group: "Depot", needsTicker: false, desc: "Schwankung, Beta, größter Rückgang, Value at Risk, Risikobeitrag je Position, Korrelationen" },
   { code: "ALRT", title: "Kursalarme", group: "Depot", needsTicker: false, desc: "Alarme bei Kursmarken und Tagesbewegungen; Kursmarken im Chart mit ＋ Marke setzen" },
   { code: "W", title: "Watchlist", group: "System", needsTicker: false, desc: "Eigene Werte mit laufenden Kursen" },
+  { code: "NB", title: "Notebook", group: "System", needsTicker: false, desc: "Jupyter-Notebook im Terminal: eigene Auswertungen mit Python, Daten des Terminals über das Modul mt (nur lesend); per Klick in eigenem Fenster" },
   { code: "HELP", title: "Hilfe", group: "System", needsTicker: false, desc: "Befehle und Tastenkürzel" },
 ];
 
@@ -89,6 +90,7 @@ const ALIASES: Record<string, FnCode> = {
   BITCOIN: "CRYP", XBT: "CRYP", CRYPTOS: "CRYP",
   FAKTOR: "FCTR", FAKTOREN: "FCTR", FACTOR: "FCTR", FACTORS: "FCTR", STIL: "FCTR", STILE: "FCTR", STYLE: "FCTR", STYLES: "FCTR",
   SMARTBETA: "FCTR", VALUE: "FCTR", MOMENTUM: "FCTR", FCT: "FCTR",
+  NOTEBOOK: "NB", JUPYTER: "NB", JUPYTERLAB: "NB", PYTHON: "NB", NOTIZBUCH: "NB",
   INNERERWERT: "DCF", INTRINSIC: "DCF", DAMODARAN: "DCF", FAIRVALUE: "DCF", DCFV: "DCF", IVAL: "DCF",
   BRIEFING: "BRIEF", MORGEN: "BRIEF", MORGENBRIEFING: "BRIEF", MORNING: "BRIEF", BRIEFUNG: "BRIEF",
 };

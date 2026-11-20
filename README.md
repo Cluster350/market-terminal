@@ -68,6 +68,8 @@ Ordner nach dem Entpacken (das Wichtige liegt oben):
 | `werkzeuge\EODHD pruefen.bat` | Datenzugang prüfen |
 | `werkzeuge\KI pruefen.bat` | LM Studio prüfen |
 | `werkzeuge\Prognose installieren.bat` | Zusatzpaket für die Prognose |
+| `werkzeuge\Notebook installieren.bat` | Zusatzpaket für das Notebook (NB) |
+| `notebook` | Modul `mt` und Beispiel-Notebook |
 | `backend`, `frontend`, `docs` | Programm und Unterlagen – nichts anklicken nötig |
 
 - **Normaler Browser-Tab statt eigenem Fenster:** in `.env` die Zeile `MT_APP_FENSTER=0` eintragen. Die Adresse ist
@@ -713,6 +715,38 @@ oder `off`. Wird der Programmordner neu angelegt (neue Python-Version), die Inst
 Grenzen: Die Modelle kennen nur den bisherigen Verlauf, keine Politik, Nachrichten oder Ereignisse.
 Bei Notenbankzinsen ist „bleibt wie zuletzt“ meist schwer zu schlagen; der Analysten-Konsens liegt bei
 Konjunkturdaten oft näher als jedes Modell – das zeigt ECO offen an. Keine Anlageberatung.
+
+## Notebook im Terminal (NB) und Daten per Python
+
+Eigene Auswertungen mit Python in einem Jupyter-Notebook – direkt im Terminal. Das Modul **`mt`** holt Kurse,
+Makro, Prognosen, Depot und den inneren Wert aus dem laufenden Terminal und gibt sie als Tabellen (pandas) zurück:
+
+```python
+import mt
+mt.history("SAP GR")                                     # Tageskurse
+mt.closes(["SPY US", "GOLD Comdty"]).pct_change().corr()  # Korrelation
+mt.countries("Inflation")                                # Länderkennzahl je Jahr und Land
+mt.forecast("USA", "Inflation", x=["WTI", "Gold", "US10Y.GBOND"])  # Prognose mit Einflussgrößen
+mt.portfolio()                                           # Depot
+mt.hilfe()                                               # alle Funktionen
+```
+
+Einrichten (einmalig, ca. 300 MB): **`werkzeuge\Notebook installieren.bat`** doppelklicken, das Terminal neu
+starten, Befehl **NB** eingeben und **Notebook starten** klicken (dauert wenige Sekunden).
+
+- **Im Terminal oder eigenes Fenster:** Das Notebook erscheint im Panel. **⧉ in eigenem Fenster** löst es heraus
+  (z. B. für einen zweiten Bildschirm), **↙ zurück ins Terminal** oder Schließen des Fensters holt es zurück.
+- **Nur lesend:** `mt` fragt Daten ab, ändert aber nichts im Terminal (keine Alarme, kein Depot). Neue Abfragen
+  verbrauchen EODHD-Abrufe wie in der Oberfläche; schon geladene Daten kommen aus dem Zwischenspeicher.
+- **Ablage:** Die eigenen Notebooks liegen im Datenordner (wie das Depot, Standard `~/.market-terminal/notebooks`)
+  und bleiben bei einer neuen Version erhalten. Beim ersten Start kommt dort `Beispiel.ipynb` hinein.
+- **Sicherheit:** Jupyter läuft nur auf dem eigenen Rechner (Port 8890, in der `.env` änderbar mit
+  `NOTEBOOK_PORT=…`) und mit einem Zugangsschlüssel, der bei jedem Start neu entsteht. Es endet mit dem Terminal.
+  Ein Notebook kann wie jedes Python-Programm alles auf dem Rechner tun – nur eigene oder geprüfte Notebooks öffnen.
+- **Ohne Installation im Terminal:** Ein eigenes Jupyter geht auch – `notebook\mt.py` neben das Notebook legen.
+  Läuft das Terminal nicht auf 127.0.0.1:8000, die Adresse setzen: `mt.URL = "http://127.0.0.1:8000"`.
+- **Alle Abfragen** des Terminals mit Beschreibung zeigt http://127.0.0.1:8000/docs; `mt.get(pfad, …)` ruft jede
+  lesende Abfrage auf.
 
 ## KI-Helfer mit LM Studio
 

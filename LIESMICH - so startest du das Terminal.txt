@@ -76,6 +76,8 @@ Gestartet wird es mit einem Doppelklick.
 - EODHD pruefen.bat            prueft den Datenzugang.
 - KI pruefen.bat               prueft LM Studio.
 - Prognose installieren.bat    Zusatzpaket fuer die Prognose (ca. 1-2 GB).
+- Notebook installieren.bat    Zusatzpaket fuer das Notebook (Befehl NB): eigene
+                               Auswertungen mit Python im Terminal (ca. 300 MB).
 - Terminal oeffnen.vbs         oeffnet nur das Fenster.
 
 Lieber ein normaler Browser-Tab statt eigenem Fenster: in ".env" die Zeile

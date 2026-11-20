@@ -25,6 +25,7 @@ from .api.alert_routes import router as alert_router
 from .api.crypto_routes import router as crypto_router
 from .api.factor_routes import router as factor_router
 from .api.forecast_routes import router as forecast_router
+from .api.notebook_routes import router as notebook_router
 from .api.forward_routes import router as forward_router
 from .api.intrinsic_routes import router as intrinsic_router
 from .intrinsic.service import IntrinsicService
@@ -40,6 +41,7 @@ from .crypto.service import CryptoService
 from .factors.service import FactorService
 from .errors import TerminalError
 from .forecast.service import ForecastService
+from .notebook import NotebookService
 from .portfolio.store import PortfolioStore
 from .providers.base import Provider
 from .realtime.demo import DemoSource
@@ -260,10 +262,12 @@ def create_app(
         app.state.intrinsic = IntrinsicService(app.state.terminal, cfg.portfolio_dir)
         app.state.intrinsic.start(prov.mode)
         app.state.terminal.intrinsic = app.state.intrinsic
+        app.state.notebook = NotebookService(cfg.portfolio_dir)
         if valuation_auto:
             app.state.valuation.start()
         log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
         yield
+        await app.state.notebook.stop()  # Jupyter endet mit dem Terminal
         await app.state.realtime.close()
         await app.state.forecast.close()
         await app.state.valuation.close()
@@ -326,6 +330,7 @@ def create_app(
     app.include_router(crypto_router)
     app.include_router(factor_router)
     app.include_router(intrinsic_router)
+    app.include_router(notebook_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

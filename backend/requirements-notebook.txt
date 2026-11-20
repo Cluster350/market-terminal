@@ -1,0 +1,5 @@
+# Zusatzpaket für das Notebook im Terminal (Funktion NB, optional): JupyterLab, pandas und Diagramme.
+# Installieren unter Windows mit werkzeuge\Notebook installieren.bat.
+jupyterlab>=4.2,<5
+pandas>=2.2
+matplotlib>=3.8

@@ -7,3 +7,7 @@ frontend/dist/
 frontend/dist-static/
 *.log
 .symbol-angelegt
+
+# Notebook: Zwischenstände von Jupyter
+notebook/.ipynb_checkpoints/
+notebook/__pycache__/

@@ -6,6 +6,10 @@ set "FOUND="
 for /f "tokens=5" %%P in ('netstat -ano ^| findstr /r /c:":8000 .*LISTENING"') do (
   taskkill /PID %%P /T /F >nul 2>nul && set "FOUND=1"
 )
+rem Notebook (Jupyter, Funktion NB), falls es noch laeuft
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /r /c:":8890 .*LISTENING"') do (
+  taskkill /PID %%P /T /F >nul 2>nul
+)
 echo.
 if defined FOUND (
   echo  Market Terminal wurde beendet. Kursalarme werden jetzt nicht mehr geprueft.

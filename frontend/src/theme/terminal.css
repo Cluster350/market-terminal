@@ -866,3 +866,15 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .dcf-chat { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; }
 .dcf-ask { display: flex; gap: 4px; }
 .dcf-ask .field { flex: 1; min-width: 0; }
+
+/* NB – Notebook */
+.nb { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.nb-bar { flex: 0 0 auto; }
+.nb-bar .spacer { flex: 1; }
+.nb-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+.nb-dot.on { background: var(--up); }
+.nb-frame { flex: 1 1 auto; width: 100%; min-height: 0; border: 0; background: #fff; }
+.nb-info { padding: 14px 16px; max-width: 70ch; line-height: 1.5; }
+.nb-info p { margin: 8px 0; }
+.nb-info code { color: var(--value); }
+.nb-err { padding: 4px 10px; }
