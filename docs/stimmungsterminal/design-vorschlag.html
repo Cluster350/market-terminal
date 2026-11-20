@@ -1,0 +1,410 @@
+<title>Stimmungsterminal STIM</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+<style>
+/* Layout: Entscheidungsdokument in Terminal-Optik – oben Konsens, dann die zwei Ansichten als Nachbildung, dann Regeln und offene Fragen.
+   Bewusst nur dunkel: Die Nachbildung zeigt das Terminal, das immer schwarz ist. */
+:root {
+  color-scheme: dark;
+  --bg: #000000;
+  --panel: #0a0a0a;
+  --head: #151515;
+  --rule: #262626;
+  --rule2: #3a3a3a;
+  --label: #ffa028;
+  --value: #ececec;
+  --muted: #8f8f8f;
+  --dim: #5c5c5c;
+  --fear: #5b8cff;
+  --neutral: #8f8f8f;
+  --greed: #ff5fa2;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sans: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--value); font: 14px/1.5 var(--sans); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 60px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 34px; }
+h1 { font: 600 26px/1.2 var(--mono); margin: 0; letter-spacing: .01em; text-wrap: balance; }
+h1 .code { background: var(--label); color: #000; padding: 0 8px; margin-right: 10px; }
+h2 { font: 600 13px/1.3 var(--mono); color: var(--label); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 12px; }
+p { margin: 0; max-width: 70ch; }
+.lead { color: var(--muted); max-width: 78ch; }
+.muted { color: var(--muted); } .dim { color: var(--dim); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+section { display: grid; gap: 12px; min-width: 0; }
+
+/* Konsens-Karten */
+.cons { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.cons div { border: 1px solid var(--rule); background: var(--panel); padding: 12px 14px; display: grid; gap: 4px; align-content: start; }
+.cons b { font: 600 12px var(--mono); color: var(--label); letter-spacing: .04em; text-transform: uppercase; }
+.cons span { font-size: 13px; color: var(--muted); }
+.cons em { font-style: normal; color: var(--value); }
+
+/* Terminal-Panel */
+.panel { border: 1px solid var(--label); background: var(--panel); font-family: var(--mono); font-size: 12px; min-width: 0; }
+.ph { display: flex; align-items: center; gap: 8px; background: var(--head); border-bottom: 1px solid var(--rule); padding: 4px 8px; white-space: nowrap; overflow: hidden; }
+.ph .fn { background: var(--label); color: #000; font-weight: 600; padding: 0 5px; }
+.ph .t { color: var(--muted); }
+.ph .sp { flex: 1; }
+.ph .tool { color: var(--dim); border: 1px solid var(--rule2); padding: 0 5px; font-size: 11px; }
+.seg { display: inline-flex; border: 1px solid var(--rule2); font-size: 11px; }
+.seg span { padding: 0 7px; color: var(--muted); }
+.seg span.on { background: #2a1a05; color: var(--label); }
+.frame-q { width: 100%; max-width: 660px; }
+.scroll { overflow-x: auto; }
+.q-body { display: grid; grid-template-columns: 196px 1fr; min-height: 300px; }
+.q-left { border-right: 1px solid var(--rule); padding: 10px 12px; display: grid; gap: 6px; align-content: start; }
+.lbl { color: var(--label); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; }
+.big { font: 600 34px/1 var(--mono); color: var(--value); font-variant-numeric: tabular-nums; }
+.word { color: var(--value); font-size: 13px; }
+.rank { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.q-right { padding: 8px 10px; min-width: 0; display: grid; gap: 6px; align-content: start; }
+.lage { color: var(--value); font-family: var(--sans); font-size: 13px; line-height: 1.35; }
+table.bt { border-collapse: collapse; width: 100%; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.bt th { color: var(--label); font-weight: 500; font-size: 10px; text-align: left; letter-spacing: .05em; padding: 2px 4px; border-bottom: 1px solid var(--rule); text-transform: uppercase; }
+.bt td { padding: 3px 4px; border-bottom: 1px solid #141414; white-space: nowrap; }
+.bt td.n { text-align: right; color: var(--value); }
+.bt td.name { color: var(--value); }
+.bt tr.ctx td { color: var(--muted); border-top: 1px dashed var(--rule2); }
+.bt .star { color: var(--dim); }
+.up { color: var(--value); } .dn { color: var(--value); }
+.foot { border-top: 1px solid var(--rule); padding: 5px 10px; color: var(--dim); font-size: 10.5px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+.badge { border: 1px solid var(--muted); color: var(--muted); padding: 0 5px; font-size: 10px; }
+
+/* maximiert */
+.frame-m { width: 100%; min-width: 980px; }
+.kpis { display: grid; grid-template-columns: repeat(6, 1fr); border-bottom: 1px solid var(--rule); }
+.kpis div { padding: 6px 10px; border-right: 1px solid var(--rule); display: grid; gap: 2px; }
+.kpis div:last-child { border-right: 0; }
+.kpis .v { font: 600 16px var(--mono); }
+.m-body { display: grid; grid-template-columns: 330px 1fr; }
+.m-left { border-right: 1px solid var(--rule); padding: 10px 12px; display: grid; gap: 10px; align-content: start; }
+.m-right { padding: 10px 12px; display: grid; gap: 12px; min-width: 0; }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tile { border: 1px solid var(--rule); padding: 6px 8px; display: grid; gap: 2px; }
+.tile .v { font: 600 15px var(--mono); }
+.note { color: var(--dim); font-size: 10.5px; font-family: var(--sans); }
+table.rb { border-collapse: collapse; width: 100%; font: 11.5px var(--mono); font-variant-numeric: tabular-nums; }
+.rb td { white-space: nowrap; } .rb td:first-child { white-space: normal; }
+.rb th, .rb td { padding: 3px 6px; text-align: right; border-bottom: 1px solid #161616; }
+.rb th { color: var(--label); font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.rb td:first-child, .rb th:first-child { text-align: left; }
+.rb tr.cmp td { color: var(--muted); }
+
+/* Farbskala, Regeln */
+.legend { display: grid; gap: 6px; max-width: 560px; }
+.legend .bar { height: 14px; border: 1px solid var(--rule2); }
+.legend .ticks { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--muted); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.box { border: 1px solid var(--rule); background: var(--panel); padding: 12px 14px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.box ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: var(--muted); }
+.box li em { color: var(--value); font-style: normal; }
+table.ind { border-collapse: collapse; width: 100%; font-size: 13px; }
+.ind th { color: var(--label); font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .05em; text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--rule2); }
+.ind td { padding: 6px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--muted); }
+.ind td:first-child { color: var(--value); white-space: nowrap; }
+.q { counter-reset: q; display: grid; gap: 10px; }
+.q div { border-left: 2px solid var(--label); padding: 2px 0 2px 12px; }
+.q b { color: var(--value); font-weight: 600; }
+.cap { font-size: 12px; color: var(--dim); }
+@media (max-width: 720px) {
+  .q-body { grid-template-columns: 1fr; }
+  .q-left { border-right: 0; border-bottom: 1px solid var(--rule); }
+}
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <h1><span class="code">STIM</span>Stimmungsterminal – Design-Vorschlag</h1>
+    <p class="lead">Ergebnis von drei Design-Agenten (Profi-Händler, Datenvisualisierung, Verständlichkeit) nach Rundgang durchs Terminal und einer Diskussionsrunde. Alle Zahlen unten sind <em style="font-style:normal;color:var(--value)">Beispielwerte</em> zur Ansicht, keine echten Marktdaten.</p>
+  </header>
+
+  <section>
+    <h2>Worauf sich alle drei geeinigt haben</h2>
+    <div class="cons">
+      <div><b>Skalenbalken statt Tacho</b><span>Ein waagrechter Balken 0–100 für den Gesamtwert und <em>derselbe Balken in klein</em> für jeden Baustein. Positionen liest man genauer als Winkel, und er braucht nur eine Zeile.</span></div>
+      <div><b>Blau – Grau – Magenta</b><span>Fließend über den Rang. <em>Grau bis zur Mitte</em>, Farbe erst bei Ungewöhnlichem. Kein Rot/Grün (heißt im Terminal fallend/steigend), kein Amber (Beschriftung). Farbe nur auf Flächen, Zahlen bleiben weiß.</span></div>
+      <div><b>Schwung zählt nicht mit</b><span>Der Kurstrend ist Trendfolge, die übrigen Bausteine sind Gegenindikatoren. Er steht <em>getrennt als Vergleichszeile</em>, ohne Stimmungsfarbe.</span></div>
+      <div><b>Beschreiben, nicht raten</b><span>Lagesätze nur als Vergleich: „niedriger als an 62 von 100 Tagen seit 2015“. <em>Keine Wörter wie kaufen, Chance, Warnung.</em> Uneinigkeit der Bausteine wird ausgesprochen.</span></div>
+      <div><b>Ehrlicher Rückblick</b><span>„Was folgte früher?“ mit <em>unabhängigen Episoden</em> statt überlappender Tage, immer 1/3/6 Monate zusammen, immer neben „alle Tage“, mit Urteil deutlich/schwach/zu wenig Fälle.</span></div>
+      <div><b>Klein = Lage, groß = Arbeit</b><span>Im Viertelpanel nur Zahl, Wort, Balken, ein Satz und die Bausteintabelle – <em>keine Schalter</em>. Diagramme, Zerlegung und Rückblick nur maximiert.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ansicht 1 · Viertelpanel auf Seite MAKRO</h2>
+    <p class="muted">Der 10-Sekunden-Blick. Ein Klick auf eine Zeile öffnet die große Ansicht mit dem Verlauf dieses Bausteins.</p>
+    <div class="scroll">
+      <div class="panel frame-q" aria-label="Nachbildung Viertelpanel">
+        <div class="ph"><span class="fn">STIM</span><span class="t">Stimmung</span><span class="sp"></span><span class="dim">Stand 20.11. 22:10</span><span class="tool">CSV</span><span class="tool">⧉</span><span class="tool">▣</span></div>
+        <div class="q-body">
+          <div class="q-left">
+            <span class="lbl">Angst &amp; Gier</span>
+            <span class="big" id="q-big">38</span>
+            <span class="word" id="q-word">eher vorsichtig</span>
+            <svg id="q-scale" width="172" height="34" role="img" aria-label="Skalenbalken Gesamtwert"></svg>
+            <span class="rank">niedriger als an 62 von 100 Tagen seit 2015 · aus 6 Bausteinen</span>
+            <span class="badge" style="justify-self:start" title="Rückblick-Test: Unterschied zu allen Tagen kleiner als die Streuung">Rückblick: schwach</span>
+          </div>
+          <div class="q-right">
+            <p class="lage">Die Stimmung ist eher vorsichtig. Am deutlichsten: nur 47 % der Firmen liegen über ihrem 200-Tage-Schnitt. Die Bausteine sind sich uneinig – 3 von 6 zeigen Vorsicht, die übrigen liegen im gewöhnlichen Bereich.</p>
+            <table class="bt">
+              <thead><tr><th>Baustein</th><th style="text-align:right">Wert</th><th>Angst ← Rang → Gier</th><th style="text-align:right">1 W</th></tr></thead>
+              <tbody id="q-rows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="foot"><span>Sehr hohe oder sehr niedrige Werte kippten früher eher ins Gegenteil – oft erst nach Monaten. Beschreibung der Lage, keine Empfehlung.</span><span>* berechnete Näherung</span></div>
+      </div>
+    </div>
+    <p class="cap">Gefüllter Punkt = heute, hohler Punkt = vor einer Woche. Beim Angstbarometer ist die Richtung gedreht, damit überall gilt: links Angst, rechts Gier.</p>
+  </section>
+
+  <section>
+    <h2>Ansicht 2 · Maximiert (Alt+M)</h2>
+    <p class="muted">Arbeitsansicht mit Zerlegung, Verlauf, Einzelkacheln, Marktbreite je Sektor und Rückblick. Nur hier gibt es Schalter.</p>
+    <div class="scroll">
+      <div class="panel frame-m" aria-label="Nachbildung maximierte Ansicht">
+        <div class="ph"><span class="fn">STIM</span><span class="t">Stimmung</span><span class="seg"><span class="on">USA</span><span>Europa</span></span><span class="seg"><span>1 J</span><span>3 J</span><span class="on">5 J</span><span>seit 2015</span></span><span class="sp"></span><span class="dim">Stand 20.11. 22:10</span><span class="tool">CSV</span><span class="tool">⧉</span><span class="tool">▣</span></div>
+        <div class="kpis">
+          <div><span class="lbl">Angst &amp; Gier</span><span class="v">38</span><span class="note">eher vorsichtig</span></div>
+          <div><span class="lbl">VIX</span><span class="v">18,7</span><span class="note">Rang 41 · gewöhnlich</span></div>
+          <div><span class="lbl">Über 200-T-Linie</span><span class="v">47 %</span><span class="note">weniger nur an 31 von 100</span></div>
+          <div><span class="lbl">Hochs − Tiefs</span><span class="v">−12</span><span class="note">10-Tage-Schnitt</span></div>
+          <div><span class="lbl">Put/Call*</span><span class="v">0,94</span><span class="note">SPY/QQQ, 5 Tage</span></div>
+          <div><span class="lbl">Nachrichtenton</span><span class="v">+0,04</span><span class="note">412 Artikel, 7 Tage</span></div>
+        </div>
+        <div class="m-body">
+          <div class="m-left">
+            <span class="lbl">Gesamtwert</span>
+            <svg id="m-scale" width="306" height="40" role="img" aria-label="Skalenbalken mit Marken 1 W, 1 M, 1 J"></svg>
+            <span class="lbl">Zerlegung · Pfeil vom Wert vor 1 Monat</span>
+            <svg id="m-dots" width="306" height="210" role="img" aria-label="Zerlegung der Bausteine"></svg>
+            <span class="note">Gleich gewichtet: jeder der 6 Bausteine trägt 1/6. Fehlen Daten, steht „aus 5 von 6“ und das Gewicht verteilt sich sichtbar um.</span>
+          </div>
+          <div class="m-right">
+            <div>
+              <span class="lbl">Verlauf 5 Jahre · Stimmung als Farbstreifen, darunter S&amp;P 500 (log)</span>
+              <svg id="m-strip" width="100%" height="118" viewBox="0 0 620 118" preserveAspectRatio="none" role="img" aria-label="Farbstreifen über S&P 500"></svg>
+              <span class="note">Blasse Bänder zeigen nur, wann die Stimmung extrem war. Zeitgleich heißt nicht Ursache.</span>
+            </div>
+            <div class="tiles" id="m-tiles"></div>
+            <div>
+              <span class="lbl">Marktbreite je Sektor · Anteil über 200-T-Linie, letzte 26 Wochen</span>
+              <svg id="m-heat" width="100%" height="140" viewBox="0 0 620 140" role="img" aria-label="Heatmap Sektor mal Woche"></svg>
+            </div>
+            <div>
+              <span class="lbl">Was folgte früher? · S&amp;P 500 danach, Median</span>
+              <table class="rb">
+                <thead><tr><th>Lage</th><th>1 Monat</th><th>3 Monate</th><th>6 Monate</th><th>im Plus (3 M)</th><th>mittlere 80 % (3 M)</th><th>Episoden</th></tr></thead>
+                <tbody>
+                  <tr><td>Ähnlich vorsichtig wie heute (2. Fünftel)</td><td>+0,9 %</td><td>+2,6 %</td><td>+5,1 %</td><td>66 %</td><td>−7 % … +10 %</td><td>31</td></tr>
+                  <tr class="cmp"><td>Alle Tage</td><td>+0,8 %</td><td>+2,4 %</td><td>+4,9 %</td><td>65 %</td><td>−8 % … +11 %</td><td>–</td></tr>
+                </tbody>
+              </table>
+              <span class="note">Urteil: schwach – der Unterschied ist kleiner als die Streuung. Nur ein Zeitraum (seit 2015), heutige Firmenauswahl; die Vergangenheit sieht dadurch etwas besser aus.</span>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>Sehr hohe oder sehr niedrige Werte kippten früher eher ins Gegenteil – oft erst nach Monaten. Beschreibung der Lage, keine Empfehlung. Daten: EODHD, eigene Berechnung.</span><span>* berechnete Näherung</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Farbskala</h2>
+    <div class="legend">
+      <canvas id="legend" class="bar" width="560" height="14" style="width:100%"></canvas>
+      <div class="ticks"><span>Angst · Rang 0</span><span>10</span><span>30</span><span>gewöhnlich</span><span>70</span><span>90</span><span>Gier · 100</span></div>
+    </div>
+    <p class="muted">Von 30 bis 70 bleibt alles grau. Ab 10 bzw. 90 volle Farbe, unter 5 bzw. über 95 zusätzlich eine größere Marke – so erkennt man Extreme auch bei Farbsehschwäche und in Graustufen. Wird vor dem Einbau mit einer Farbenblind-Simulation geprüft.</p>
+  </section>
+
+  <section>
+    <h2>Bausteine</h2>
+    <div class="scroll">
+      <table class="ind">
+        <thead><tr><th>Name im Terminal</th><th>Was er misst</th><th>Quelle</th><th>Im Gesamtwert</th></tr></thead>
+        <tbody>
+          <tr><td>Angstbarometer (VIX)</td><td>Was Anleger für Absicherung gegen Kursstürze in den nächsten 30 Tagen zahlen</td><td>EODHD, direkt</td><td>ja</td></tr>
+          <tr><td>Marktbreite</td><td>Anteil der rund 600 Firmen über ihrer 200-Tage-Linie, USA und Europa</td><td>selbst gerechnet aus BWT-Firmen</td><td>ja</td></tr>
+          <tr><td>Hochs gegen Tiefs</td><td>Neue 52-Wochen-Hochs minus -Tiefs, 10-Tage-Schnitt</td><td>selbst gerechnet</td><td>ja</td></tr>
+          <tr><td>Sichere Häfen</td><td>Aktien gegen Staatsanleihen und Gold über 20 Tage</td><td>selbst gerechnet (SPY, TLT/IEF, Gold)</td><td>ja</td></tr>
+          <tr><td>Risikoaufschlag</td><td>Hochzinsanleihen gegen Staatsanleihen über 20 Tage (Näherung)</td><td>selbst gerechnet (HYG, IEF)</td><td>ja</td></tr>
+          <tr><td>Put/Call*</td><td>Absicherungs- gegen Wett-Optionen, 5-Tage-Schnitt (nicht die offizielle CBOE-Quote)</td><td>aus EODHD-Optionsdaten SPY/QQQ</td><td>ja, falls gewählt</td></tr>
+          <tr><td>Nachrichtenton</td><td>Ton der Schlagzeilen zum Markt, −1 bis +1, mit Artikelzahl</td><td>EODHD, direkt</td><td>erst nach Rückblick-Test</td></tr>
+          <tr><td>Kurz- vs. Langfristangst</td><td>VIX9D bzw. VIX gegen VIX3M</td><td>EODHD, falls verfügbar</td><td>nein, nur maximiert</td></tr>
+          <tr><td>Trend (Kontext)</td><td>S&amp;P 500 gegen 125-Tage-Schnitt</td><td>Kurse, vorhanden</td><td>nein, Vergleichszeile</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="two">
+    <div class="box">
+      <h2>Bewusst nicht drin</h2>
+      <ul>
+        <li>Tacho, Ampel, Kauf- oder Verkaufssignal</li>
+        <li>Rot/Grün für Stimmung, Amber als Stimmungsfarbe</li>
+        <li>zweite y-Achse, Linienknäuel mit mehr als zwei Reihen</li>
+        <li>Mittelwerte ohne Fallzahl und Streuung, geglättete Datenlücken</li>
+        <li>Stimmung einzelner Aktien (gehört zu DES und CN)</li>
+        <li>Umfragen aus fremden Quellen (AAII, NAAIM, CNN-Original) – höchstens später</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h2>Was dazukommt</h2>
+      <ul>
+        <li><em>Kürzel STIM</em>, Aliasse MOOD, SENT, ANGST, GIER; Platz auf Seite MAKRO, zusätzlich in SCREENER und DEPOT wählbar</li>
+        <li><em>Glossar:</em> Gegenindikator, VIX, Marktbreite, 200-Tage-Linie, 52-Wochen-Hoch, Sicherer Hafen, Risikoaufschlag, Episode, Angst-&amp;-Gier-Wert; „Stimmung“ heißt künftig „Nachrichtenton“</li>
+        <li><em>Klick-Wege:</em> VIX → GP, Marktbreite → BWT/RRG, Nachrichtenton → CN, Put/Call → OMON</li>
+        <li><em>CSV</em> aller Bausteine mit Rang; <em>Notebook:</em> mt.stimmung()</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Deine Entscheidung</h2>
+    <div class="q">
+      <div><b>1. Put/Call aufnehmen?</b> <span class="muted">Liefert die Absicherungsquote, kostet aber täglich Optionsabrufe bei EODHD und ist nur eine Näherung aus SPY/QQQ. Vorschlag: ja, abschaltbar.</span></div>
+      <div><b>2. Platz auf Seite MAKRO?</b> <span class="muted">Vorschlag: STIM ersetzt in der Grundbelegung ECO (unten rechts); ECO bleibt über die Panel-Auswahl erreichbar.</span></div>
+      <div><b>3. Nachrichtenton im Gesamtwert?</b> <span class="muted">Vorschlag: erst anzeigen, aber nicht mitzählen, bis der Rückblick-Test zeigt, ob er etwas beiträgt.</span></div>
+      <div><b>4. Europa-Sicht?</b> <span class="muted">Marktbreite gibt es für Europa aus den BWT-Firmen; VIX und Put/Call sind US-Werte. Vorschlag: Schalter USA/Europa nur für die Breite, der Rest bleibt US.</span></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  // Farbskala wie besprochen: grau 30–70, volle Farbe ab 10/90
+  const FEAR = [91, 140, 255], NEU = [143, 143, 143], GREED = [255, 95, 162];
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  const color = (r) => {
+    if (r >= 30 && r <= 70) return `rgb(${NEU})`;
+    if (r < 30) { const t = Math.min(1, (30 - r) / 20); return `rgb(${mix(NEU, FEAR, t)})`; }
+    const t = Math.min(1, (r - 70) / 20); return `rgb(${mix(NEU, GREED, t)})`;
+  };
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
+  let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+
+  // Verlaufsspur als Gradient
+  const track = (svg, id, x, y, w, h) => {
+    const defs = el("defs", {}, svg); const g = el("linearGradient", { id, x1: "0", x2: "1" }, defs);
+    for (let r = 0; r <= 100; r += 5) el("stop", { offset: r + "%", "stop-color": color(r), "stop-opacity": r >= 30 && r <= 70 ? .35 : .85 }, g);
+    el("rect", { x, y, width: w, height: h, fill: `url(#${id})` }, svg);
+  };
+  const dot = (svg, cx, cy, r, rank, hollow) => el("circle", { cx, cy, r, fill: hollow ? "#0a0a0a" : color(rank), stroke: hollow ? "#bdbdbd" : "#0a0a0a", "stroke-width": hollow ? 1.3 : 1.5 }, svg);
+  const size = (rank, base) => (rank < 5 || rank > 95 ? base * 1.45 : base);
+
+  // Viertelpanel: Gesamtbalken
+  { const s = document.getElementById("q-scale"); const W = 160, X = 6;
+    track(s, "gq", X, 12, W, 8);
+    const xr = (r) => X + r / 100 * W;
+    dot(s, xr(51), 16, 4, 51, true); dot(s, xr(44), 16, 4, 44, true); dot(s, xr(38), 16, 6, 38, false);
+    [["0", 0], ["50", 50], ["100", 100]].forEach(([t, r]) => el("text", { x: xr(r), y: 32, fill: "#5c5c5c", "font-size": 9, "text-anchor": "middle", "font-family": "IBM Plex Mono, monospace" }, s).textContent = t);
+    el("text", { x: xr(53), y: 8, fill: "#8f8f8f", "font-size": 8, "text-anchor": "start", "font-family": "IBM Plex Mono, monospace" }, s).textContent = "1M";
+    el("text", { x: xr(42), y: 8, fill: "#8f8f8f", "font-size": 8, "text-anchor": "end", "font-family": "IBM Plex Mono, monospace" }, s).textContent = "1W";
+  }
+
+  // Bausteintabelle
+  const rows = [
+    ["Angstbarometer (VIX)", "18,7", 41, 46, "↑ 1,4"],
+    ["Marktbreite > 200 T", "47 %", 31, 40, "↓ 4 Pp"],
+    ["Hochs gegen Tiefs", "−12", 35, 41, "↓ 9"],
+    ["Sichere Häfen", "−1,8 Pp", 33, 44, "↓ 1,1"],
+    ["Risikoaufschlag", "−0,6 %", 47, 52, "↓ 0,3"],
+    ["Put/Call<span class=star>*</span>", "0,94", 41, 49, "↑ 0,07"],
+    ["Nachrichtenton", "+0,04", 56, 52, "↑ 0,02"],
+  ];
+  const tb = document.getElementById("q-rows");
+  const bar = (rank, prev, w = 150) => {
+    const s = document.createElementNS(NS, "svg"); s.setAttribute("width", w); s.setAttribute("height", 14);
+    el("rect", { x: 2, y: 6, width: w - 4, height: 2, fill: "#262626" }, s);
+    el("line", { x1: w / 2, x2: w / 2, y1: 3, y2: 11, stroke: "#3a3a3a" }, s);
+    const xr = (r) => 4 + r / 100 * (w - 8);
+    dot(s, xr(prev), 7, 3.2, prev, true); dot(s, xr(rank), 7, size(rank, 4.2), rank, false);
+    return s;
+  };
+  rows.forEach(([n, v, r, p, d]) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="name">${n}</td><td class="n">${v}</td><td class="b"></td><td class="n" style="color:#8f8f8f">${d}</td>`;
+    tr.querySelector(".b").appendChild(bar(r, p)); tb.appendChild(tr);
+  });
+  { const tr = document.createElement("tr"); tr.className = "ctx";
+    tr.innerHTML = `<td>Trend (Kontext)</td><td class="n" style="color:#8f8f8f">+1,9 %</td><td class="b"></td><td class="n">↓ 0,8</td>`;
+    const s = document.createElementNS(NS, "svg"); s.setAttribute("width", 150); s.setAttribute("height", 14);
+    el("rect", { x: 2, y: 6, width: 146, height: 2, fill: "#262626" }, s);
+    el("circle", { cx: 4 + .58 * 142, cy: 7, r: 4, fill: "none", stroke: "#8f8f8f", "stroke-width": 1.3 }, s);
+    tr.querySelector(".b").appendChild(s); tb.appendChild(tr); }
+
+  // Maximiert: Gesamtbalken mit 1W/1M/1J und 12-Monats-Band
+  { const s = document.getElementById("m-scale"); const X = 8, W = 290; const xr = (r) => X + r / 100 * W;
+    el("rect", { x: xr(24), y: 10, width: xr(71) - xr(24), height: 14, fill: "#1a1a1a" }, s);
+    track(s, "gm", X, 14, W, 6);
+    [[62, "1J"], [51, "1M"], [44, "1W"]].forEach(([r, t]) => { dot(s, xr(r), 17, 4, r, true); el("text", { x: xr(r), y: 7, fill: "#8f8f8f", "font-size": 8.5, "text-anchor": "middle", "font-family": "IBM Plex Mono, monospace" }, s).textContent = t; });
+    dot(s, xr(38), 17, 6.5, 38, false);
+    el("text", { x: X, y: 37, fill: "#5c5c5c", "font-size": 9, "font-family": "IBM Plex Mono, monospace" }, s).textContent = "0  Angst";
+    el("text", { x: X + W, y: 37, fill: "#5c5c5c", "font-size": 9, "text-anchor": "end", "font-family": "IBM Plex Mono, monospace" }, s).textContent = "Gier  100";
+    el("text", { x: xr(47), y: 37, fill: "#5c5c5c", "font-size": 9, "text-anchor": "middle", "font-family": "IBM Plex Mono, monospace" }, s).textContent = "▭ Spanne 12 M";
+  }
+
+  // Zerlegung als Punktdiagramm
+  { const s = document.getElementById("m-dots"); const L = 104, W = 170, xr = (r) => L + r / 100 * W;
+    const items = [["VIX", 41, 48, "6,8"], ["Breite", 31, 55, "5,2"], ["Hochs/Tiefs", 35, 49, "5,8"], ["Häfen", 33, 41, "5,5"], ["Risikoaufschl.", 47, 50, "7,8"], ["Put/Call*", 41, 52, "6,8"]];
+    [0, 50, 100].forEach((r) => { el("line", { x1: xr(r), x2: xr(r), y1: 4, y2: 180, stroke: r === 50 ? "#3a3a3a" : "#1c1c1c" }, s);
+      el("text", { x: xr(r), y: 194, fill: "#5c5c5c", "font-size": 9, "text-anchor": "middle", "font-family": "IBM Plex Mono, monospace" }, s).textContent = r; });
+    el("text", { x: 300, y: 12, fill: "#ffa028", "font-size": 8.5, "text-anchor": "end", "font-family": "IBM Plex Mono, monospace" }, s).textContent = "BEITRAG";
+    items.forEach(([n, r, m, c], i) => { const y = 24 + i * 26;
+      el("text", { x: 0, y: y + 3.5, fill: "#ececec", "font-size": 10.5, "font-family": "IBM Plex Mono, monospace" }, s).textContent = n;
+      el("line", { x1: xr(m), x2: xr(r) + (m > r ? 6 : -6), y1: y, y2: y, stroke: "#5c5c5c", "stroke-width": 1.2 }, s);
+      el("path", { d: `M${xr(r) + 6} ${y - 3} L${xr(r) + 6} ${y + 3} L${xr(r) + 2} ${y} Z`, fill: "#5c5c5c" }, s);
+      dot(s, xr(r), y, size(r, 4.5), r, false);
+      el("text", { x: 300, y: y + 3.5, fill: "#8f8f8f", "font-size": 10, "text-anchor": "end", "font-family": "IBM Plex Mono, monospace" }, s).textContent = c; });
+    el("text", { x: 0, y: 208, fill: "#5c5c5c", "font-size": 9, "font-family": "IBM Plex Mono, monospace" }, s).textContent = "Beitrag = Rang ÷ 6 · Summe 37,9 ≈ 38";
+  }
+
+  // Farbstreifen + S&P
+  { const s = document.getElementById("m-strip"); const N = 310, W = 620;
+    let v = 55; const vals = [];
+    for (let i = 0; i < N; i++) { v += (rnd() - .5) * 10 + (55 - v) * .05; if (i > 70 && i < 95) v -= 2.2; if (i > 200 && i < 214) v -= 2.8; vals.push(Math.max(2, Math.min(98, v))); }
+    vals[N - 1] = 38;
+    vals.forEach((r, i) => { const x = i * W / N;
+      if (r < 10 || r > 90) el("rect", { x, y: 0, width: W / N + .3, height: 112, fill: r < 10 ? "rgba(91,140,255,.10)" : "rgba(255,95,162,.10)" }, s);
+      el("rect", { x, y: 0, width: W / N + .3, height: 22, fill: color(r) }, s); });
+    let p = 100, d = "";
+    for (let i = 0; i < N; i++) { p *= 1 + (rnd() - .46) * .03 - (i > 70 && i < 95 ? .012 : 0) - (i > 200 && i < 214 ? .01 : 0); const y = 108 - (Math.log(p) - 4.2) * 70; d += (i ? "L" : "M") + (i * W / N).toFixed(1) + " " + Math.max(30, Math.min(110, y)).toFixed(1); }
+    el("path", { d, fill: "none", stroke: "#bdbdbd", "stroke-width": 1.2 }, s);
+    el("line", { x1: 0, x2: W, y1: 26, y2: 26, stroke: "#262626" }, s);
+  }
+
+  // Einzelkacheln mit Band P10–P90
+  { const host = document.getElementById("m-tiles");
+    const tiles = [["VIX", "18,7", "Rang 41", 41], ["Breite", "47 %", "Rang 31", 31], ["Hochs/Tiefs", "−12", "Rang 35", 35], ["Sichere Häfen", "−1,8 Pp", "Rang 33", 33], ["Risikoaufschlag", "−0,6 %", "Rang 47", 47], ["Put/Call*", "0,94", "Rang 41", 41], ["Nachrichtenton", "+0,04", "zählt noch nicht", 56], ["Trend (Kontext)", "+1,9 %", "kein Rang", -1]];
+    tiles.forEach(([n, v, r, rank]) => {
+      const d = document.createElement("div"); d.className = "tile";
+      d.innerHTML = `<span class="lbl">${n}</span><span class="v">${v}</span><span class="note">${r}</span>`;
+      const s = document.createElementNS(NS, "svg"); s.setAttribute("width", "100%"); s.setAttribute("height", 34); s.setAttribute("viewBox", "0 0 200 34"); s.setAttribute("preserveAspectRatio", "none");
+      el("rect", { x: 0, y: 9, width: 200, height: 16, fill: "#141414" }, s);
+      let y = 17, path = "";
+      for (let i = 0; i <= 50; i++) { y += (rnd() - .5) * 6; y = Math.max(4, Math.min(30, y)); path += (i ? "L" : "M") + i * 4 + " " + y.toFixed(1); }
+      el("path", { d: path, fill: "none", stroke: rank < 0 ? "#5c5c5c" : "#8f8f8f", "stroke-width": 1.2 }, s);
+      if (rank >= 0) el("circle", { cx: 200, cy: y, r: 3, fill: color(rank) }, s);
+      d.appendChild(s); host.appendChild(d); });
+  }
+
+  // Heatmap Sektor × Woche
+  { const s = document.getElementById("m-heat"); const sectors = ["Technologie", "Gesundheit", "Finanzen", "Industrie", "Basiskonsum", "Zykl. Konsum", "Energie", "Grundstoffe", "Versorger", "Immobilien", "Kommunikation"];
+    const L = 96, cw = (620 - L) / 26, ch = 11.5;
+    sectors.forEach((n, i) => { el("text", { x: 0, y: i * ch + 9, fill: "#8f8f8f", "font-size": 9, "font-family": "IBM Plex Mono, monospace" }, s).textContent = n;
+      let r = 30 + rnd() * 50;
+      for (let w = 0; w < 26; w++) { r += (rnd() - .55) * 14; r = Math.max(2, Math.min(98, r)); el("rect", { x: L + w * cw, y: i * ch, width: cw - 1, height: ch - 1, fill: color(r) }, s); } });
+    el("text", { x: L, y: 138, fill: "#5c5c5c", "font-size": 9, "font-family": "IBM Plex Mono, monospace" }, s).textContent = "vor 26 Wochen";
+    el("text", { x: 620, y: 138, fill: "#5c5c5c", "font-size": 9, "text-anchor": "end", "font-family": "IBM Plex Mono, monospace" }, s).textContent = "diese Woche";
+  }
+
+  // Legende
+  { const c = document.getElementById("legend"); const g = c.getContext("2d"); for (let x = 0; x < 560; x++) { g.fillStyle = color(x / 5.6); g.fillRect(x, 0, 1, 14); } }
+})();
+</script>
