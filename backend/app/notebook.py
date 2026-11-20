@@ -122,8 +122,9 @@ class NotebookService:
             if self.running():
                 return self.status()
             if _port_open(self.port):
-                self.error = (f"Port {self.port} ist schon belegt (läuft ein anderes Jupyter?). Anderen Port in der .env "
-                              f"eintragen: NOTEBOOK_PORT={self.port + 1}")
+                self.error = (f"Port {self.port} ist schon belegt – meist läuft noch ein Notebook von vorher. Einmal "
+                              f"„Market Terminal beenden“ doppelklicken und das Terminal neu starten. Hilft das nicht (anderes "
+                              f"Programm auf dem Port), in der .env einen anderen Port eintragen: NOTEBOOK_PORT={self.port + 1}")
                 raise NotebookUnavailable(self.error)
             self.error, self.starting = None, True
             self.token = secrets.token_urlsafe(24)

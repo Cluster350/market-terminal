@@ -249,3 +249,26 @@ def test_local_requests_ignore_proxy(monkeypatch, mt, tmp_path):
     finally:
         srv.shutdown()
         svc.proc = None
+
+
+def test_mt_countries_by_name_and_forecast_axis(mt):
+    assert mt.land("Deutschland") == "DEU" and mt.land("germany", "iso2") == "DE" and mt.land("UK", "kurve") == "UK"
+    assert mt.land("Großbritannien", "iso2") == "GB" and mt.land("eurozone", "iso2") == "EU"
+    with pytest.raises(mt.MTError, match="Land"):
+        mt.land("Atlantis")
+    f = mt.forecast("Deutschland", "Inflation")
+    # Jahre als Zahl: als Text zeichnete matplotlib die Prognose an den Anfang der Achse
+    assert str(f.index.dtype).startswith("int") and f.index.is_monotonic_increasing
+    assert list(mt.curves(["USA", "Deutschland"]).columns) == ["US", "DE"]
+    e = mt.forecast_event("USA", mt.calendar("USA").iloc[0]["event"]) if len(mt.calendar("USA")) else None
+    if e is not None:
+        assert str(e.index.dtype).startswith("datetime64")
+
+
+def test_mt_warns_and_errors_clearly(mt):
+    with pytest.warns(UserWarning, match="nicht gefunden"):
+        f = mt.forecast("USA", "Inflation", x=["Goldd XX"])
+    assert f.attrs["notes"]
+    with pytest.raises(mt.MTError):
+        mt.dcf("PNCL US")  # Bank: kein DCF – Fehler in Worten statt stillem dict
+

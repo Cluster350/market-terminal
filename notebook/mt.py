@@ -21,6 +21,8 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+import sys
+import warnings
 from typing import Any, Iterable, Optional, Sequence, Union
 
 try:  # pandas ist im Notebook vorhanden; ohne pandas liefert das Modul die Rohdaten (Listen und dicts)
@@ -38,6 +40,19 @@ _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 class MTError(RuntimeError):
     """Fehler des Terminals in Worten (z. B. „Unbekannter Ticker …“)."""
+
+
+def _kurze_fehler() -> None:
+    """Im Notebook: Fehler des Terminals als ein Satz statt langer roter Fehlerliste."""
+    try:
+        ip = get_ipython()  # type: ignore[name-defined]  # noqa: F821
+    except NameError:
+        return
+
+    def show(shell, etype, value, tb, tb_offset=None):  # noqa: ANN001
+        print(f"⚠ {value}", file=sys.stderr)
+
+    ip.set_custom_exc((MTError,), show)
 
 
 # --- Verbindung --------------------------------------------------------------------------------
@@ -114,6 +129,41 @@ def _dates(df: Any, *cols: str, utc: Sequence[str] = ("date", "timestamp", "asOf
     return df
 
 
+# --- Länder ------------------------------------------------------------------------------------
+
+# (ISO3, deutscher Name, ISO2 wie im Wirtschaftskalender, Kürzel der Zinskurve, weitere Schreibweisen)
+_LAENDER = [
+    ("USA", "USA", "US", "US", "vereinigte staaten|united states|amerika"), ("CAN", "Kanada", "CA", "CA", "canada"),
+    ("MEX", "Mexiko", "MX", "MX", "mexico"), ("BRA", "Brasilien", "BR", "BR", "brazil"), ("ARG", "Argentinien", "AR", None, "argentina"),
+    ("CHL", "Chile", "CL", "CL", ""), ("DEU", "Deutschland", "DE", "DE", "germany|ger"), ("FRA", "Frankreich", "FR", "FR", "france"),
+    ("GBR", "Großbritannien", "GB", "UK", "grossbritannien|uk|england|vereinigtes königreich|united kingdom|britain"),
+    ("ITA", "Italien", "IT", "IT", "italy"), ("ESP", "Spanien", "ES", "ES", "spain"), ("NLD", "Niederlande", "NL", "NL", "netherlands|holland"),
+    ("BEL", "Belgien", "BE", "BE", "belgium"), ("AUT", "Österreich", "AT", "AT", "oesterreich|austria"), ("CHE", "Schweiz", "CH", "CH", "switzerland"),
+    ("SWE", "Schweden", "SE", "SE", "sweden"), ("NOR", "Norwegen", "NO", "NO", "norway"), ("DNK", "Dänemark", "DK", "DK", "daenemark|denmark"),
+    ("FIN", "Finnland", "FI", "FI", "finland"), ("POL", "Polen", "PL", "PL", "poland"), ("PRT", "Portugal", "PT", "PT", ""),
+    ("GRC", "Griechenland", "GR", "GR", "greece"), ("IRL", "Irland", "IE", "IE", "ireland"), ("TUR", "Türkei", "TR", "TR", "tuerkei|turkey"),
+    ("ISR", "Israel", "IL", "IL", ""), ("SAU", "Saudi-Arabien", "SA", None, "saudi arabia"), ("ZAF", "Südafrika", "ZA", "ZA", "suedafrika|south africa"),
+    ("JPN", "Japan", "JP", "JP", ""), ("CHN", "China", "CN", "CN", ""), ("IND", "Indien", "IN", "IN", "india"),
+    ("KOR", "Südkorea", "KR", "KR", "suedkorea|korea|south korea"), ("TWN", "Taiwan", "TW", None, ""),
+    ("IDN", "Indonesien", "ID", "ID", "indonesia"), ("AUS", "Australien", "AU", "AU", "australia"), ("NZL", "Neuseeland", "NZ", "NZ", "new zealand"),
+    ("EMU", "Eurozone", "EU", None, "euroraum|euro|eurozone|ez"),
+]
+
+
+def land(name: str, form: str = "iso3") -> str:
+    """Land in der gewünschten Schreibweise: ``iso3`` (DEU, für Kennzahlen), ``iso2`` (DE, für Termine) oder
+    ``kurve`` (UK, für Zinskurven). Akzeptiert "Deutschland", "Germany", "DE", "DEU" usw."""
+    n = name.strip().lower()
+    for iso3, de, iso2, curve, alt in _LAENDER:
+        names = {iso3.lower(), de.lower(), iso2.lower(), (curve or "").lower(), *[a for a in alt.split("|") if a]}
+        if n in names:
+            out = {"iso3": iso3, "iso2": iso2, "kurve": curve}[form]
+            if out is None:
+                raise MTError(f"Für {de} gibt es keine Zinskurve im Terminal.")
+            return out
+    raise MTError(f"Land „{name}“ unbekannt. Beispiele: Deutschland, USA, Japan (oder DE, DEU).")
+
+
 # --- Allgemein ---------------------------------------------------------------------------------
 
 
@@ -128,8 +178,12 @@ def search(text: str) -> Any:
 
 
 def quotes(tickers: Tickers) -> Any:
-    """Aktuelle Kurse."""
-    return _dates(_frame(get("/quotes", tickers=",".join(_tickers(tickers))), "ticker"), "timestamp")
+    """Aktuelle Kurse. Ticker ohne Kurs (z. B. Tippfehler) stehen mit leeren Werten in der Tabelle – mit Hinweis."""
+    rows = get("/quotes", tickers=",".join(_tickers(tickers)))
+    missing = [r["ticker"] for r in rows if r.get("last") is None]
+    if missing:
+        warnings.warn("Kein Kurs für: " + ", ".join(missing) + " – Ticker prüfen (z. B. mt.search(\"…\")).", stacklevel=2)
+    return _dates(_frame(rows, "ticker"), "timestamp")
 
 
 def history(ticker: str, start: Optional[str] = None, end: Optional[str] = None) -> Any:
@@ -205,7 +259,10 @@ def dcf(ticker: str, levers: Optional[dict[str, float]] = None, simulate: bool =
     """Innerer Wert nach Damodaran (wie DCF). ``levers`` z. B. {"growth_next": 0.12, "target_margin": 0.3}
     (Anteile, nicht Prozent). Rechnet nur – im Terminal ändert sich nichts."""
     path = f"/intrinsic/{_path_ticker(ticker)}"
-    return _calc(path, {"levers": levers, "simulate": simulate}) if levers else get(path)
+    r = _calc(path, {"levers": levers, "simulate": simulate}) if levers else get(path)
+    if r.get("state") != "ok":
+        raise MTError(r.get("message") or f"Kein innerer Wert für {ticker}.")
+    return r
 
 
 def news(tickers: Optional[Tickers] = None, limit: int = 50, topic: Optional[str] = None) -> Any:
@@ -254,7 +311,7 @@ def crypto(ccy: str = "usd") -> Any:
 
 def curves(countries: Tickers = ("US", "DE")) -> Any:
     """Zinskurven: Zeilen = Laufzeit, Spalten = Land (Rendite in %)."""
-    data = get("/macro/curves", countries=",".join(_tickers(countries)))
+    data = get("/macro/curves", countries=",".join(land(c, "kurve") for c in _tickers(countries)))
     if pd is None:
         return data
     return pd.DataFrame({c["country"]: {p["tenor"]: p["y"] for p in c["points"]} for c in data})
@@ -262,7 +319,7 @@ def curves(countries: Tickers = ("US", "DE")) -> Any:
 
 def calendar(country: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, importance: int = 1) -> Any:
     """Wirtschaftskalender (wie ECO)."""
-    return _dates(_frame(get("/macro/calendar", country=country, importance=importance, **{"from": start, "to": end})), "date")
+    return _dates(_frame(get("/macro/calendar", country=land(country, "iso2") if country else None, importance=importance, **{"from": start, "to": end})), "date")
 
 
 def countries(indicator: Optional[str] = None) -> Any:
@@ -341,9 +398,15 @@ def _forecast_frame(r: dict) -> Any:
     fx_ = r.get("features") or {}
     if fx_.get("baseline") and fx_.get("features"):
         fc["ohne_einflussgroessen"] = fx_["baseline"]["median"]
-    df = pd.concat([hist, fc], ignore_index=True).set_index("time")
+    df = pd.concat([hist, fc], ignore_index=True)
+    # Zeitachse als Zahl (Jahre) bzw. Datum – als Text zeichnete matplotlib die Prognose an den Anfang der Achse
+    df["time"] = df["time"].astype(int) if r.get("freq") == "year" else pd.to_datetime(df["time"].str[:10])
+    df = df.set_index("time")
+    notes = fx_.get("notes") or []
     df.attrs.update(label=r["label"], engine=r["engineLabel"], verdict=r["verdictText"],
-                    features=fx_.get("text"), unit=r.get("unit"))
+                    features=fx_.get("text"), notes=notes, unit=r.get("unit"))
+    if notes:
+        warnings.warn(" ".join(notes), stacklevel=3)
     return df
 
 
@@ -352,19 +415,22 @@ def forecast(country: str, indicator: str, h: int = 3, x: Optional[Sequence[str]
     (bis zu fünf, z. B. ["WTI", "Gold", "US10Y.GBOND", "SPY US"]). Urteil des Rückblick-Tests in ``df.attrs``."""
     known = get("/macro/countries")["indicators"]
     key = _indicator(indicator, known)
-    r = get("/forecast/macro", country=country.upper(), indicator=key, h=h, x=_features("macro", country.upper(), x))
+    cc = land(country, "iso3")
+    r = get("/forecast/macro", country=cc, indicator=key, h=h, x=_features("macro", cc, x))
     return r if raw else _forecast_frame(r)
 
 
 def forecast_event(country: str, event: str, h: int = 3, x: Optional[Sequence[str]] = None, raw: bool = False) -> Any:
     """Prognose eines Konjunkturtermins (wie ECO), z. B. ``mt.forecast_event("US", "CPI YoY")``."""
-    r = get("/forecast/event", country=country.upper(), event=event, h=h, x=_features("event", country.upper(), x))
+    cc = land(country, "iso2")
+    r = get("/forecast/event", country=cc, event=event, h=h, x=_features("event", cc, x))
     return r if raw else _forecast_frame(r)
 
 
 def forecast_features(country: str, kind: str = "macro") -> Any:
     """Vorschläge für Einflussgrößen (wie die Auswahl im Terminal)."""
-    return _frame(get("/forecast/features", kind=kind, country=country), "key")
+    cc = land(country, "iso3" if kind == "macro" else "iso2")
+    return _frame(get("/forecast/features", kind=kind, country=cc), "key")
 
 
 # --- Depot (nur lesen) -------------------------------------------------------------------------
@@ -393,3 +459,6 @@ def hilfe() -> None:
     for n in names:
         doc = (g[n].__doc__ or "").strip().splitlines()
         print(f"mt.{n:<18} {doc[0] if doc else ''}")
+
+
+_kurze_fehler()

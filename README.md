@@ -743,6 +743,9 @@ starten, Befehl **NB** eingeben und **Notebook starten** klicken (dauert wenige 
 - **Sicherheit:** Jupyter läuft nur auf dem eigenen Rechner (Port 8890, in der `.env` änderbar mit
   `NOTEBOOK_PORT=…`) und mit einem Zugangsschlüssel, der bei jedem Start neu entsteht. Es endet mit dem Terminal.
   Ein Notebook kann wie jedes Python-Programm alles auf dem Rechner tun – nur eigene oder geprüfte Notebooks öffnen.
+- **Demo-Modus:** Dort gibt es nur die fiktiven Firmen der Suche (z. B. `NWND US`); `SAP GR` und andere echte
+  Aktien gehen erst mit EODHD. Indizes, Rohstoffe, Zinsen und Länderkennzahlen gibt es in beiden Modi.
+- **Länder** gehen als Name oder Kürzel: `mt.forecast("Deutschland", "Inflation")`, ebenso `"DE"` oder `"DEU"`.
 - **Ohne Installation im Terminal:** Ein eigenes Jupyter geht auch – `notebook\mt.py` neben das Notebook legen.
   Läuft das Terminal nicht auf 127.0.0.1:8000, die Adresse setzen: `mt.URL = "http://127.0.0.1:8000"`.
 - **Alle Abfragen** des Terminals mit Beschreibung zeigt http://127.0.0.1:8000/docs; `mt.get(pfad, …)` ruft jede
