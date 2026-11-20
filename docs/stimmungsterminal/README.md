@@ -1,6 +1,6 @@
 # Stimmungsterminal (STIM) – Design
 
-Gemeinsamer Vorschlag dreier Design-Agenten (Profi-Händler-UX, Datenvisualisierung, Verständlichkeit), vom Nutzer
+Gemeinsamer Vorschlag dreier Design-Agenten (Profi-Händler-UX, Datenvisualisierung, Verständlichkeit), Fassung 2; vom Nutzer
 am 20.11.2026 gutgeheißen („sieht gut aus, merke dir deine Idee“). Noch nicht gebaut.
 
 - `design-vorschlag.html` – Nachbildung beider Ansichten (Viertelpanel, maximiert), Farbskala, Bausteine, offene Entscheidungen
