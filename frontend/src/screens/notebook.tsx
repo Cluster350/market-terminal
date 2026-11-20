@@ -4,11 +4,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Empty, ErrorState, Loading } from "../components/ui";
 import { IS_STATIC } from "../lib/api";
-import { notebookUrl, useNotebookActions, useNotebookStatus } from "../lib/notebook";
-import { usePersistentState } from "../lib/persist";
+import { confirmStop, notebookUrl, openNotebookWindow, useNotebookActions, useNotebookStatus } from "../lib/notebook";
 import type { ScreenProps } from "./types";
 
-const isBool = (x: unknown): x is boolean => typeof x === "boolean";
 const WINDOW_NAME = "mt-notebook";
 
 export function NB(_: ScreenProps) {
@@ -16,7 +14,9 @@ export function NB(_: ScreenProps) {
   const act = useNotebookActions();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [external, setExternal] = usePersistentState<boolean>("nb.external", false, isBool);
+  // nur für diese Seite: nach dem Neuladen fehlt der Griff auf das Fenster – ein gespeichertes „gelöst“ zeigte dann
+  // ein Fenster an, das es nicht (mehr) gibt, und das Schließen holte das Notebook nicht zurück
+  const [external, setExternal] = useState(false);
   const [reload, setReload] = useState(0);
   const win = useRef<Window | null>(null);
   const s = q.data;
@@ -34,6 +34,14 @@ export function NB(_: ScreenProps) {
     return () => window.clearInterval(id);
   }, [external, setExternal]);
 
+  // läuft Jupyter nicht mehr (abgestürzt, Terminal neu gestartet), gehört das gelöste Fenster zum alten Jupyter:
+  // schließen, damit ein neuer Start wieder im Terminal erscheint und nicht das tote Fenster nach vorn holt
+  const stopped = !!s && !s.running;
+  useEffect(() => {
+    if (stopped && external) attach();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopped, external]);
+
   async function run(label: string, fn: () => Promise<unknown>) {
     setBusy(label);
     setErr(null);
@@ -48,7 +56,7 @@ export function NB(_: ScreenProps) {
 
   function detach() {
     if (!url) return;
-    win.current = window.open(url, WINDOW_NAME, "popup,width=1280,height=860");
+    win.current = openNotebookWindow(url, win.current, (u) => window.open(u, WINDOW_NAME, "popup,width=1280,height=860"));
     if (!win.current) return setErr("Das Fenster wurde vom Browser blockiert – Pop-ups für das Terminal erlauben.");
     setExternal(true);
   }
@@ -105,7 +113,7 @@ export function NB(_: ScreenProps) {
         </button>
       )}
       {s.running && (
-        <button type="button" className="btn" title="Jupyter beenden (Notebooks sind gespeichert)" disabled={!!busy} onClick={() => run("stop", async () => { attach(); await act.stop(); })}>
+        <button type="button" className="btn" title="Jupyter beenden (vorher in Jupyter speichern: Strg+S)" disabled={!!busy} onClick={() => confirmStop() && run("stop", async () => { attach(); await act.stop(); })}>
           ■ beenden
         </button>
       )}

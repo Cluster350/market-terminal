@@ -47,3 +47,27 @@ export function notebookUrl(s: Pick<NotebookStatus, "port" | "token" | "path">, 
   const host = loc.hostname.includes(":") && !loc.hostname.startsWith("[") ? `[${loc.hostname}]` : loc.hostname;
   return `${loc.protocol}//${host}:${s.port}/${(path ?? s.path).replace(/^\//, "")}?token=${encodeURIComponent(s.token)}`;
 }
+
+type Win = Pick<Window, "closed" | "focus">;
+
+/**
+ * Eigenes Fenster für das Notebook öffnen – oder ein schon offenes nur nach vorn holen: window.open mit Adresse lädt
+ * ein vorhandenes Fenster gleichen Namens neu (JupyterLab startete darin von vorn). ``null``, wenn der Browser blockiert.
+ */
+export function openNotebookWindow<W extends Win>(url: string, current: W | null, open: (url: string) => W | null): W | null {
+  if (current && !current.closed) {
+    current.focus();
+    return current;
+  }
+  return open(url);
+}
+
+/**
+ * Rückfrage vor dem Beenden: Jupyter speichert nur alle zwei Minuten von selbst, und das Terminal kann im
+ * eingebetteten Fenster nicht speichern – ungespeicherte Änderungen gingen beim Beenden still verloren.
+ */
+export const STOP_QUESTION = "Jupyter beenden? Nicht gespeicherte Änderungen gehen verloren – vorher in Jupyter speichern (Strg+S).";
+
+export function confirmStop(ask: (text: string) => boolean = (t) => window.confirm(t)): boolean {
+  return ask(STOP_QUESTION);
+}

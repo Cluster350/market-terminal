@@ -35,6 +35,11 @@ log = logging.getLogger("terminal.notebook")
 TEMPLATE = Path(__file__).resolve().parents[2] / "notebook"  # mt.py und Beispiel.ipynb
 DEFAULT_PORT = 8890
 START_TIMEOUT = 90.0
+# Schlüssel aus der .env (config.py lädt sie in die Umgebung), die Jupyter und seine Kernel nicht erben sollen
+SECRETS = ("EODHD_API_KEY", "LLM_API_KEY")
+# ohne Proxy: urllib schickte 127.0.0.1 sonst über einen eingestellten Proxy (HTTP_PROXY, Windows-Systemproxy) –
+# der Start schlüge fehl und der Zugangsschlüssel ginge an den Proxy
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 class NotebookUnavailable(TerminalError):
@@ -118,7 +123,7 @@ class NotebookService:
                 return self.status()
             if _port_open(self.port):
                 self.error = (f"Port {self.port} ist schon belegt (läuft ein anderes Jupyter?). Anderen Port in der .env "
-                              f"eintragen: NOTEBOOK_PORT=8891")
+                              f"eintragen: NOTEBOOK_PORT={self.port + 1}")
                 raise NotebookUnavailable(self.error)
             self.error, self.starting = None, True
             self.token = secrets.token_urlsafe(24)
@@ -126,7 +131,8 @@ class NotebookService:
             env["PYTHONPATH"] = os.pathsep.join(p for p in (str(self.template), env.get("PYTHONPATH", "")) if p)
             env["MT_URL"] = f"http://127.0.0.1:{self.terminal_port}"
             env["JUPYTERLAB_SETTINGS_DIR"] = str(self.settings)
-            env.pop("EODHD_API_KEY", None)  # das Notebook spricht nur mit dem Terminal, nicht direkt mit EODHD
+            for secret in SECRETS:  # das Notebook spricht nur mit dem Terminal, nicht direkt mit EODHD oder der KI
+                env.pop(secret, None)
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
             self._prepare()
             try:
@@ -167,7 +173,7 @@ class NotebookService:
             if self.proc is None or self.proc.poll() is not None:
                 return False
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/status?token={self.token}", timeout=2) as r:
+                with _DIRECT.open(f"http://127.0.0.1:{self.port}/api/status?token={self.token}", timeout=2) as r:
                     if r.status == 200:
                         return True
             except (urllib.error.URLError, OSError):

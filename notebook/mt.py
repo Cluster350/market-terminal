@@ -32,6 +32,8 @@ URL = os.environ.get("MT_URL", "http://127.0.0.1:8000").rstrip("/")
 TIMEOUT = float(os.environ.get("MT_TIMEOUT", "180"))
 
 Tickers = Union[str, Sequence[str]]
+# Das Terminal läuft auf dem eigenen Rechner: nie über einen eingestellten Proxy (HTTP_PROXY, Windows-Systemproxy)
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 class MTError(RuntimeError):
@@ -53,7 +55,7 @@ def _url(path: str, params: Optional[dict[str, Any]] = None) -> str:
 
 def _send(req: urllib.request.Request) -> Any:
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with _DIRECT.open(req, timeout=TIMEOUT) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         try:
@@ -101,12 +103,14 @@ def _frame(rows: Iterable[dict], index: Optional[str] = None) -> Any:
     return df
 
 
-def _dates(df: Any, *cols: str) -> Any:
+def _dates(df: Any, *cols: str, utc: Sequence[str] = ("date", "timestamp", "asOf")) -> Any:
+    """Datumsspalten umwandeln; Zeitpunkte (``utc``) mit Zeitzone UTC, reine Tagesangaben ohne Zeitzone
+    (wie der Index von ``history``, sonst ließen sie sich nicht vergleichen)."""
     if pd is None:
         return df
     for c in cols:
         if c in df.columns:
-            df[c] = pd.to_datetime(df[c], errors="coerce", utc=c in ("date", "timestamp", "asOf"))
+            df[c] = pd.to_datetime(df[c], errors="coerce", utc=c in utc)
     return df
 
 
@@ -133,9 +137,9 @@ def history(ticker: str, start: Optional[str] = None, end: Optional[str] = None)
     h = get(f"/history/{_path_ticker(ticker)}", **{"from": start, "to": end})
     rows = [{"date": t[:10], "open": o, "high": hi, "low": lo, "close": c, "volume": v}
             for t, o, hi, lo, c, v in zip(h["t"], h["o"], h["h"], h["l"], h["c"], h["v"])]
-    df = _frame(rows)
     if pd is None:
-        return df
+        return rows
+    df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume"])  # Spalten auch ohne Kurse
     df["date"] = pd.to_datetime(df["date"])
     df = df.set_index("date")
     df.attrs.update(ticker=h["ticker"], currency=h.get("currency"))
@@ -171,6 +175,8 @@ def company(ticker: str) -> dict:
 def financials(ticker: str, period: str = "annual", part: str = "income") -> Any:
     """GuV (``income``), Bilanz (``balance``) oder Cashflow (``cashflow``); ``period`` annual oder quarterly.
     Zeilen = Positionen, Spalten = Perioden."""
+    if part not in ("income", "balance", "cashflow"):
+        raise MTError(f"Teil „{part}“ unbekannt. Möglich: income (GuV), balance (Bilanz), cashflow.")
     f = get(f"/financials/{_path_ticker(ticker)}", period=period)
     rows = {r["label"]: r["values"] for r in f.get(part, [])}
     if pd is None:
@@ -182,7 +188,7 @@ def financials(ticker: str, period: str = "annual", part: str = "income") -> Any
 
 def earnings(ticker: str) -> Any:
     """Gewinn je Aktie: Ist gegen Schätzung."""
-    return _dates(_frame(get(f"/earnings/{_path_ticker(ticker)}")["history"]), "date", "reportDate")
+    return _dates(_frame(get(f"/earnings/{_path_ticker(ticker)}")["history"]), "date", "reportDate", utc=())  # Tagesangaben
 
 
 def dividends(ticker: str) -> Any:
