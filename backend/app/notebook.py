@@ -36,7 +36,7 @@ TEMPLATE = Path(__file__).resolve().parents[2] / "notebook"  # mt.py und Beispie
 DEFAULT_PORT = 8890
 START_TIMEOUT = 90.0
 # Schlüssel aus der .env (config.py lädt sie in die Umgebung), die Jupyter und seine Kernel nicht erben sollen
-SECRETS = ("EODHD_API_KEY", "LLM_API_KEY")
+SECRETS = ("EODHD_API_KEY", "LLM_API_KEY", "ANTHROPIC_API_KEY")
 # ohne Proxy: urllib schickte 127.0.0.1 sonst über einen eingestellten Proxy (HTTP_PROXY, Windows-Systemproxy) –
 # der Start schlüge fehl und der Zugangsschlüssel ginge an den Proxy
 _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))

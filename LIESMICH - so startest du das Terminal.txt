@@ -65,6 +65,10 @@ Gestartet wird es mit einem Doppelklick.
 - LM Studio starten, ein Modell laden, unter "Developer" den Server starten.
   Das Terminal nutzt es dann automatisch (ASK, BRIEF, News, DCF-Persona).
 - Pruefen:  werkzeuge\KI pruefen.bat
+- Oder Claude statt LM Studio (kostet je Anfrage, das Claude-Abo gilt dafuer nicht):
+  auf platform.claude.com Guthaben aufladen und unter "API Keys" einen Schluessel anlegen,
+  dann in der Datei .env eintragen:   LLM_MODE=claude   und   ANTHROPIC_API_KEY=...
+  Terminal neu starten. Unten rechts steht dann "KI: Claude".
 
 
 7) DER ORDNER "werkzeuge"

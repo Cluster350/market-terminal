@@ -49,7 +49,10 @@ async def run_agent(client: LLMClient, terminal: Terminal, req: AskRequest, *, m
         if not calls:
             answer = strip_think(msg.get("content", ""))
             break
-        messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": [c["raw"] for c in calls]})
+        step = {"role": "assistant", "content": msg.get("content") or "", "tool_calls": [c["raw"] for c in calls]}
+        if msg.get("_raw") is not None:
+            step["_raw"] = msg["_raw"]  # Claude: Antwort unverändert zurückgeben (Denk-Blöcke)
+        messages.append(step)
         for i, call in enumerate(calls):
             if i >= 4:
                 # höchstens vier Werkzeuge je Schritt; jede tool_call_id braucht trotzdem eine Antwort,
@@ -69,13 +72,13 @@ async def run_agent(client: LLMClient, terminal: Terminal, req: AskRequest, *, m
         msg = await client.chat(messages, max_tokens=900)
         answer = strip_think(msg.get("content", ""))
     if not answer:
-        answer = "Das Modell hat keine Antwort geliefert. Bitte die Frage anders stellen oder ein anderes Modell in LM Studio laden."
+        answer = "Das Modell hat keine Antwort geliefert. Bitte die Frage anders stellen" + (" oder ein anderes Modell in LM Studio laden." if getattr(client, "engine", "lmstudio") == "lmstudio" else ".")
     return AskResult(
         answer=answer,
         trace=trace,
         unverified=unverified_numbers(answer, results, req.question),
         suggestions=suggestions_from(trace),
-        engine="lmstudio",
+        engine=getattr(client, "engine", "lmstudio"),
         model=model,
         steps=steps,
         seconds=round(time.monotonic() - started, 1),

@@ -321,7 +321,7 @@ function Persona({ ticker, data, levers, onApply }: { ticker: string; data: Intr
         {meta && (
           <div className="xs dim">
             {engineLabel(meta.engine, meta.model)}
-            {meta.engine === "lmstudio" ? ` · ${fmt(meta.seconds, 1)} s` : ""}
+            {meta.engine === "lmstudio" || meta.engine === "claude" ? ` · ${fmt(meta.seconds, 1)} s` : ""}
             {meta.unverified.length > 0 && <span className="warn"> · {meta.unverified.length} Zahl(en) ohne Beleg markiert</span>}
           </div>
         )}

@@ -16,6 +16,7 @@ import {
   type Brief,
   type ChatTurn,
   type Suggestion,
+  isLlm,
 } from "../lib/ai";
 import { IS_STATIC } from "../lib/api";
 import { FN, type FnCode } from "../lib/commands";
@@ -34,7 +35,14 @@ export function AiUnavailable({ status, error }: { status?: AiStatus; error?: un
       <div style={{ maxWidth: "70ch", fontFamily: "var(--sans)", fontSize: 13, lineHeight: 1.5 }}>
         <div className="lbl" style={{ fontFamily: "var(--mono)", marginBottom: 4 }}>KI NICHT VERFÜGBAR</div>
         <div>{status?.message ?? (error ? aiErrorText(error) : "Status wird geladen …")}</div>
-        {status?.mode !== "off" && !IS_STATIC && (
+        {status?.configured === "claude" && !IS_STATIC && (
+          <ol className="small muted" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            <li>Auf platform.claude.com anmelden, unter „Billing“ Guthaben aufladen und unter „API Keys“ einen Schlüssel anlegen.</li>
+            <li>Den Schlüssel in die Datei .env eintragen: ANTHROPIC_API_KEY=… (nicht in den Chat oder anderswo einfügen).</li>
+            <li>Das Terminal neu starten: Die Anzeige unten rechts wechselt auf „KI: Claude“.</li>
+          </ol>
+        )}
+        {status?.mode !== "off" && status?.configured !== "claude" && !IS_STATIC && (
           <ol className="small muted" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             <li>LM Studio öffnen und ein Modell laden (z. B. Qwen 3 8B oder Llama 3.1 8B Instruct).</li>
             <li>Links auf „Developer“ gehen und den Server starten (Adresse {status?.baseUrl ?? "http://localhost:1234/v1"}).</li>
@@ -118,7 +126,7 @@ export function BRIEF(_: ScreenProps) {
       <div className="panel-body" style={{ padding: "8px 14px", overflow: "auto" }}>
         {busy && (
           <div style={{ marginBottom: 8 }}>
-            <Working since={started} text={status.data?.mode === "lmstudio" ? "Das Sprachmodell schreibt das Briefing …" : "Briefing wird erstellt …"} />
+            <Working since={started} text={isLlm(status.data?.mode) ? "Das Sprachmodell schreibt das Briefing …" : "Briefing wird erstellt …"} />
           </div>
         )}
         {q.isError && !b ? (
@@ -250,7 +258,7 @@ function Answer({ r, onSuggestion }: { r: AskResult; onSuggestion: (s: Suggestio
       )}
       <div className="xs dim" style={{ marginTop: 4 }}>
         {engineLabel(r.engine, r.model)}
-        {r.engine === "lmstudio" ? ` · ${r.steps} Schritt${r.steps === 1 ? "" : "e"} · ${r.seconds.toFixed(1).replace(".", ",")} s` : ""}
+        {isLlm(r.engine) ? ` · ${r.steps} Schritt${r.steps === 1 ? "" : "e"} · ${r.seconds.toFixed(1).replace(".", ",")} s` : ""}
         {r.unverified.length > 0 && (
           <span className="warn">
             {" "}
@@ -294,7 +302,7 @@ export function ASK({ active }: ScreenProps) {
     setMessages((ms) => [...ms, { role: "user", text }]);
     setInput("");
     // Begriffsfragen („Was ist eine Put-Option?“) ohne Sprachmodell direkt aus dem Glossar beantworten
-    const g = status.data?.mode !== "lmstudio" ? glossaryAnswer(text) : null;
+    const g = !isLlm(status.data?.mode) ? glossaryAnswer(text) : null;
     if (g) {
       const result: AskResult = { answer: `**${g[0]}**: ${g[1]}\n\n(Aus dem Glossar – alle Begriffe unter HELP → Begriffe.)`, trace: [], unverified: [], suggestions: [], engine: "demo", model: "Glossar", steps: 0, seconds: 0 };
       setMessages((ms) => [...ms, { role: "assistant", result }]);
@@ -331,7 +339,7 @@ export function ASK({ active }: ScreenProps) {
     <>
       <div className="toolbar">
         <span className="lbl">KI-ASSISTENT</span>
-        <span className="small muted">{engineLabel(status.data?.mode === "lmstudio" ? "lmstudio" : "demo", status.data?.model)}</span>
+        <span className="small muted">{engineLabel(status.data && isLlm(status.data.mode) ? status.data.mode : "demo", status.data?.model)}</span>
         {security && <span className="small muted">· Kontext {displayTicker(security)}</span>}
         <button className="btn" style={{ marginLeft: "auto" }} onClick={() => setMessages([])} disabled={!messages.length || !!busy}>
           Neues Gespräch
@@ -361,7 +369,7 @@ export function ASK({ active }: ScreenProps) {
         )}
         {busy && (
           <div className="chat-a">
-            <Working since={busy.since} text={status.data?.mode === "lmstudio" ? "Das Sprachmodell sucht Daten und formuliert …" : "Suche Daten …"} />
+            <Working since={busy.since} text={isLlm(status.data?.mode) ? "Das Sprachmodell sucht Daten und formuliert …" : "Suche Daten …"} />
             <button className="btn" style={{ marginLeft: 8 }} onClick={() => busy.ctrl.abort()}>
               Abbrechen
             </button>

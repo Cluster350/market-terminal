@@ -70,7 +70,7 @@ class CoachSuggestion(Model):
 
 class CoachResult(Model):
     mode: str
-    engine: Literal["lmstudio", "demo"]
+    engine: Literal["lmstudio", "claude", "demo"]
     model: str
     name: str = COACH_NAME
     disclaimer: str = DISCLAIMER
@@ -274,7 +274,7 @@ async def run(client: LLMClient, intrinsic: IntrinsicService, ticker: str, req: 
               d: dict) -> CoachResult:
     t0 = time.monotonic()
     model = client.configured_model or await client.model()
-    out = CoachResult(mode=req.mode, engine="lmstudio", model=model)
+    out = CoachResult(mode=req.mode, engine=getattr(client, "engine", "lmstudio"), model=model)
     if req.mode == "kommentar":
         task = (
             "Ordne diese Bewertung ein. Gliedere in genau diese Abschnitte (Feld titel): "

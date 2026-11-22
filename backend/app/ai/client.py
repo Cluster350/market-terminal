@@ -83,6 +83,8 @@ def extract_json(text: str) -> Optional[Any]:
 
 
 class LLMClient:
+    engine = "lmstudio"
+
     def __init__(
         self,
         base_url: str,

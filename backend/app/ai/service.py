@@ -1,4 +1,4 @@
-"""KI-Dienst: wählt den Rechenweg (LM Studio, Demo-KI oder aus), führt die Warteschlange und
+"""KI-Dienst: wählt den Rechenweg (LM Studio, Claude, Demo-KI oder aus), führt die Warteschlange und
 hält Ergebnisse vor. Die KI liest nur; Aktionen im Terminal führt erst ein Klick aus."""
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from ..services.tickers import normalize
 from . import demo
 from .agent import run_agent
 from .brief import gather_brief_data, llm_brief
+from .claude import DEFAULT_MODEL as CLAUDE_DEFAULT, DEFAULT_NEWS_MODEL as CLAUDE_NEWS_DEFAULT, ClaudeClient
 from .client import AIUnavailable, LLMClient
 from .models import AiStatus, AskRequest, AskResult, Brief, BriefRequest, NewsInput, NewsInsight, NewsInsightResult, NewsRequest
 from .news import NEWS_SCHEMA, InsightQueue, news_messages, parse_insight
@@ -34,13 +35,21 @@ class AIService:
         self.cfg = cfg
         self.terminal = terminal
         self.data_mode = data_mode
-        self.configured = cfg.llm_mode if cfg.llm_mode in ("auto", "lmstudio", "demo", "off") else "auto"
-        self.client: Optional[LLMClient] = None
-        if self.configured in ("auto", "lmstudio"):
+        self.configured = cfg.llm_mode if cfg.llm_mode in ("auto", "lmstudio", "claude", "demo", "off") else "auto"
+        self.client: Optional[LLMClient | ClaudeClient] = None
+        self.news_client: Optional[LLMClient | ClaudeClient] = None  # News-Einordnung (bei Claude ein günstigeres Modell)
+        self.llm = "claude" if self.configured == "claude" else "lmstudio"  # Name des Sprachmodell-Wegs
+        if self.configured == "claude":
+            self.client = ClaudeClient(cfg.anthropic_api_key, model=cfg.claude_model or CLAUDE_DEFAULT, effort="medium",
+                                       max_tokens=16000, timeout=cfg.llm_timeout, max_concurrency=max(2, cfg.llm_max_concurrency))
+            self.news_client = ClaudeClient(cfg.anthropic_api_key, model=cfg.claude_news_model or CLAUDE_NEWS_DEFAULT, effort="low",
+                                            max_tokens=4000, timeout=cfg.llm_timeout, max_concurrency=max(2, cfg.llm_max_concurrency))
+        elif self.configured in ("auto", "lmstudio"):
             self.client = LLMClient(
                 cfg.llm_base_url, api_key=cfg.llm_api_key, model=cfg.llm_model, timeout=cfg.llm_timeout,
                 max_concurrency=cfg.llm_max_concurrency, transport=transport,
             )
+            self.news_client = self.client
         self.queue = InsightQueue()
         self.queue.paused = lambda: self._foreground > 0 or self._offline
         self._foreground = 0  # laufende Fragen/Briefings: haben Vorrang vor der Warteschlange
@@ -65,6 +74,8 @@ class AIService:
             self._task = None
         if self.client is not None:
             await self.client.close()
+        if self.news_client is not None and self.news_client is not self.client:
+            await self.news_client.close()
 
     # --- Rechenweg ------------------------------------------------------------
 
@@ -80,6 +91,8 @@ class AIService:
                     return models, msg
             try:
                 models = await self.client.models()
+                if models and self.news_client is not None and self.news_client is not self.client:
+                    await self.news_client.models()
                 msg = "" if models else "LM Studio läuft, aber es ist kein Sprachmodell verfügbar. Bitte in LM Studio ein Modell laden."
             except AIUnavailable as exc:
                 models, msg = None, exc.message
@@ -92,26 +105,32 @@ class AIService:
         self._offline = True
 
     async def engine(self) -> Optional[str]:
-        """'lmstudio', 'demo' oder None (keine KI verfügbar)."""
+        """'lmstudio', 'claude', 'demo' oder None (keine KI verfügbar)."""
         if self.configured == "off":
             return None
         if self.configured == "demo":
             return "demo"
         models, _ = await self._models()
         if models:
-            return "lmstudio"
+            return self.llm
         if self.configured == "auto" and self.data_mode == "demo":
             return "demo"
         return None
 
     async def status(self) -> AiStatus:
-        base = self.cfg.llm_base_url
+        base = "api.anthropic.com" if self.llm == "claude" else self.cfg.llm_base_url
         if self.configured == "off":
             return AiStatus(mode="off", configured="off", base_url=base, message="KI ausgeschaltet (LLM_MODE=off in der .env).")
         if self.configured == "demo":
             return AiStatus(mode="demo", configured="demo", base_url=base, model=demo.DEMO_MODEL,
                             message="Demo-KI aktiv: regelbasiert, ohne Sprachmodell (LLM_MODE=demo).")
         models, msg = await self._models()
+        if models and self.llm == "claude":
+            assert self.client is not None and self.news_client is not None
+            return AiStatus(mode="claude", configured="claude", base_url="api.anthropic.com", model=self.client.configured_model,
+                            models=[self.client.configured_model, self.news_client.configured_model], queue=len(self.queue),
+                            message=f"Claude verbunden: {self.client.configured_model} für Fragen und Briefing, "
+                                    f"{self.news_client.configured_model} für die News-Einordnung (Abrechnung nach Verbrauch).")
         if models:
             assert self.client is not None
             model = self.client.configured_model or models[0]
@@ -139,29 +158,30 @@ class AIService:
             return NewsInsightResult(engine=engine)  # type: ignore[arg-type]
         if engine == "demo":
             return NewsInsightResult(engine="demo", insights={i.id: demo.analyze_news(i) for i in req.items})
-        known, pending, failed = self.queue.submit("lmstudio", req.items, req.priority)
-        return NewsInsightResult(engine="lmstudio", insights=known, pending=pending, failed=failed)
+        known, pending, failed = self.queue.submit(self.llm, req.items, req.priority)
+        return NewsInsightResult(engine=self.llm, insights=known, pending=pending, failed=failed)
 
     async def _analyze(self, engine: str, item: NewsInput) -> NewsInsight:
-        if engine == "demo" or self.client is None:
+        client = self.news_client
+        if engine == "demo" or client is None:
             return demo.analyze_news(item)
         names: dict[str, str] = {}
         if item.symbols:
             with contextlib.suppress(TerminalError):
                 names = {q.ticker: q.name for q in await self.terminal.quotes(item.symbols[:5]) if q.name}
         try:
-            data = await self.client.chat_json(news_messages(item, names), NEWS_SCHEMA, schema_name="news_einordnung", max_tokens=1000)
+            data = await client.chat_json(news_messages(item, names), NEWS_SCHEMA, schema_name="news_einordnung", max_tokens=1000)
         except AIUnavailable:
             self._mark_offline()
             raise
-        return parse_insight(data, item, engine="lmstudio", model=await self.client.model())
+        return parse_insight(data, item, engine=self.llm, model=await client.model())
 
     def _relevance(self, engine: str, items) -> dict[str, int]:
         out: dict[str, int] = {}
         for n in items:
             if engine == "demo":
                 out[n.id] = demo.analyze_news(demo.to_input(n)).relevance
-            elif (hit := self.queue.get("lmstudio", n.id)) is not None:
+            elif (hit := self.queue.get(self.llm, n.id)) is not None:
                 out[n.id] = hit.relevance
         return out
 
@@ -194,7 +214,7 @@ class AIService:
                 finally:
                     self._foreground -= 1
                 # Meldungen des Briefings im Hintergrund einordnen (für das nächste Briefing und NEWS)
-                self.queue.submit("lmstudio", [demo.to_input(n) for n in data.news[:25]], "normal")
+                self.queue.submit(self.llm, [demo.to_input(n) for n in data.news[:25]], "normal")
             self._briefs[key] = (time.monotonic(), result)
             if len(self._briefs) > 20:
                 self._briefs.pop(next(iter(self._briefs)))

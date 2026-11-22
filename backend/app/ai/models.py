@@ -14,7 +14,7 @@ EVENTS = (
     "kapitalmassnahme", "rechtliches", "restrukturierung", "makro", "markt", "sonstiges",
 )
 
-Engine = Literal["lmstudio", "demo"]
+Engine = Literal["lmstudio", "claude", "demo"]
 
 
 class NewsInput(Model):
@@ -121,7 +121,7 @@ class AskResult(Model):
 
 
 class AiStatus(Model):
-    mode: Literal["lmstudio", "demo", "off", "offline"]
+    mode: Literal["lmstudio", "claude", "demo", "off", "offline"]
     configured: str  # LLM_MODE
     base_url: str
     model: Optional[str] = None

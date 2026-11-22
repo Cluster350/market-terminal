@@ -1,12 +1,15 @@
-// KI-Helfer: Zugriff auf /api/ai (LM Studio oder Demo-KI) und React-Query-Hooks.
+// KI-Helfer: Zugriff auf /api/ai (LM Studio, Claude oder Demo-KI) und React-Query-Hooks.
 // Die KI liest nur Terminal-Daten; Vorschläge führt erst ein Klick aus.
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ApiError, file, IS_STATIC, request } from "./api";
 import type { NewsItem } from "./types";
 
-export type AiMode = "lmstudio" | "demo" | "off" | "offline";
-export type AiEngine = "lmstudio" | "demo";
+export type AiMode = "lmstudio" | "claude" | "demo" | "off" | "offline";
+export type AiEngine = "lmstudio" | "claude" | "demo";
+
+/** Ein echtes Sprachmodell antwortet (LM Studio oder Claude), nicht die regelbasierte Demo-KI. */
+export const isLlm = (m: AiMode | AiEngine | null | undefined): m is "lmstudio" | "claude" => m === "lmstudio" || m === "claude";
 
 export interface AiStatus {
   mode: AiMode;
@@ -153,7 +156,7 @@ const staticAi: typeof liveAi = {
 
 export const aiApi = IS_STATIC ? staticAi : liveAi;
 
-export const aiAvailable = (s: AiStatus | undefined): boolean => !!s && (s.mode === "lmstudio" || s.mode === "demo");
+export const aiAvailable = (s: AiStatus | undefined): boolean => !!s && (isLlm(s.mode) || s.mode === "demo");
 
 export const useAiStatus = () =>
   useQuery({
@@ -185,6 +188,7 @@ export function useNewsInsights(items: NewsItem[], priority: "high" | "normal", 
 
 export function engineLabel(engine: AiEngine | null | undefined, model?: string | null): string {
   if (engine === "lmstudio") return `LM Studio · ${model || "Modell"}`;
+  if (engine === "claude") return `Claude · ${model || "Modell"}`;
   if (engine === "demo") return "Demo-KI (regelbasiert)";
   return "–";
 }

@@ -198,5 +198,5 @@ async def llm_brief(client: LLMClient, d: BriefData, relevance: dict[str, int]) 
     ctx = json.dumps(brief_context(d, relevance), ensure_ascii=False, default=str).replace("<", "\\u003c")
     messages = [{"role": "system", "content": BRIEF_SYSTEM}, {"role": "user", "content": f"<daten>\n{ctx}\n</daten>"}]
     data = await client.chat_json(messages, BRIEF_SCHEMA, schema_name="morgenbriefing", max_tokens=1400)
-    return parse_brief(data, d, engine="lmstudio", model=await client.model())
+    return parse_brief(data, d, engine=getattr(client, "engine", "lmstudio"), model=await client.model())
 

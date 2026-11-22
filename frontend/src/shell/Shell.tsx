@@ -465,15 +465,15 @@ export function PanelGrid() {
   );
 }
 
-/** KI-Zustand: LM Studio, Demo-KI, offline oder aus (Tooltip mit der Erklärung). */
+/** KI-Zustand: LM Studio, Claude, Demo-KI, offline oder aus (Tooltip mit der Erklärung). */
 function AiBadge() {
   const ws = useWorkspace();
   const ai = useAiStatus();
   const s = ai.data;
   if (!s || s.mode === "off") return null;
   const [cls, label] =
-    s.mode === "lmstudio"
-      ? ["ok", `KI: LM Studio · ${s.model ?? ""}${s.queue ? ` · ${s.queue} in Arbeit` : ""}`]
+    s.mode === "lmstudio" || s.mode === "claude"
+      ? ["ok", `KI: ${s.mode === "claude" ? "Claude" : "LM Studio"} · ${s.model ?? ""}${s.queue ? ` · ${s.queue} in Arbeit` : ""}`]
       : s.mode === "demo"
         ? ["warn", "KI: Demo"]
         : ["err", "KI: offline"];

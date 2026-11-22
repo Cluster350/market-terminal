@@ -785,11 +785,11 @@ starten, Befehl **NB** eingeben und **Notebook starten** klicken (dauert wenige 
 - **Alle Abfragen** des Terminals mit Beschreibung zeigt http://127.0.0.1:8000/docs; `mt.get(pfad, …)` ruft jede
   lesende Abfrage auf.
 
-## KI-Helfer mit LM Studio
+## KI-Helfer mit LM Studio oder Claude
 
 Das Terminal kann ein Sprachmodell nutzen, das auf dem eigenen Rechner in
 [LM Studio](https://lmstudio.ai) läuft. Es gibt keinen Cloud-Dienst und keine Kosten pro Anfrage;
-die Daten verlassen den Rechner nicht.
+die Daten verlassen den Rechner nicht. **Alternativ Claude** über die Anthropic-API (siehe unten).
 
 | Funktion | Was sie tut |
 |---|---|
@@ -813,10 +813,29 @@ Bewegungen, Zinskurven, Devisenterminen, Terminen, Depot und Alarmen. Begriffsfr
 eine Put-Option?“) beantwortet das Glossar. Mit echten EODHD-Daten und ohne
 LM Studio steht „KI: offline“, die übrigen Funktionen laufen normal weiter.
 
-Einstellungen in der `.env` (alle optional): `LLM_MODE` (`auto` Standard, `lmstudio`, `demo`,
+Einstellungen in der `.env` (alle optional): `LLM_MODE` (`auto` Standard, `lmstudio`, `claude`, `demo`,
 `off`), `LLM_BASE_URL` (Standard `http://localhost:1234/v1`; LM Studio auf einem anderen Rechner:
 dessen Adresse eintragen und dort „Serve on Local Network“ aktivieren), `LLM_MODEL` (leer = erstes
 geladenes Modell), `LLM_TIMEOUT_SECONDS`, `LLM_MAX_CONCURRENCY`, `LLM_MAX_STEPS`.
+
+### Claude statt LM Studio
+
+Statt eines lokalen Modells kann **Claude** antworten – über die Anthropic-API, abgerechnet nach
+Verbrauch. **Das Claude-Abo (Pro/Max) gilt dafür nicht**; die API ist ein eigenes Konto.
+
+1. Auf **platform.claude.com** anmelden, unter **„Billing“** Guthaben aufladen (dort lässt sich auch
+   ein Monatslimit setzen) und unter **„API Keys“** einen Schlüssel anlegen.
+2. In der `.env` eintragen: `LLM_MODE=claude` und `ANTHROPIC_API_KEY=…` (den Schlüssel nirgends
+   sonst einfügen – nicht in Chats, nicht in Notebooks).
+3. Terminal neu starten (das nötige Zusatzpaket installiert es dabei selbst). Unten rechts steht
+   **„KI: Claude · claude-opus-5-5“**.
+
+Modelle: **Claude Opus 5.5** für ASK, BRIEF und die Damodaran-Persona (`CLAUDE_MODEL`), **Claude
+Haiku 5.5** für die laufende News-Einordnung (`CLAUDE_NEWS_MODEL`) – die vielen kleinen Aufgaben
+kosten damit nur Bruchteile eines Cents je Meldung. Lehnt ein Sicherheitsfilter eine Anfrage ab,
+rechnet die API sie automatisch mit einem passenden anderen Claude-Modell neu. Der Schlüssel bleibt
+auf dem eigenen Rechner; das Notebook (NB) bekommt ihn nicht. Die Daten der Abfragen (Kurse,
+Meldungen, Depotwerte, wenn danach gefragt wird) gehen dabei an Anthropic.
 
 Grenzen und Sicherheit: Die KI hat nur **lesende** Werkzeuge. Sie kann nichts kaufen, verkaufen
 oder im Terminal verändern. Meldungstexte gelten für sie als Daten, nicht als Anweisungen. Ihre

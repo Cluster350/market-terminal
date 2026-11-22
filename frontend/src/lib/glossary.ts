@@ -65,7 +65,7 @@ export const GLOSSARY: Record<string, string> = {
   POC: "Point of Control: Preisstufe mit dem meisten Volumen (Volumenprofil) bzw. den meisten Buchstaben (Market Profile) – der am stärksten akzeptierte Preis.",
   "Value Area": "Preisbereich um den POC mit 70 % des Volumens bzw. der Buchstaben (VAH = Obergrenze, VAL = Untergrenze). Eröffnet der Markt außerhalb der Vortags-Value-Area, ist das ein Hinweis auf einen Trend- statt Rotationstag.",
   "Initial Balance": "Spanne der ersten Handelsstunde (Buchstaben A und B). Ausbrüche aus dieser Spanne zeigen, ob größere Marktteilnehmer aktiv werden.",
-  "KI-Einordnung": "Zusammenfassung, Stimmung, Ereignisart und Relevanz einer Meldung – von einem lokalen Sprachmodell in LM Studio oder, ohne LM Studio, von der regelbasierten Demo-KI. Eine automatische Einschätzung, keine Anlageberatung.",
+  "KI-Einordnung": "Zusammenfassung, Stimmung, Ereignisart und Relevanz einer Meldung – von einem lokalen Sprachmodell in LM Studio, von Claude (Anthropic-API) oder, ohne beides, von der regelbasierten Demo-KI. Eine automatische Einschätzung, keine Anlageberatung.",
   "KI-Relevanz": "Wie stark eine Meldung den Kurs bewegen dürfte: 0 unwichtig, 1 gering, 2 kursrelevant, 3 stark kursbewegend (Punkte ●●● in der Nachrichtenliste).",
   "Ohne Beleg": "Markierte Zahl in einer KI-Antwort: Sie steht in keinem der Datensätze, die die KI abgefragt hat. Bitte selbst prüfen.",
   TTM: "Trailing Twelve Months: die letzten vier berichteten Quartale.",

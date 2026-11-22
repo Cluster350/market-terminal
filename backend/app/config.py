@@ -50,7 +50,7 @@ class Settings:
     )
 
     # KI-Helfer: "auto" nutzt LM Studio, wenn erreichbar, sonst im Demo-Modus die regelbasierte
-    # Demo-KI; "lmstudio" nur LM Studio, "demo" immer Demo-KI, "off" aus
+    # Demo-KI; "lmstudio" nur LM Studio, "claude" Claude über die Anthropic-API, "demo" immer Demo-KI, "off" aus
     llm_mode: str = field(default_factory=lambda: os.environ.get("LLM_MODE", "auto").strip().lower() or "auto")
     llm_base_url: str = field(
         default_factory=lambda: os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1").strip().rstrip("/")
@@ -60,6 +60,10 @@ class Settings:
     llm_timeout: int = field(default_factory=lambda: _int("LLM_TIMEOUT_SECONDS", 180))
     llm_max_concurrency: int = field(default_factory=lambda: max(1, _int("LLM_MAX_CONCURRENCY", 1)))
     llm_max_steps: int = field(default_factory=lambda: max(1, _int("LLM_MAX_STEPS", 6)))
+    # Claude (LLM_MODE=claude): Schlüssel von platform.claude.com, Modell für Fragen/Briefing und für die News-Einordnung
+    anthropic_api_key: str = field(default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    claude_model: str = field(default_factory=lambda: os.environ.get("CLAUDE_MODEL", "").strip())
+    claude_news_model: str = field(default_factory=lambda: os.environ.get("CLAUDE_NEWS_MODEL", "").strip())
 
     # Depot: eine JSON-Datei je Datenquelle im Benutzerordner, damit sie neue Programmversionen
     # (neuer Ordner aus der ZIP-Datei) übersteht
