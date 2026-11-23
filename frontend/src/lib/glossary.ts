@@ -97,6 +97,9 @@ export const GLOSSARY: Record<string, string> = {
   "Put/Call": "Umsatz in Puts geteilt durch Umsatz in Calls (hier: Optionen auf SPY und QQQ, 10-Tage-Schnitt). Hoch = viel Absicherung, Angst. Im Terminal eine Näherung (≈), nicht die offizielle CBOE-Zahl.",
   Risikoaufschlag: "Hochzinsanleihen gegen Staatsanleihen über 20 Tage (ETFs HYG und IEF). Bleiben Hochzinsanleihen zurück, verlangen Anleger mehr Aufschlag. Näherung (≈) über ETF-Kurse, nicht der offizielle Spread.",
   Nachrichtenton: "Ton der Nachrichten über die 30 größten Firmen einer Region (−1 negativ … +1 positiv, nach Börsenwert gewichtet, 10-Tage-Schnitt), aus der Textauswertung von EODHD.",
+  Saisonalität: "Wiederkehrende Kalendermuster eines Werts: Wochentage, Monate, Monatswechsel, durchschnittlicher Jahresverlauf (Funktion SAIS). Muster der Vergangenheit müssen sich nicht wiederholen.",
+  "Vergleich zum Zufall": "Permutationstest: Die Renditen bleiben, nur Wochentag bzw. Monat werden tausendfach zufällig neu verteilt. Ist das echte Muster ausgeprägter als fast alle Zufallsmischungen, gilt es als deutlich. Gemessen wird das ganze Muster, weil bei 12 Monaten fast immer einer zufällig auffällt.",
+  Monatswechsel: "Letzter Handelstag eines Monats und die ersten drei des neuen. Oft genannter Effekt (Gehalts- und Fondszuflüsse); SAIS prüft, ob er beim jeweiligen Wert gegen den Zufall besteht.",
   Episode: "Zusammenhängende Phase mit ähnlicher Stimmung; im Rückblick zählt jede Phase einmal, nicht jeder Tag – sonst sähe ein Muster sicherer aus, als es ist.",
   FIX: "Fixiertes Panel: behält sein Wertpapier, auch wenn die übrigen Panels wechseln.",
 };

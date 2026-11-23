@@ -389,6 +389,23 @@ def stimmung(region: str = "us", verlauf: bool = False) -> Any:
     return _frame(rows, "baustein")
 
 
+def saison(ticker: str, jahre: int = 10) -> dict:
+    """Saisonalität (wie SAIS): Monate, Wochentage, Monatswechsel je als Tabelle, dazu Urteil gegen den Zufall."""
+    d = get(f"/seasonality/{_path_ticker(ticker)}", years=jahre)
+    out: dict = {}
+    for key, name in (("months", "monate"), ("weekdays", "wochentage"), ("turn", "monatswechsel")):
+        b = d[key]
+        out[name] = _frame([{"gruppe": g["label"], "mittel_pct": g["mean"], "median_pct": g["median"], "im_plus_pct": g["plus"],
+                              "faelle": g["n"], "zufall_p": g["p"], "erste_haelfte": g["first"], "zweite_haelfte": g["second"]}
+                             for g in b["groups"]], "gruppe")
+        out[name + "_urteil"] = b["verdictText"]
+    out["jahresverlauf"] = _frame([{"tag": t, "durchschnitt": a, "dieses_jahr": c, "jahre_im_plus_pct": p}
+                                   for t, a, c, p in zip(d["path"]["days"], d["path"]["average"],
+                                                         d["path"]["current"] + [None] * (len(d["path"]["days"]) - len(d["path"]["current"])),
+                                                         d["path"]["plusShare"])], "tag")
+    return out
+
+
 # --- Prognose ----------------------------------------------------------------------------------
 
 
@@ -471,7 +488,7 @@ def hilfe() -> None:
     """Alle Funktionen mit Kurzbeschreibung."""
     names = ["status", "search", "quotes", "history", "closes", "intraday", "company", "financials", "earnings",
              "dividends", "peers", "dcf", "news", "options", "indices", "fx", "commodities", "crypto", "curves",
-             "calendar", "countries", "worldmap", "rotation", "valuation", "stimmung", "forecast", "forecast_event",
+             "calendar", "countries", "worldmap", "rotation", "valuation", "stimmung", "saison", "forecast", "forecast_event",
              "forecast_features", "portfolio", "get"]
     g = globals()
     print(f"Terminal: {URL}\n")

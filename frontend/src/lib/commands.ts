@@ -6,7 +6,7 @@ import { countryCode } from "./intents";
 export type FnCode =
   | "GP" | "DES" | "HP" | "FA" | "ERN" | "DVD" | "ANR" | "CN"
   | "TOP" | "WEI" | "FX" | "CMDT" | "GC" | "SPRD" | "ECO" | "ECST"
-  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG" | "CRYP" | "FCTR" | "DCF" | "NB" | "STIM";
+  | "EQS" | "IMAP" | "MOST" | "W" | "HELP" | "EVTS" | "RV" | "BRIEF" | "ASK" | "PORT" | "RISK" | "ALRT" | "TPO" | "WMAP" | "FWD" | "OMON" | "BWT" | "RRG" | "CRYP" | "FCTR" | "DCF" | "NB" | "STIM" | "SAIS";
 
 export type FnGroup = "Aktie" | "Makro" | "Screener" | "News" | "KI" | "Depot" | "System";
 
@@ -29,6 +29,7 @@ export const FUNCTIONS: FnInfo[] = [
   { code: "CN", title: "Firmen-News", group: "Aktie", needsTicker: true, desc: "Nachrichten zum Wertpapier" },
   { code: "RV", title: "Peer-Vergleich", group: "Aktie", needsTicker: true, desc: "Bewertung und Performance gegenüber Branchen-Peers" },
   { code: "DCF", title: "Innerer Wert", group: "Aktie", needsTicker: true, desc: "Innerer Wert je Aktie nach Damodarans Methode: Story-Hebel, Bandbreite, Rückwärts-DCF, Kapitalkosten – mit KI-Persona „Damodaran“" },
+  { code: "SAIS", title: "Saisonalität", group: "Aktie", needsTicker: true, desc: "Wochentage, Monate, Monatswechsel und durchschnittlicher Jahresverlauf eines Werts – mit Vergleich zum Zufall" },
   { code: "OMON", title: "Optionen", group: "Aktie", needsTicker: true, desc: "Optionsmarkt einer US-Aktie: implizite Volatilität, erwartete Bewegung, Put/Call, Open Interest je Strike, Kette, Smile" },
   { code: "TPO", title: "Market Profile", group: "Aktie", needsTicker: true, desc: "Market Profile je Handelstag (30-Minuten-Buchstaben) oder Volumen je Preisstufe, mit POC, Value Area und erster Stunde" },
   { code: "TOP", title: "News-Terminal", group: "News", needsTicker: false, desc: "Nachrichtenstrom mit Filtern, Suche und Leseansicht" },
@@ -91,6 +92,8 @@ const ALIASES: Record<string, FnCode> = {
   BITCOIN: "CRYP", XBT: "CRYP", CRYPTOS: "CRYP",
   FAKTOR: "FCTR", FAKTOREN: "FCTR", FACTOR: "FCTR", FACTORS: "FCTR", STIL: "FCTR", STILE: "FCTR", STYLE: "FCTR", STYLES: "FCTR",
   SMARTBETA: "FCTR", VALUE: "FCTR", MOMENTUM: "FCTR", FCT: "FCTR",
+  SAISON: "SAIS", SAISONAL: "SAIS", SAISONALITAET: "SAIS", "SAISONALITÄT": "SAIS", SEASON: "SAIS", SEASONALITY: "SAIS",
+  SEASONAL: "SAIS", SEAS: "SAIS", WOCHENTAGE: "SAIS", MONATE: "SAIS", SAISONCHART: "SAIS",
   STIMMUNG: "STIM", MOOD: "STIM", SENT: "STIM", SENTIMENT: "STIM", ANGST: "STIM", GIER: "STIM", FEAR: "STIM", GREED: "STIM",
   FEARGREED: "STIM", MARKTBREITE: "STIM", BREADTH: "STIM",
   NOTEBOOK: "NB", JUPYTER: "NB", JUPYTERLAB: "NB", PYTHON: "NB", NOTIZBUCH: "NB",

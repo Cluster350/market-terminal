@@ -388,6 +388,27 @@ Auswahlfeld erreichbar). Region **USA** oder **Europa**.
 Sehr hohe oder sehr niedrige Werte kippten früher eher ins Gegenteil – oft erst nach Monaten. STIM beschreibt die Lage,
 es ist keine Empfehlung. CSV: Gesamtwert und Index je Tag, Ränge und Werte je Baustein, Marktbreite.
 
+## Saisonalität (SAIS)
+
+`SAIS` (oder „Saison“, „Saisonalität“, „Season“) zeigt für den aktiven Wert – Aktie, Index, Devisen,
+Rohstoff, Krypto – ob es **Kalendermuster** gibt, und prüft jedes ehrlich gegen den Zufall:
+
+- **Jahresverlauf:** Kurs je Kalendertag gegenüber dem Jahresschluss des Vorjahres, gemittelt über alle
+  vollen Jahre, dazu das laufende Jahr und (blaue Fläche) der Anteil der Jahre, die bis zu diesem Tag im
+  Plus lagen.
+- **Monate, Wochentage, Monatswechsel** (letzter Handelstag + erste drei des neuen Monats): Durchschnitt,
+  Median, Anteil im Plus, Zahl der Fälle und die Richtung in der ersten und zweiten Hälfte der Jahre
+  (⇄ = hat gewechselt).
+- **Vergleich zum Zufall:** Die Renditen bleiben, nur Wochentag bzw. Monat werden 1000-mal zufällig neu
+  verteilt. Das Urteil gilt für das **ganze Muster** – bei 12 Monaten fällt fast immer einer zufällig
+  auf: „deutlicher als Zufall“, „schwach“ oder „nicht vom Zufall zu unterscheiden“. Balken sind blass,
+  wenn das Muster nicht vom Zufall zu unterscheiden ist.
+- Zeitraum **10 oder 25 Jahre** (25 Jahre kostet einen eigenen, längeren Kursabruf). CSV mit dem
+  Jahresverlauf; im Notebook `mt.saison("SPY US")`.
+
+Auch ein deutliches Muster der Vergangenheit muss sich nicht wiederholen. SAIS beschreibt, es empfiehlt
+nichts.
+
 ## Faktoren (FCTR) und Faktorlast im Depot
 
 `FCTR` (oder „Faktoren“, „Stile“) zeigt, **welcher Anlagestil gerade läuft** – gemessen mit Stil-ETFs:
@@ -761,6 +782,7 @@ mt.countries("Inflation")                                # Länderkennzahl je Ja
 mt.forecast("USA", "Inflation", x=["WTI", "Gold", "US10Y.GBOND"])  # Prognose mit Einflussgrößen
 mt.stimmung("us")                                        # Stimmung (STIM): Bausteine mit Rang, Gesamtwert
 mt.stimmung("eu", verlauf=True)                          # Gesamtwert und Index je Tag
+mt.saison("SPY US")                                      # Saisonalität: Monate, Wochentage, Monatswechsel
 mt.portfolio()                                           # Depot
 mt.hilfe()                                               # alle Funktionen
 ```

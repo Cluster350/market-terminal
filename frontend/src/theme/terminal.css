@@ -946,3 +946,22 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .stim-heat th { height: 0; padding: 0; }
 .stim-heat-axis { display: flex; justify-content: space-between; color: var(--dim); font-size: 9px; font-family: var(--mono); max-width: 640px; padding-left: 90px; }
 .stim-bt td, .stim-bt th { white-space: nowrap; }
+
+/* --- SAIS: Saisonalität ---------------------------------------------------------------------- */
+.sais .toolbar .spacer { flex: 1; }
+.sais-meta { font-size: var(--fs-xs); font-family: var(--mono); }
+.sais-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: 0 8px; gap: 8px; }
+.sais-path-chart { height: 230px; }
+.sais-cards { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.sais-cards.wide { grid-template-columns: 2fr 1.2fr 0.8fr; }
+.sais-card { min-width: 0; }
+.sais-bars { height: 150px; }
+.sais-verdict { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.sais-badge { align-self: flex-start; padding: 1px 6px; border: 1px solid var(--rule-strong); color: var(--muted); font-family: var(--mono); font-size: var(--fs-xs); cursor: help; }
+.sais-badge.deutlich { border-color: var(--label); color: var(--label); }
+.sais-badge.schwach { border-color: #8a6d2e; color: #d9b56a; }
+.sais-text { color: var(--muted); font-family: var(--sans); font-size: var(--fs-s); line-height: 1.35; }
+.sais-tables { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.sais-tables.wide { grid-template-columns: 1.2fr 1fr; }
+.sais-table { margin-bottom: 6px; }
+.sais-table td, .sais-table th { white-space: nowrap; }
