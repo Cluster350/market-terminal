@@ -38,15 +38,15 @@ export function AiUnavailable({ status, error }: { status?: AiStatus; error?: un
         {status?.configured === "claude" && !IS_STATIC && (
           <ol className="small muted" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             <li>Auf platform.claude.com anmelden, unter „Billing“ Guthaben aufladen und unter „API Keys“ einen Schlüssel anlegen.</li>
-            <li>Den Schlüssel in die Datei .env eintragen: ANTHROPIC_API_KEY=… (nicht in den Chat oder anderswo einfügen).</li>
-            <li>Das Terminal neu starten: Die Anzeige unten rechts wechselt auf „KI: Claude“.</li>
+            <li>Die Datei .env im Terminal-Ordner öffnen und die vorhandenen Zeilen ändern: LLM_MODE=claude und den Schlüssel direkt hinter ANTHROPIC_API_KEY= (nicht in einen Chat oder anderswo einfügen).</li>
+            <li>Zum Prüfen werkzeuge\KI pruefen.bat doppelklicken, dann das Terminal neu starten: Die KI-Anzeige in der Statusleiste unten wechselt auf „KI: Claude“.</li>
           </ol>
         )}
         {status?.mode !== "off" && status?.configured !== "claude" && !IS_STATIC && (
           <ol className="small muted" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             <li>LM Studio öffnen und ein Modell laden (z. B. Qwen 3 8B oder Llama 3.1 8B Instruct).</li>
             <li>Links auf „Developer“ gehen und den Server starten (Adresse {status?.baseUrl ?? "http://localhost:1234/v1"}).</li>
-            <li>Ein paar Sekunden warten: Die Anzeige unten rechts wechselt auf „KI: LM Studio“.</li>
+            <li>Ein paar Sekunden warten: Die KI-Anzeige in der Statusleiste unten wechselt auf „KI: LM Studio“.</li>
           </ol>
         )}
       </div>

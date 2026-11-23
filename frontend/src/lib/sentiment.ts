@@ -26,6 +26,7 @@ export interface SentComponent {
 
 export interface SentTotal {
   value: number | null;
+  mean: number | null;
   word: string;
   sentence: string;
   w1: number | null;
@@ -151,14 +152,18 @@ export function compChange(c: Pick<SentComponent, "key" | "unit">, now: number |
   const digits = c.unit === "ratio" || c.unit === "tone" ? 2 : 1;
   if (Math.abs(d) < 10 ** -digits / 2) return "→ 0";
   const unit = c.unit === "pct" && c.key !== "vola" && c.key !== "trend" ? " Pp" : "";
-  const shown = unit ? fmt(Math.abs(d), 0) : fmt(Math.abs(d), digits);
+  const shown = unit ? fmt(Math.abs(d), Math.abs(d) < 1 ? 1 : 0) : fmt(Math.abs(d), digits);
   return `${d > 0 ? "↑" : "↓"} ${shown}${unit}`;
 }
 
 export const rankText = (r: number | null | undefined) => (isNum(r) ? fmt(r, 0) : DASH);
 
 /** Kurzurteil des Rückblicks. */
-export const BACKTEST_WORD: Record<SentBacktest["state"], string> = { deutlich: "deutlich", schwach: "schwach", wenig: "zu wenig Fälle" };
+export const BACKTEST_WORD: Record<SentBacktest["state"], string> = {
+  deutlich: "Früher: deutliches Muster",
+  schwach: "Früher: kein klares Muster",
+  wenig: "Früher: zu wenig Fälle",
+};
 
 /** Fünftel in Worten (Rückblick-Zeile). */
 export function bandLabel(band: [number, number] | undefined): string {

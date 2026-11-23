@@ -46,9 +46,9 @@ class FakeSDK:
         return NS(id=model)
 
 
-def _status_error(cls, code):
+def _status_error(cls, code, message="Fehler"):
     req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
-    return cls("Fehler", response=httpx2.Response(code, request=req), body=None)
+    return cls(message, response=httpx2.Response(code, request=req), body=None)
 
 
 def test_message_translation():
@@ -102,6 +102,7 @@ def test_agent_loop_passes_claude_reply_back_unchanged():
     # Opus 5.5: serverseitiges Ausweichen bei Ablehnung; keine temperature; eigenes Ausgabelimit mit Platz zum Denken
     assert first["fallbacks"] == "default" and first["betas"] == ["server-side-fallback-2026-07-01"]
     assert "temperature" not in first and first["max_tokens"] == 16000 and first["output_config"]["effort"] == "medium"
+    assert "tool_choice" not in first
     assert first["tools"][0]["name"] and "input_schema" in first["tools"][0]
     # zweiter Schritt: die Antwort von Claude unverändert (mit Denk-Block), dann das Werkzeugergebnis
     assistant = second["messages"][-2]
@@ -120,11 +121,22 @@ def test_json_schema_refusal_and_errors():
     with pytest.raises(UpstreamError, match="abgelehnt"):
         asyncio.run(news.chat([{"role": "user", "content": "x"}]))
     # Schema nicht darstellbar: einmal als Anweisung wiederholen
-    sdk = FakeSDK(replies=[_status_error(anthropic.BadRequestError, 400), text('```json\n{"a": 4}\n```')])
+    sdk = FakeSDK(replies=[_status_error(anthropic.BadRequestError, 400, "output_config.format.schema: unsupported keyword"),
+                           text('```json\n{"a": 4}\n```')])
     c = ClaudeClient("sk-test", model="claude-haiku-5-5", sdk=sdk)
     assert asyncio.run(c.chat_json([{"role": "system", "content": "S"}, {"role": "user", "content": "x"}], schema)) == {"a": 4}
-    assert c.supports_schema is False and "format" not in sdk.messages.calls[1]["output_config"]
+    assert c._bad_schemas == {"antwort"} and "format" not in sdk.messages.calls[1]["output_config"]
     assert "JSON-Schema" in sdk.messages.calls[1]["system"]
+    # andere 400 (z. B. Guthaben leer) schalten die strukturierte Ausgabe nicht ab, sondern melden den Grund
+    sdk = FakeSDK(replies=[_status_error(anthropic.BadRequestError, 400, "Your credit balance is too low"), text('{"a": 5}')])
+    c = ClaudeClient("sk-test", model="claude-haiku-5-5", sdk=sdk)
+    with pytest.raises(AIUnavailable, match="Guthaben"):
+        asyncio.run(c.chat_json([{"role": "user", "content": "x"}], schema))
+    assert c._bad_schemas == set()
+    with pytest.raises(AIUnavailable, match="Guthaben"):  # Status bleibt offline, auch wenn die Modellliste ginge
+        asyncio.run(c.models())
+    with pytest.raises(UpstreamError, match="Leere Anfrage"):
+        asyncio.run(c.chat([{"role": "user", "content": "   "}]))
     # Schlüssel falsch / fehlt
     c = ClaudeClient("sk-test", model="claude-haiku-5-5", sdk=FakeSDK(replies=[_status_error(anthropic.AuthenticationError, 401)]))
     with pytest.raises(AIUnavailable, match="ANTHROPIC_API_KEY"):
@@ -159,3 +171,66 @@ def test_notebook_does_not_inherit_anthropic_key():
     from app.notebook import SECRETS
 
     assert "ANTHROPIC_API_KEY" in SECRETS
+
+
+def test_step_limit_keeps_tools_but_forbids_calls_and_no_text_fallback():
+    tool = lambda i: NS(content=[NS(type="tool_use", id=f"tu{i}", name="maerkte", input={})], stop_reason="tool_use", model="m")
+    # Text, der wie ein Werkzeugaufruf aussieht, ist bei Claude kein Aufruf (er hätte kein tool_use-Gegenstück)
+    sdk = FakeSDK(beta_replies=[tool(1), tool(2), text('{"name": "kurs", "arguments": {}}')])
+    client = ClaudeClient("sk-test", sdk=sdk)
+
+    class Term:
+        def now(self):
+            import datetime as dt
+            return dt.datetime(2026, 11, 20, 12)
+
+    async def fake_tool(t, name, args):
+        return {"ok": 1}
+
+    import app.ai.agent as agent_mod
+    orig = agent_mod.run_tool
+    agent_mod.run_tool = fake_tool
+    try:
+        res = asyncio.run(run_agent(client, Term(), AskRequest(question="Märkte?"), max_steps=2))
+    finally:
+        agent_mod.run_tool = orig
+    last = sdk.beta.messages.calls[-1]
+    assert last["tool_choice"] == {"type": "none"} and last["tools"]
+    assert res.answer.startswith("{") and len(res.trace) == 2
+
+
+def test_wrong_news_model_does_not_disable_ai(monkeypatch, tmp_path):
+    monkeypatch.setenv("LLM_MODE", "claude")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("CLAUDE_NEWS_MODEL", "claude-gibts-nicht")
+    from app.ai.service import AIService
+    from app.config import Settings
+
+    svc = AIService(Settings(), terminal=None, data_mode="eodhd")  # type: ignore[arg-type]
+
+    async def ok(model, timeout=None):
+        if model == "claude-gibts-nicht":
+            raise anthropic.NotFoundError("x", response=httpx2.Response(404, request=httpx2.Request("GET", "https://a")), body=None)
+        return NS(id=model)
+
+    svc.client._sdk = NS(models=NS(retrieve=ok))
+    svc.news_client._sdk = NS(models=NS(retrieve=ok))
+    st = asyncio.run(svc.status())
+    assert st.mode == "claude" and "CLAUDE_NEWS_MODEL" in st.message
+
+
+def test_dotenv_last_line_wins_and_environment_first(tmp_path, monkeypatch):
+    from app import config
+
+    env = tmp_path / ".env"
+    env.write_text("﻿LLM_MODE=auto\nANTHROPIC_API_KEY=\nX_TEST_KEEP=datei\n# Kommentar\nLLM_MODE=claude\nANTHROPIC_API_KEY=sk-ende\n", encoding="utf-8")
+    for k in ("LLM_MODE", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("X_TEST_KEEP", "umgebung")
+    monkeypatch.setattr(config, "DOTENV_DUPLICATES", [])
+    config._load_dotenv([env])
+    import os
+
+    assert os.environ["LLM_MODE"] == "claude" and os.environ["ANTHROPIC_API_KEY"] == "sk-ende"
+    assert os.environ["X_TEST_KEEP"] == "umgebung"  # schon gesetzte Umgebungsvariable hat Vorrang
+    assert config.DOTENV_DUPLICATES == ["LLM_MODE", "ANTHROPIC_API_KEY"]

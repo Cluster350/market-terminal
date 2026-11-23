@@ -186,11 +186,12 @@ export function initial(hash = typeof location !== "undefined" ? location.hash :
       }
       // Einmalig: Wer MAKRO noch in der alten Grundaufteilung hat, bekommt dort STIM statt ECO (ECO bleibt in der
       // Auswahl). Wer ECO später selbst wieder einsetzt, behält es.
-      if (!readJson(STIM_MOVED_KEY)) {
+      const movedKey = `${STIM_MOVED_KEY}.${win.key}`; // je Fenster: jedes hat seinen eigenen gespeicherten Zustand
+      if (!readJson(movedKey)) {
         const m = pages.macro;
         if (m.layout === "quad" && m.panels.join() === OLD_MACRO.join()) pages.macro = { layout: "quad", panels: [...PAGE_DEFAULTS.macro.panels] };
         try {
-          localStorage.setItem(STIM_MOVED_KEY, "1");
+          localStorage.setItem(movedKey, "1");
         } catch {
           /* Speicher gesperrt: dann eben bei jedem Start prüfen */
         }

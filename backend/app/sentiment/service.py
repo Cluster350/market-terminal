@@ -31,7 +31,8 @@ NEWS_FIRMS = 30
 PC_TICKERS = ("SPY.US", "QQQ.US")
 
 NOTE = ("Jeder Baustein wird mit allen früheren Tagen seit {since} verglichen (nur Vergangenheit, kein Blick in die Zukunft): "
-        "Rang 0 = so ängstlich wie fast nie, 100 = so sorglos wie fast nie. Der Gesamtwert ist das Mittel der Bausteine.")
+        "Rang 0 = so ängstlich wie fast nie, 100 = so sorglos wie fast nie. Der Gesamtwert ordnet das Mittel der Bausteine "
+        "ebenso gegen seine eigene Geschichte ein.")
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,7 @@ COMPS = [
          explain="Hochzinsanleihen (HYG) gegen Staatsanleihen (IEF) über 20 Tage. Bleiben Hochzinsanleihen zurück, "
                  "verlangen Anleger mehr Aufschlag – Angst. Näherung über ETF-Kurse, nicht der offizielle Spread."),
     Comp("news", "Nachrichtenton", "tone", False,
-         explain=f"Ton der Nachrichten über die {NEWS_FIRMS} größten Firmen der Region (−1 negativ … +1 positiv, "
+         explain=f"Ton der Nachrichten über die (bis zu) {NEWS_FIRMS} größten Firmen der Region (−1 negativ … +1 positiv, "
                  "nach Börsenwert gewichtet), 10-Tage-Schnitt."),
 ]
 TREND = Comp("trend", "Trend", "pct", False,
@@ -111,7 +112,8 @@ class SentComponent(Model):
 
 
 class SentTotal(Model):
-    value: Optional[float] = None
+    value: Optional[float] = None  # Rang des Bausteine-Mittels gegen dessen eigene Geschichte (0–100)
+    mean: Optional[float] = None  # Mittel der Bausteine-Ränge (ballt sich um 50, deshalb selbst noch eingeordnet)
     word: str = "keine Einordnung"
     sentence: str = ""
     w1: Optional[float] = None
@@ -282,11 +284,15 @@ class SentimentService:
         if self.mode == "demo":
             return self._pc_demo(dates, vix), None
         hist = self._pc_load()
-        today = self.t.now().date()
-        if today.weekday() < 5:
+        # Aufzeichnen erst nach US-Börsenschluss (16 Uhr New York, spätestens 21 Uhr UTC) und nur an einem
+        # Handelstag mit Kurs: Schlüssel ist dieser Handelstag – nicht das Datum des Abrufs (morgens in Europa
+        # stammte das Volumen sonst vom Vortag), und Feiertage zählen nicht mit
+        now = self.t.now().astimezone(dt.timezone.utc)
+        today = now.date().isoformat()
+        if dates and dates[-1] == today and now.hour >= 21:
             pc = await self._putcall_today()
             if pc is not None:
-                hist[today.isoformat()] = round(pc, 4)
+                hist[today] = round(pc, 4)
                 self._pc_save(hist)
         n = len(hist)
         note = None if n >= C.MIN_HISTORY else f"sammelt noch: {n} von {C.MIN_HISTORY} Tagen aufgezeichnet"
@@ -424,7 +430,10 @@ class SentimentService:
                 ranks=_round(rk[-SERIES_DAYS:], 1), values=_round(series[-SERIES_DAYS:], 4),
             ))
         keys = [c.key for c in comps if c.available and c.in_total]
-        total, count = C.combine(ranks, keys)
+        # Das Mittel mehrerer Ränge ballt sich um 50 (Extreme heben sich auf). Damit „an X von 100 Tagen“, die
+        # Wortstufen und die Fünftel im Rückblick stimmen, wird das Mittel selbst gegen seine Geschichte eingeordnet.
+        mean, count = C.combine(ranks, keys)
+        total = C.expanding_rank(mean)
         tv = _last(total)
 
         trend_raw = [(x / s - 1) * 100 if x is not None and s else None for x, s in zip(idx, C.sma(idx, 125))]
@@ -435,7 +444,7 @@ class SentimentService:
 
         last12 = [x for x in total[-252:] if x is not None]
         word = C.word(tv)
-        tot = SentTotal(value=tv, word=word,
+        tot = SentTotal(value=tv, mean=_last(mean), word=word,
                         sentence=(f"Sorgloser als an {round(tv)} von 100 Tagen seit {start_year}" if tv is not None else "Noch zu wenig Verlauf für einen Gesamtwert."),
                         w1=_last(total, 5), m1=_last(total, 21), y1=_last(total, 252),
                         low12=min(last12) if last12 else None, high12=max(last12) if last12 else None,

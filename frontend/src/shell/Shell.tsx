@@ -476,7 +476,9 @@ function AiBadge() {
       ? ["ok", `KI: ${s.mode === "claude" ? "Claude" : "LM Studio"} · ${s.model ?? ""}${s.queue ? ` · ${s.queue} in Arbeit` : ""}`]
       : s.mode === "demo"
         ? ["warn", "KI: Demo"]
-        : ["err", "KI: offline"];
+        : s.configured === "claude" && /Schlüssel|Guthaben/.test(s.message)
+          ? ["err", /Guthaben/.test(s.message) ? "KI: Guthaben leer" : "KI: Schlüssel fehlt"]
+          : ["err", "KI: offline"];
   return (
     <button type="button" className={`ai-badge ${cls}`} title={`${s.message}\nKlicken öffnet den KI-Assistenten (ASK).`} onClick={() => ws.openFn("ASK")}>
       {label}

@@ -1,4 +1,4 @@
-"""Prüft die Anbindung an LM Studio (oder einen anderen OpenAI-kompatiblen Server).
+"""Prüft die Anbindung an LM Studio (oder einen anderen OpenAI-kompatiblen Server) bzw. an Claude (LLM_MODE=claude).
 
 Aufruf (aus backend/):
     python -m scripts.verify_llm
@@ -51,8 +51,48 @@ def line(state: str, name: str, text: str) -> None:
     print(f"[{state}] {name}: {text}")
 
 
+async def check_claude(cfg: Settings) -> int:
+    """LLM_MODE=claude: Schlüssel vorhanden (ohne ihn zu zeigen), Modelle erreichbar, eine winzige Probeanfrage."""
+    from app.ai.claude import DEFAULT_MODEL, DEFAULT_NEWS_MODEL, ClaudeClient
+
+    print("LLM_MODE=claude · Claude über die Anthropic-API")
+    if not cfg.anthropic_api_key:
+        line(FAIL, "Schlüssel", "ANTHROPIC_API_KEY ist in der .env leer. Schlüssel von platform.claude.com („API Keys“) dahinter eintragen.")
+        return 1
+    line(OK, "Schlüssel", f"eingetragen ({len(cfg.anthropic_api_key)} Zeichen, wird nicht angezeigt)")
+    ok = True
+    for model, env in ((cfg.claude_model or DEFAULT_MODEL, "CLAUDE_MODEL"), (cfg.claude_news_model or DEFAULT_NEWS_MODEL, "CLAUDE_NEWS_MODEL")):
+        client = ClaudeClient(cfg.anthropic_api_key, model=model, env_name=env, effort="low", max_tokens=2000)
+        try:
+            await client.models()
+            line(OK, env, f"{model} erreichbar")
+        except TerminalError as exc:
+            line(FAIL, env, exc.message)
+            ok = False
+        finally:
+            await client.close()
+    if not ok:
+        return 1
+    # eine winzige Probe mit dem günstigen News-Modell (kostet Bruchteile eines Cents): zeigt auch ein leeres Guthaben
+    client = ClaudeClient(cfg.anthropic_api_key, model=cfg.claude_news_model or DEFAULT_NEWS_MODEL, env_name="CLAUDE_NEWS_MODEL",
+                          effort="low", max_tokens=2000)
+    started = time.monotonic()
+    try:
+        msg = await client.chat([{"role": "user", "content": "Antworte nur mit dem Wort OK."}])
+        line(OK, "Probeanfrage", f"Antwort „{msg['content'].strip()[:20]}“ in {time.monotonic() - started:.1f} s")
+    except TerminalError as exc:
+        line(FAIL, "Probeanfrage", exc.message)
+        return 1
+    finally:
+        await client.close()
+    print("\nAlles bereit. Terminal (neu) starten: Die KI-Anzeige in der Statusleiste unten zeigt „KI: Claude“.")
+    return 0
+
+
 async def main() -> int:
     cfg = Settings()
+    if cfg.llm_mode == "claude":
+        return await check_claude(cfg)
     print(f"LLM_MODE={cfg.llm_mode} · LLM_BASE_URL={cfg.llm_base_url} · LLM_MODEL={cfg.llm_model or '(erstes geladenes Modell)'}")
     if cfg.llm_mode in ("off", "demo"):
         line(WARN, "Einstellung", f"LLM_MODE={cfg.llm_mode}: Das Terminal nutzt LM Studio nicht. In der .env LLM_MODE=auto setzen.")

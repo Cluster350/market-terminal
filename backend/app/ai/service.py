@@ -39,11 +39,13 @@ class AIService:
         self.client: Optional[LLMClient | ClaudeClient] = None
         self.news_client: Optional[LLMClient | ClaudeClient] = None  # News-Einordnung (bei Claude ein günstigeres Modell)
         self.llm = "claude" if self.configured == "claude" else "lmstudio"  # Name des Sprachmodell-Wegs
+        self._news_note = ""  # Claude: Hinweis, wenn nur das Modell für die News-Einordnung nicht geht
         if self.configured == "claude":
             self.client = ClaudeClient(cfg.anthropic_api_key, model=cfg.claude_model or CLAUDE_DEFAULT, effort="medium",
                                        max_tokens=16000, timeout=cfg.llm_timeout, max_concurrency=max(2, cfg.llm_max_concurrency))
             self.news_client = ClaudeClient(cfg.anthropic_api_key, model=cfg.claude_news_model or CLAUDE_NEWS_DEFAULT, effort="low",
-                                            max_tokens=4000, timeout=cfg.llm_timeout, max_concurrency=max(2, cfg.llm_max_concurrency))
+                                            max_tokens=4000, timeout=cfg.llm_timeout, max_concurrency=max(2, cfg.llm_max_concurrency),
+                                            env_name="CLAUDE_NEWS_MODEL")
         elif self.configured in ("auto", "lmstudio"):
             self.client = LLMClient(
                 cfg.llm_base_url, api_key=cfg.llm_api_key, model=cfg.llm_model, timeout=cfg.llm_timeout,
@@ -91,8 +93,12 @@ class AIService:
                     return models, msg
             try:
                 models = await self.client.models()
+                self._news_note = ""
                 if models and self.news_client is not None and self.news_client is not self.client:
-                    await self.news_client.models()
+                    try:  # ein falsches News-Modell soll nicht die ganze KI abschalten
+                        await self.news_client.models()
+                    except AIUnavailable as exc:
+                        self._news_note = f" News-Einordnung gestört: {exc.message}"
                 msg = "" if models else "LM Studio läuft, aber es ist kein Sprachmodell verfügbar. Bitte in LM Studio ein Modell laden."
             except AIUnavailable as exc:
                 models, msg = None, exc.message
@@ -130,7 +136,7 @@ class AIService:
             return AiStatus(mode="claude", configured="claude", base_url="api.anthropic.com", model=self.client.configured_model,
                             models=[self.client.configured_model, self.news_client.configured_model], queue=len(self.queue),
                             message=f"Claude verbunden: {self.client.configured_model} für Fragen und Briefing, "
-                                    f"{self.news_client.configured_model} für die News-Einordnung (Abrechnung nach Verbrauch).")
+                                    f"{self.news_client.configured_model} für die News-Einordnung (Abrechnung nach Verbrauch).{self._news_note}")
         if models:
             assert self.client is not None
             model = self.client.configured_model or models[0]
@@ -242,6 +248,8 @@ class AIService:
             self._foreground -= 1
 
     async def ask(self, req: AskRequest) -> AskResult:
+        if not req.question.strip():
+            raise BadRequest("Bitte eine Frage eingeben.")
         engine = await self._require()
         if engine == "demo" or self.client is None:
             return await demo.ask(self.terminal, req)

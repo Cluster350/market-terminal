@@ -118,12 +118,14 @@ function CompTable({ d }: { d: SentimentResult }) {
               <td title={`${c.explain}${c.sentence ? `\nHeute ${c.sentence}.` : ""}${c.note && c.available ? `\n${c.note}` : ""}${off && c.available ? "\nZählt nicht zum Gesamtwert." : ""}`}>
                 {label(c)}
                 {trend && <span className="dim"> (Kontext)</span>}
-                {!c.available && c.note && <span className="stim-note"> {c.note}</span>}
-                {c.available && c.note && c.note.startsWith("sammelt") && <span className="stim-note"> {c.note}</span>}
               </td>
-              <td className="num">{compValue(c, c.value)}</td>
+              <td className="num" title={c.note && (!c.available || c.note.startsWith("sammelt")) ? c.note : undefined}>
+                {!c.available ? <span className="stim-note">{c.note}</span> : c.note?.startsWith("sammelt") ? <span className="stim-note">sammelt</span> : compValue(c, c.value)}
+              </td>
               <td data-csv={isNum(c.rank) ? fmt(c.rank, 0) : ""}>{c.available ? <RankLine rank={c.rank} before={c.rank1w} /> : <div className="stim-rank empty" />}</td>
-              <td className="num muted">{c.available ? compChange(c, c.value, c.value1w) : DASH}</td>
+              <td className="num muted" data-csv={c.available && isNum(c.value) && isNum(c.value1w) ? fmt(c.value - c.value1w, 2) : ""}>
+                {c.available ? compChange(c, c.value, c.value1w) : DASH}
+              </td>
             </tr>
           );
         })}
@@ -156,7 +158,7 @@ function TotalBlock({ d, wide }: { d: SentimentResult; wide?: boolean }) {
         {t.nTotal ? ` · aus ${t.n === t.nTotal ? t.nTotal : `${t.n} von ${t.nTotal}`} Bausteinen` : ""}
       </div>
       <div className={`stim-badge ${d.backtest.state}`} title={d.backtest.text}>
-        Rückblick: {BACKTEST_WORD[d.backtest.state]}
+        {BACKTEST_WORD[d.backtest.state]}
       </div>
     </div>
   );
@@ -176,7 +178,10 @@ function historyOption(d: SentimentResult, from: number): EOption {
       trigger: "axis",
       formatter: (ps: { axisValue: string; seriesName: string; value: number | null }[]) => {
         const p = Array.isArray(ps) ? ps : [ps];
-        return [fmtDate(p[0]?.axisValue), ...p.map((x) => `${x.seriesName}: ${isNum(x.value) ? fmt(x.value, x.seriesName === "Gesamtwert" ? 0 : 2) : DASH}`)].join("<br/>");
+        return [fmtDate(p[0]?.axisValue), ...p.map((x) => {
+          const v = x.seriesName === "Gesamtwert" ? (x as unknown as { data?: { raw?: number | null } }).data?.raw : x.value;
+          return `${x.seriesName}: ${isNum(v) ? fmt(v, x.seriesName === "Gesamtwert" ? 0 : 2) : DASH}`;
+        })].join("<br/>");
       },
     },
     grid: [
@@ -254,7 +259,7 @@ function breadthOption(d: SentimentResult, key: BreadthKey, days: number): EOpti
 }
 
 function Decomposition({ d }: { d: SentimentResult }) {
-  const comps = d.components.filter((c) => c.inTotal && c.available);
+  const comps = d.components.filter((c) => c.inTotal && c.available && isNum(c.rank));
   const n = comps.length || 1;
   return (
     <div className="stim-decomp">
@@ -291,7 +296,8 @@ function Decomposition({ d }: { d: SentimentResult }) {
         </tbody>
       </table>
       <div className="notes">
-        Gleich gewichtet: jeder der {n} Bausteine trägt 1/{n} bei. Summe = Gesamtwert {rankText(d.total.value)}. ≈ = Näherung (berechnet, nicht die offizielle Zahl).
+        Gleich gewichtet: jeder der {n} Bausteine trägt 1/{n} bei. Summe = Mittel der Bausteine {rankText(d.total.mean)}. Weil sich ein Mittel um 50 ballt,
+        wird es selbst noch mit allen früheren Tagen verglichen – daraus der Gesamtwert {rankText(d.total.value)}. ≈ = Näherung (berechnet, nicht die offizielle Zahl).
         {d.region === "eu" ? " VIX, Put/Call und Risikoaufschlag gibt es nur für die USA – sie fehlen hier, statt durch Ähnliches ersetzt zu werden." : ""}
       </div>
     </div>
@@ -403,7 +409,7 @@ function Backtest({ d }: { d: SentimentResult }) {
         </tbody>
       </table>
       <div className="notes">
-        Urteil: {BACKTEST_WORD[bt.state]} – {bt.text} Nur ein Zeitraum (seit {d.since}) und die heutige Firmenauswahl; die Vergangenheit sieht dadurch etwas besser aus, als sie war.
+        {BACKTEST_WORD[bt.state]} – {bt.text} Nur ein Zeitraum (seit {d.since}) und die heutige Firmenauswahl; die Vergangenheit sieht dadurch etwas besser aus, als sie war.
       </div>
     </div>
   );
@@ -449,7 +455,7 @@ function Wide({ d, range, breadth, setBreadth }: { d: SentimentResult; range: Ra
           <div className="notes">Kräftige Farben zeigen, wann die Stimmung extrem war. Zeitgleich heißt nicht Ursache.</div>
         </div>
         <div>
-          <div className="section-title">Marktbreite</div>
+          <div className="section-title">Marktbreite · letzte {Math.round(Math.min(days, d.breadth.adl.length) / 21)} Monate (höchstens 2 Jahre)</div>
           <div className="toolbar stim-btabs">
             <Seg label="Marktbreite" value={breadth} options={BREADTH_TABS.map((t) => ({ value: t.value, label: t.label }))} onChange={setBreadth} />
           </div>
@@ -521,7 +527,7 @@ export function STIM(_: ScreenProps) {
           {wide ? <Wide d={d} range={range} breadth={breadth} setBreadth={setBreadth} /> : <Quarter d={d} />}
           <div className="notes stim-foot" title={d.note}>
             {wide
-              ? `${DISCLAIMER} ${d.note} Daten: EODHD, eigene Berechnung aus den BWT-Firmen; Stand täglich nach Börsenschluss.`
+              ? `${DISCLAIMER} ${d.note} Eigene Berechnung aus den Firmen des Bewertungstrends (BWT); Stand täglich nach Börsenschluss.`
               : `${DISCLAIMER} ≈ = Näherung. Diagramme, Marktbreite, Sektoren und Rückblick: Panel maximieren (Alt+M).`}
           </div>
         </div>

@@ -184,7 +184,7 @@ describe("STIM auf MAKRO", () => {
   const store = (saved: unknown, flag: string | null) => {
     const written: Record<string, string> = {};
     vi.stubGlobal("localStorage", {
-      getItem: (k: string) => (k === "mt.win.v1.main" ? JSON.stringify(saved) : k === "mt.stim-auf-makro" ? flag : null),
+      getItem: (k: string) => (k === "mt.win.v1.main" ? JSON.stringify(saved) : k === "mt.stim-auf-makro.main" ? flag : null),
       setItem: (k: string, v: string) => {
         written[k] = v;
       },
@@ -195,7 +195,7 @@ describe("STIM auf MAKRO", () => {
   it("ersetzt ECO einmalig durch STIM, wenn MAKRO noch in der alten Grundaufteilung ist", () => {
     const written = store(macro(["WMAP", "WEI", "GC", "ECO"]), null);
     expect(initial("").pages.macro.panels).toEqual(["WMAP", "WEI", "GC", "STIM"]);
-    expect(written["mt.stim-auf-makro"]).toBe("1");
+    expect(written["mt.stim-auf-makro.main"]).toBe("1");
   });
 
   it("lässt eigene Aufteilungen und spätere Entscheidungen für ECO in Ruhe", () => {

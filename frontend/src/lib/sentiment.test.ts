@@ -29,6 +29,7 @@ describe("Stimmungsterminal", () => {
     expect(compChange({ key: "breite", unit: "pct" }, 47, 51)).toBe("↓ 4 Pp");
     expect(compChange({ key: "vix", unit: "num" }, 18.7, 17.3)).toBe("↑ 1,4");
     expect(compChange({ key: "vix", unit: "num" }, 18.7, 18.7)).toBe("→ 0");
+    expect(compChange({ key: "breite", unit: "pct" }, 47.3, 47)).toBe("↑ 0,3 Pp");
   });
 
   it("findet Strecken, in denen der Index steigt, die Breite aber nicht", () => {

@@ -84,7 +84,7 @@ export const GLOSSARY: Record<string, string> = {
   Einstand: "Durchschnittlicher Kaufkurs einer Position (bei Nachkäufen gemittelt). Daraus ergibt sich das Ergebnis seit Kauf.",
   Dividendenrendite: "Jährliche Dividende geteilt durch den Kurs, in Prozent.",
   Leerverkauf: "Verkauf geliehener Aktien in der Erwartung fallender Kurse; später werden sie günstiger zurückgekauft.",
-  "Angst & Gier": "Gesamtwert im Stimmungsterminal (STIM): Mittel der Ränge aller Bausteine einer Region, 0 = so ängstlich wie fast nie, 100 = so sorglos wie fast nie – gemessen an allen früheren Tagen seit 2015. Beschreibung, keine Empfehlung.",
+  "Angst & Gier": "Gesamtwert im Stimmungsterminal (STIM): Mittel der Ränge aller Bausteine einer Region, selbst noch mit allen früheren Tagen verglichen; 0 = so ängstlich wie fast nie, 100 = so sorglos wie fast nie – gemessen an allen früheren Tagen seit 2015. Beschreibung, keine Empfehlung.",
   "Rang (STIM)": "Wie ein Wert zu allen früheren Tagen steht: Rang 70 heißt, an 70 von 100 früheren Tagen war die Stimmung ängstlicher. Nur Vergangenheit, kein Blick in die Zukunft.",
   Marktbreite: "Anteil der Firmen, deren Kurs über dem eigenen 200-Tage-Schnitt liegt. Steigt der Index nur dank weniger großer Werte, bleibt die Breite schwach.",
   "Hochs/Tiefs": "Firmen auf 52-Wochen-Hoch minus Firmen auf 52-Wochen-Tief, in % aller Firmen (NHNL), 10-Tage-Schnitt.",

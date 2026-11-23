@@ -67,8 +67,11 @@ Gestartet wird es mit einem Doppelklick.
 - Pruefen:  werkzeuge\KI pruefen.bat
 - Oder Claude statt LM Studio (kostet je Anfrage, das Claude-Abo gilt dafuer nicht):
   auf platform.claude.com Guthaben aufladen und unter "API Keys" einen Schluessel anlegen,
-  dann in der Datei .env eintragen:   LLM_MODE=claude   und   ANTHROPIC_API_KEY=...
-  Terminal neu starten. Unten rechts steht dann "KI: Claude".
+  dann die Datei .env mit dem Editor oeffnen und die VORHANDENEN Zeilen aendern (keine neuen anlegen):
+     LLM_MODE=auto        aendern in   LLM_MODE=claude
+     ANTHROPIC_API_KEY=   den Schluessel direkt dahinter schreiben
+  Pruefen mit werkzeuge\KI pruefen.bat, dann das Terminal neu starten.
+  In der Statusleiste unten (neben "Aktualisiert") steht dann "KI: Claude".
 
 
 7) DER ORDNER "werkzeuge"

@@ -45,7 +45,7 @@ async def run_agent(client: LLMClient, terminal: Terminal, req: AskRequest, *, m
     steps = 0
     for steps in range(1, max_steps + 1):
         msg = await client.chat(messages, tools=specs, max_tokens=1200)
-        calls = _tool_calls(msg)
+        calls = _tool_calls(msg, text_fallback=getattr(client, "engine", "lmstudio") != "claude")
         if not calls:
             answer = strip_think(msg.get("content", ""))
             break
@@ -69,7 +69,11 @@ async def run_agent(client: LLMClient, terminal: Terminal, req: AskRequest, *, m
     else:
         # Schrittgrenze erreicht: mit dem Gesammelten antworten lassen, ohne weitere Werkzeuge
         messages.append({"role": "user", "content": "Beantworte die Frage jetzt mit den vorliegenden Daten, ohne weitere Werkzeuge."})
-        msg = await client.chat(messages, max_tokens=900)
+        # Werkzeuge weiter beschreiben, aber keine mehr zulassen: Claude lehnt einen Verlauf mit Werkzeugaufrufen
+        # ohne Werkzeugliste ab
+        # (lokale Server kennen „none“ oft nicht – dort wie bisher ohne Werkzeugliste)
+        extra = {"tools": specs, "tool_choice": "none"} if getattr(client, "engine", "lmstudio") == "claude" else {}
+        msg = await client.chat(messages, max_tokens=900, **extra)
         answer = strip_think(msg.get("content", ""))
     if not answer:
         answer = "Das Modell hat keine Antwort geliefert. Bitte die Frage anders stellen" + (" oder ein anderes Modell in LM Studio laden." if getattr(client, "engine", "lmstudio") == "lmstudio" else ".")
@@ -99,8 +103,9 @@ def for_model(data: Any, key: str = "") -> Any:
     return data
 
 
-def _tool_calls(msg: dict) -> list[dict]:
-    """Werkzeugaufrufe aus der Antwort; manche lokalen Modelle schreiben sie als JSON in den Text."""
+def _tool_calls(msg: dict, text_fallback: bool = True) -> list[dict]:
+    """Werkzeugaufrufe aus der Antwort; manche lokalen Modelle schreiben sie als JSON in den Text (nur dort –
+    Claude ruft Werkzeuge immer über eigene Blöcke auf, und ein erfundener Aufruf hätte kein Gegenstück)."""
     out: list[dict] = []
     for i, raw in enumerate(msg.get("tool_calls") or []):
         fn = (raw or {}).get("function") or {}
@@ -115,7 +120,7 @@ def _tool_calls(msg: dict) -> list[dict]:
                 args = {}
         call_id = raw.get("id") or f"call_{i}"
         out.append({"id": call_id, "name": name, "args": args, "raw": {**raw, "id": call_id, "type": "function"}})
-    if out:
+    if out or not text_fallback:
         return out
     data = extract_json(msg.get("content", "")) if "{" in (msg.get("content") or "") else None
     if isinstance(data, dict) and data.get("name") in TOOL_BY_NAME:

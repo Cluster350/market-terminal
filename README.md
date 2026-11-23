@@ -365,8 +365,9 @@ Auswahlfeld erreichbar). Region **USA** oder **Europa**.
 - **Rang 0–100 je Baustein:** Jeder Wert wird mit allen früheren Tagen seit 2015 verglichen (nur Vergangenheit). Rang 70
   heißt: an 70 von 100 früheren Tagen war die Stimmung ängstlicher. Bei VIX, ø Volatilität und Put/Call ist die Richtung
   gedreht (hoch = Angst).
-- **Gesamtwert „Angst & Gier“** = Mittel der Ränge, jeder Baustein gleich gewichtet. Farbe: blau = Angst, grau =
-  gewöhnlich (Rang 30–70), magenta = Sorglosigkeit; große Marke unter 5 bzw. über 95.
+- **Gesamtwert „Angst & Gier“:** Mittel der Ränge (jeder Baustein gleich gewichtet), das selbst noch mit allen früheren
+  Tagen verglichen wird – ein Mittel ballt sich um 50, erst so stimmt „sorgloser als an X von 100 Tagen“. Farbe: blau =
+  Angst, grau = gewöhnlich (Rang 30–70), magenta = Sorglosigkeit; große Marke unter 5 bzw. über 95.
 - **Bausteine USA (9):** VIX · ø Volatilität · Marktbreite (Anteil über 200-Tage-Schnitt) · Hochs/Tiefs (52 Wochen) ·
   Trust (Anteil steigender Firmen) · Sichere Häfen (Aktien gegen Staatsanleihen, 20 Tage) · Put/Call ≈ · Risikoaufschlag ≈
   · Nachrichtenton. **Europa (6):** dieselben ohne VIX, Put/Call und Risikoaufschlag.
@@ -827,7 +828,7 @@ Einrichten (einmalig):
 3. **`werkzeuge\KI pruefen.bat`** doppelklicken (Mac/Linux:
    `cd backend && .venv/bin/python -m scripts.verify_llm`). Das Programm prüft Server, Modell,
    JSON-Ausgabe und Werkzeuge, misst die Zeiten und gibt Empfehlungen.
-4. Terminal starten. Unten rechts steht dann **„KI: LM Studio · Modellname“**.
+4. Terminal starten. In der Statusleiste unten (neben „Aktualisiert“) steht dann **„KI: LM Studio · Modellname“**.
 
 Ohne LM Studio übernimmt im Demo-Modus eine **regelbasierte Demo-KI** (Anzeige „KI: Demo“): Sie
 zeigt, wie alles aussieht, versteht aber nur einfache Fragen – zu einem Wert, Optionen, größten
@@ -847,10 +848,15 @@ Verbrauch. **Das Claude-Abo (Pro/Max) gilt dafür nicht**; die API ist ein eigen
 
 1. Auf **platform.claude.com** anmelden, unter **„Billing“** Guthaben aufladen (dort lässt sich auch
    ein Monatslimit setzen) und unter **„API Keys“** einen Schlüssel anlegen.
-2. In der `.env` eintragen: `LLM_MODE=claude` und `ANTHROPIC_API_KEY=…` (den Schlüssel nirgends
-   sonst einfügen – nicht in Chats, nicht in Notebooks).
-3. Terminal neu starten (das nötige Zusatzpaket installiert es dabei selbst). Unten rechts steht
-   **„KI: Claude · claude-opus-5-5“**.
+2. Die Datei `.env` im Terminal-Ordner mit dem Editor öffnen und **die vorhandenen Zeilen ändern**
+   (keine zweiten anlegen): `LLM_MODE=auto` wird zu `LLM_MODE=claude`, und hinter das vorhandene
+   `ANTHROPIC_API_KEY=` kommt der Schlüssel. Den Schlüssel nirgends sonst einfügen – nicht in Chats,
+   nicht in Notebooks. (Steht eine Einstellung doch doppelt da, gilt die letzte Zeile.)
+3. Prüfen: **`werkzeuge\KI pruefen.bat`** doppelklicken – es prüft Schlüssel, Modelle und eine winzige
+   Probeanfrage (Bruchteile eines Cents) und zeigt den Schlüssel dabei nicht an.
+4. Terminal neu starten (das nötige Zusatzpaket installiert es dabei selbst). In der Statusleiste unten
+   (neben „Aktualisiert“) steht dann **„KI: Claude · claude-opus-5-5“**; fehlt der Schlüssel, steht dort
+   „KI: Schlüssel fehlt“.
 
 Modelle: **Claude Opus 5.5** für ASK, BRIEF und die Damodaran-Persona (`CLAUDE_MODEL`), **Claude
 Haiku 5.5** für die laufende News-Einordnung (`CLAUDE_NEWS_MODEL`) – die vielen kleinen Aufgaben

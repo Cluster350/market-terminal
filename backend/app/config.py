@@ -5,20 +5,32 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 
-def _load_dotenv() -> None:
-    """Liest eine .env-Datei im Projekt- oder Backend-Ordner, ohne Zusatzpaket."""
+DOTENV_DUPLICATES: list[str] = []  # Einstellungen, die in der .env mehrfach stehen (die letzte Zeile gilt)
+
+
+def _load_dotenv(paths: Optional[list[Path]] = None) -> None:
+    """Liest eine .env-Datei im Projekt- oder Backend-Ordner, ohne Zusatzpaket. Steht eine Einstellung mehrfach in
+    der Datei, gilt die letzte Zeile – wer unten „LLM_MODE=claude“ ergänzt, statt die vorhandene Zeile zu ändern,
+    bekommt so, was er erwartet. Bereits gesetzte Umgebungsvariablen haben Vorrang vor der Datei."""
     here = Path(__file__).resolve().parent
-    for candidate in (here.parent / ".env", here.parent.parent / ".env"):
+    for candidate in paths or [here.parent / ".env", here.parent.parent / ".env"]:
         if not candidate.is_file():
             continue
-        for raw in candidate.read_text(encoding="utf-8").splitlines():
+        values: dict[str, str] = {}
+        for raw in candidate.read_text(encoding="utf-8-sig").splitlines():
             line = raw.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+            key = key.strip()
+            if key in values and key not in DOTENV_DUPLICATES:
+                DOTENV_DUPLICATES.append(key)
+            values[key] = value.strip().strip('"').strip("'")
+        for key, value in values.items():
+            os.environ.setdefault(key, value)
 
 
 _load_dotenv()

@@ -113,10 +113,16 @@ def test_putcall_is_recorded_daily_outside_demo(tmp_path):
     async def options(t):
         return chain(t)
 
-    term = types.SimpleNamespace(options=options, now=lambda: NOW)
+    clock = {"now": NOW}  # 15 Uhr UTC: US-Börse noch offen
+    term = types.SimpleNamespace(options=options, now=lambda: clock["now"])
     svc = SentimentService(term, None, tmp_path, mode="eodhd")
     (tmp_path / "stimmung").mkdir()
     (tmp_path / "stimmung" / "putcall.json").write_text(json.dumps({"2026-11-19": 0.9, "kaputt": "x"}))
+    hist, _ = asyncio.run(svc._putcall(["2026-11-19", "2026-11-20"], [None, None]))
+    assert hist == {"2026-11-19": 0.9}  # vor Börsenschluss nichts aufzeichnen
+    clock["now"] = NOW.replace(hour=21, minute=30)
+    hist, _ = asyncio.run(svc._putcall(["2026-11-18", "2026-11-19"], [None, None]))
+    assert "2026-11-20" not in hist  # heute kein Handelstag mit Kurs (Feiertag): nicht mitzählen
     hist, note = asyncio.run(svc._putcall(["2026-11-19", "2026-11-20"], [None, None]))
     assert hist == {"2026-11-19": 0.9, "2026-11-20": 1.2}
     assert note == "sammelt noch: 2 von 250 Tagen aufgezeichnet"

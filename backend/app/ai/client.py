@@ -142,6 +142,7 @@ class LLMClient:
         schema_name: str = "antwort",
         temperature: float = 0.2,
         max_tokens: int = 1200,
+        tool_choice: str = "auto",
     ) -> dict:
         """Eine Chat-Antwort (choices[0].message). Ohne Schema-Unterstützung des Servers wird
         das Schema stattdessen als Anweisung mitgegeben."""
@@ -154,7 +155,7 @@ class LLMClient:
         }
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = tool_choice
         if schema and self.supports_schema:
             payload["response_format"] = {"type": "json_schema", "json_schema": {"name": schema_name, "strict": True, "schema": schema}}
         r = await self._post(payload)

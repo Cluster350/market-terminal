@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any, Optional
 
 import anthropic
@@ -24,6 +25,7 @@ DEFAULT_NEWS_MODEL = "claude-haiku-5-5"  # News-Einordnung: viele kleine Aufgabe
 # Modelle mit serverseitigem Ausweichen, wenn ein Sicherheitsfilter eine Anfrage ablehnt
 FALLBACK_MODELS = ("claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+BLOCK_SECONDS = 300  # so lange gilt ein Schlüssel- oder Guthabenfehler, bevor neu geprüft wird
 
 
 class ClaudeClient:
@@ -31,7 +33,7 @@ class ClaudeClient:
     supports_schema = True
 
     def __init__(self, api_key: str, *, model: str = "", effort: str = "medium", max_tokens: int = 16000,
-                 timeout: float = 180, max_concurrency: int = 2, sdk: Any = None):
+                 timeout: float = 180, max_concurrency: int = 2, sdk: Any = None, env_name: str = "CLAUDE_MODEL"):
         self.configured_model = model or DEFAULT_MODEL
         self.base_url = "https://api.anthropic.com"
         self.effort = effort
@@ -40,6 +42,9 @@ class ClaudeClient:
         self._sdk = sdk if sdk is not None else anthropic.AsyncAnthropic(api_key=api_key or None, timeout=timeout, max_retries=2)
         self._sem = asyncio.Semaphore(max_concurrency)
         self._checked = False
+        self.env_name = env_name  # Name der Einstellung in der .env (für verständliche Meldungen)
+        self._bad_schemas: set[str] = set()  # Schemas, die die API nicht als strukturierte Ausgabe annimmt
+        self._blocked: Optional[tuple[float, str]] = None  # zuletzt: Schlüssel/Guthaben-Fehler (Zeit, Meldung)
 
     async def close(self) -> None:
         close = getattr(self._sdk, "close", None)
@@ -50,11 +55,14 @@ class ClaudeClient:
         """Prüft Schlüssel und Modell (kostenlose Abfrage der Modellliste). Liefert das eingestellte Modell."""
         if not self._key:
             raise AIUnavailable("Für Claude fehlt der API-Schlüssel: in der .env ANTHROPIC_API_KEY=… eintragen und das Terminal neu starten.")
+        if self._blocked and time.monotonic() - self._blocked[0] < BLOCK_SECONDS:
+            # Guthaben leer o. Ä.: die Modellliste ginge trotzdem – Status bleibt ein paar Minuten „offline“
+            raise AIUnavailable(self._blocked[1])
         if not self._checked:
             try:
                 await self._sdk.models.retrieve(self.configured_model, timeout=timeout)
             except anthropic.NotFoundError as exc:
-                raise AIUnavailable(f"Claude-Modell „{self.configured_model}“ gibt es nicht. CLAUDE_MODEL in der .env prüfen.") from exc
+                raise AIUnavailable(f"Claude-Modell „{self.configured_model}“ gibt es nicht. {self.env_name} in der .env prüfen.") from exc
             except anthropic.APIError as exc:
                 raise _map_error(exc) from exc
             self._checked = True
@@ -64,27 +72,40 @@ class ClaudeClient:
         return self.configured_model
 
     async def chat(self, messages: list[dict], *, tools: Optional[list[dict]] = None, schema: Optional[dict] = None,
-                   schema_name: str = "antwort", temperature: float = 0.2, max_tokens: int = 1200) -> dict:
+                   schema_name: str = "antwort", temperature: float = 0.2, max_tokens: int = 1200, tool_choice: str = "auto") -> dict:
         """Eine Antwort im OpenAI-Format (content, tool_calls). ``temperature`` und ``max_tokens`` der Aufrufer gelten
-        für lokale Modelle; Claude denkt vor der Antwort, deshalb ein eigenes, großzügiges Limit."""
-        system, conv = to_anthropic(messages if not schema or self.supports_schema else _with_schema_hint(messages, schema))
+        für lokale Modelle; Claude denkt vor der Antwort, deshalb ein eigenes, großzügiges Limit.
+        ``tool_choice="none"``: Werkzeuge beschreiben, aber keinen Aufruf zulassen."""
+        structured = bool(schema) and schema_name not in self._bad_schemas
+        system, conv = to_anthropic(messages if not schema or structured else _with_schema_hint(messages, schema))
+        if not conv:
+            raise UpstreamError("Leere Anfrage – bitte eine Frage eingeben.")
         params: dict[str, Any] = {"model": self.configured_model, "max_tokens": self.max_tokens, "messages": conv,
                                   "output_config": {"effort": self.effort}}
         if system:
             params["system"] = system
         if tools:
             params["tools"] = [to_tool(t) for t in tools]
-        if schema and self.supports_schema:
+            if tool_choice == "none":
+                params["tool_choice"] = {"type": "none"}
+        if structured:
             params["output_config"] = {**params["output_config"], "format": {"type": "json_schema", "schema": schema}}
         try:
             resp = await self._create(params)
         except anthropic.BadRequestError as exc:
-            if "format" not in params["output_config"]:
-                raise _map_error(exc) from exc
-            # Schema nicht als strukturierte Ausgabe darstellbar: als Anweisung schicken
-            self.supports_schema = False
-            return await self.chat(messages, tools=tools, schema=schema, schema_name=schema_name, max_tokens=max_tokens)
+            if not structured or not _about_schema(exc):
+                raise self._fail(exc) from exc
+            # nur dieses Schema lässt sich nicht als strukturierte Ausgabe darstellen: als Anweisung schicken
+            self._bad_schemas.add(schema_name)
+            return await self.chat(messages, tools=tools, schema=schema, schema_name=schema_name, max_tokens=max_tokens, tool_choice=tool_choice)
         return from_anthropic(resp)
+
+    def _fail(self, exc: Exception) -> Exception:
+        err = _map_error(exc)
+        if isinstance(err, AIUnavailable):  # Schlüssel/Guthaben: Status zeigt es, bis es wieder geht
+            self._blocked = (time.monotonic(), err.message)
+            self._checked = False
+        return err
 
     async def chat_json(self, messages: list[dict], schema: dict, *, schema_name: str = "antwort", max_tokens: int = 900) -> dict:
         msg = await self.chat(messages, schema=schema, schema_name=schema_name, max_tokens=max_tokens)
@@ -104,10 +125,17 @@ class ClaudeClient:
             except anthropic.BadRequestError:
                 raise
             except anthropic.APIError as exc:
-                raise _map_error(exc) from exc
+                raise self._fail(exc) from exc
+        self._blocked = None
         if getattr(resp, "stop_reason", None) == "refusal":
             raise UpstreamError("Claude hat diese Anfrage abgelehnt (Sicherheitsfilter). Bitte anders formulieren.")
         return resp
+
+
+def _about_schema(exc: Exception) -> bool:
+    """Betrifft eine 400 die strukturierte Ausgabe (Schema nicht unterstützt) – nicht etwa Guthaben oder Länge?"""
+    msg = (getattr(exc, "message", "") or str(exc)).lower()
+    return any(w in msg for w in ("schema", "output_config", "json_schema", "format"))
 
 
 def _map_error(exc: Exception) -> Exception:

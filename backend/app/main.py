@@ -271,7 +271,12 @@ def create_app(
         app.state.notebook = NotebookService(cfg.portfolio_dir)
         if valuation_auto:
             app.state.valuation.start()
-        log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode, cfg.llm_base_url)
+        log.info("Market Terminal gestartet, Datenquelle: %s, KI: LLM_MODE=%s (%s)", prov.mode, cfg.llm_mode,
+                 "Anthropic-API" if cfg.llm_mode == "claude" else cfg.llm_base_url)
+        from .config import DOTENV_DUPLICATES
+
+        if DOTENV_DUPLICATES:
+            log.warning("In der .env stehen diese Einstellungen mehrfach (es gilt jeweils die letzte Zeile): %s", ", ".join(DOTENV_DUPLICATES))
         yield
         await app.state.notebook.stop()  # Jupyter endet mit dem Terminal
         await app.state.realtime.close()
