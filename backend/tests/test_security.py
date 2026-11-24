@@ -81,10 +81,10 @@ def test_cross_site_read_is_rejected(client):
 
 
 def test_own_requests_still_work(client):
-    same = {"origin": "http://127.0.0.1:8000", "sec-fetch-site": "same-origin"}
+    same = {"origin": "http://testserver", "sec-fetch-site": "same-origin"}
     assert client.post("/api/alerts", json=ALERT, headers=same).status_code == 200
-    # Entwicklung mit Vite (Proxy auf Port 5173) und Aufruf über localhost
-    assert client.post("/api/alerts", json={**ALERT, "level": 2.0}, headers={"origin": "http://localhost:5173"}).status_code == 200
+    # Entwicklung mit Vite: der Proxy (Port 5173) reicht den Host-Kopf unverändert weiter, Origin und Host passen
+    assert client.post("/api/alerts", json={**ALERT, "level": 2.0}, headers={"origin": "http://localhost:5173", "host": "localhost:5173"}).status_code == 200
     # Startskripte (MSXML2.ServerXMLHTTP), curl und Tests senden weder Origin noch Sec-Fetch-Site
     assert client.post("/api/alerts", json={**ALERT, "level": 3.0}).status_code == 200
     assert client.post("/api/alerts/check", headers=same).status_code == 200  # POST ohne Body
@@ -166,3 +166,14 @@ def test_damodaran_number_and_page_limits(monkeypatch):
 
     pages = asyncio.run(damodaran_data.fetch(httpx.MockTransport(handler)))
     assert list(pages) == ["erp"] and damodaran_data.parse_erp(pages["erp"]) == pytest.approx(0.0433)
+
+
+def test_other_local_port_is_foreign():
+    """Seite auf einem anderen lokalen Port (z. B. ein Entwicklungsserver) darf nichts auslösen."""
+    host = {"host": "127.0.0.1:8000"}
+    assert access_problem("POST", "/api/notebook/start", {**host, "origin": "http://127.0.0.1:8888"})[0] == 403
+    assert access_problem("POST", "/api/remote", {**host, "origin": "http://localhost:5173"})[0] == 403
+    assert access_problem("GET", "/api/deck", {**host, "sec-fetch-site": "same-site"})[0] == 403
+    assert access_problem("POST", "/api/notebook/start", {**host, "origin": "http://127.0.0.1:8000"}) is None
+    assert access_problem("POST", "/api/x", {"host": "[::1]:8000", "origin": "http://[::1]:8000"}) is None
+    assert access_problem("POST", "/api/x", {"host": "localhost", "origin": "http://localhost"}) is None

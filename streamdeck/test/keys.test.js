@@ -68,3 +68,9 @@ test("Bilder zeigen die Daten", () => {
   assert.match(render({ art: "kurs", ticker: "X.US", label: "<b>" }, null, { offline: true }), /nicht offen/);
   assert.doesNotMatch(render({ art: "befehl", command: "<script>", label: "<script>" }, null), /<script>/); // Text wird maskiert
 });
+
+test("Kurs-Taste findet ihren Kurs auch bei Kurzform (AAPL → AAPL.US)", () => {
+  const svg = render({ art: "kurs", ticker: "AAPL", label: "Apple" }, { quotes: [{ ticker: "AAPL.US", requested: ["AAPL"], last: 210, low: 205, high: 212, prevClose: 208, changePct: 1 }] });
+  assert.match(svg, /205/);
+  assert.doesNotMatch(svg, /keine Tagesspanne/);
+});

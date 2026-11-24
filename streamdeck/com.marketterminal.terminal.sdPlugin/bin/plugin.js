@@ -3778,7 +3778,7 @@ function render(s, data, opts = {}) {
   }
   switch (s.art) {
     case "kurs": {
-      const q = data?.quotes?.find((x) => x.ticker === s.ticker);
+      const q = data?.quotes?.find((x) => x.ticker === s.ticker || (x.requested ?? []).includes(s.ticker));
       const label = s.label || shortName(q?.name, s.ticker);
       const price = fmtPrice(q?.last);
       return svg(

@@ -1,7 +1,7 @@
 // Bilanzbild (Reiter in FA): Bilanzsäulen, Kennzahlen-Ampeln, Strukturbilanz über die Jahre, Schulden gegen Kasse und
 // Eigenkapital-Brücke – gezeichnet als SVG, Daten aus denselben Finanzberichten wie die Tabellen in FA.
 
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Empty, Spark, useSize } from "../components/ui";
 import { equityBridge, kpis, money, splitBalance, type BalanceSplit, type Kpi, type Light, type Segment } from "../lib/balance";
 import { useCsvExport } from "../lib/exporter";
@@ -80,11 +80,15 @@ function Pillars({ s, currency }: { s: BalanceSplit; currency: string | null }) 
   // Finanzschulden: schmaler Streifen am rechten Rand der Verbindlichkeiten, von deren Ende nach oben
   const liabEnd = top + s.liabilities.filter((x) => x.key === "cl" || x.key === "ncl").reduce((a, x) => a + x.value, 0) * scale;
   const debtH = s.debt && s.debt > 0 ? Math.min(s.debt * scale, liabEnd - top) : 0;
+  // Schulden-Legende und Warnung bei negativem Eigenkapital untereinander, nicht übereinander
+  const alarmY = top + H + (debtH > 0 ? 48 : 32);
+  // eigene Schraffur-ID je Bild: mehrere FA-Fenster (auch verborgene) dürfen sich nicht die Füllung wegnehmen
+  const hatch = `bv-hatch-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   return (
-    <svg viewBox="0 0 556 322" className="bv-svg bv-pillars" role="img" aria-label="Bilanzsäulen: Aktiva und Passiva">
+    <svg viewBox={`0 0 556 ${alarmY > top + H + 32 && negEq ? 338 : 322}`} className="bv-svg bv-pillars" role="img" aria-label="Bilanzsäulen: Aktiva und Passiva" style={{ ["--bv-hatch" as string]: `url(#${hatch})` }}>
       <defs>
         {/* Goodwill: Schraffur statt Fläche – kein greifbares Vermögen, erkennbar an der Form statt nur an der Farbe */}
-        <pattern id="bv-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <pattern id={hatch} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <rect width="6" height="6" fill="#000" />
           <rect width="3" height="6" fill={PAL.bsFixed} />
         </pattern>
@@ -108,7 +112,7 @@ function Pillars({ s, currency }: { s: BalanceSplit; currency: string | null }) 
         </g>
       )}
       {negEq && (
-        <text x={(ax + px + w) / 2} y={top + H + 32} className="bv-alarm" textAnchor="middle">
+        <text x={(ax + px + w) / 2} y={alarmY} className="bv-alarm" textAnchor="middle">
           {`Eigenkapital negativ (${money(s.equity)}): Schulden übersteigen das Vermögen`}
         </text>
       )}
@@ -285,6 +289,8 @@ export function BalancePicture({ f }: { f: Financials }) {
   const labels = useMemo(() => f.periods.map((p) => yearOf(p, f.period)), [f]);
   const splits = useMemo(() => f.periods.map((_, i) => splitBalance(f, i)), [f]);
   const ks = useMemo(() => kpis(f), [f]);
+  // neuer Wert oder Jahr/Quartal gewechselt: wieder die neueste Periode zeigen
+  useEffect(() => setSel(0), [f.ticker, f.period]);
   const i = Math.min(sel, f.periods.length - 1);
   const s = splits[i];
 
@@ -313,7 +319,7 @@ export function BalancePicture({ f }: { f: Financials }) {
               {labels.slice().reverse().map((l, k) => {
                 const idx = labels.length - 1 - k;
                 return (
-                  <button key={l} type="button" aria-pressed={idx === i} disabled={!splits[idx]} onClick={() => setSel(idx)}>{l}</button>
+                  <button key={idx} type="button" aria-pressed={idx === i} disabled={!splits[idx]} onClick={() => setSel(idx)}>{l}</button>
                 );
               })}
             </span>

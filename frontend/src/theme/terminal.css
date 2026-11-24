@@ -1020,7 +1020,7 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .bv-link { stroke: var(--dim); stroke-dasharray: 2 2; }
 .bv-seg { stroke: #000; stroke-width: 1; }
 .bv-cash { fill: var(--bs-cash); } .bv-recv { fill: var(--bs-recv); } .bv-inv { fill: var(--bs-inv); } .bv-ppe { fill: var(--bs-fixed); }
-.bv-gw { fill: url(#bv-hatch); } .bv-gw-dash { fill: none; stroke: var(--muted); stroke-dasharray: 4 3; pointer-events: none; }
+.bv-gw { fill: var(--bv-hatch, var(--bs-fixed)); } .bv-gw-dash { fill: none; stroke: var(--muted); stroke-dasharray: 4 3; pointer-events: none; }
 .bv-other { fill: var(--bs-other); } .bv-cl { fill: var(--bs-cl); } .bv-ncl { fill: var(--bs-ncl); } .bv-eq { fill: var(--bs-eq); }
 .bv-debt { fill: var(--value); }
 .bv-total { fill: var(--bs-eq); } .bv-up { fill: var(--up-fill); } .bv-down { fill: var(--down-fill); }

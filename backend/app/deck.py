@@ -103,6 +103,7 @@ class DeckQuote(Model):
     low: Optional[float] = None
     prev_close: Optional[float] = None
     currency: Optional[str] = None
+    requested: list[str] = []  # so angefragt (z. B. „AAPL“ für AAPL.US) – damit die Taste ihren Kurs wiederfindet
 
 
 class DeckStim(Model):
@@ -147,6 +148,7 @@ class DeckService:
     def __init__(self, app: Any):
         self.app = app
         self._stim: dict[str, tuple[float, asyncio.Task]] = {}
+        self._stim_last: dict[str, DeckStim] = {}  # letztes fertiges Ergebnis je Region (gilt, bis ein neues fertig ist)
         self._depot: Optional[tuple[float, Optional[DeckDepot]]] = None
         self._depot_lock = asyncio.Lock()
 
@@ -183,19 +185,18 @@ class DeckService:
         """Stimmung ohne zu warten: Die Rechnung läuft im Hintergrund, die Taste zeigt das letzte fertige Ergebnis."""
         hit = self._stim.get(region)
         now = time.time()
-        ready = hit is not None and self._stim_from(hit[1]).state == "ready"
+        if hit is not None and hit[1].done():
+            res = self._stim_from(hit[1])
+            if res.state == "ready":
+                self._stim_last[region] = res
+        last = self._stim_last.get(region)
         # fertig: alle STIM_SECONDS neu; noch im Aufbau (Firmenliste aus BWT fehlt): alle 10 s nachfragen
-        if hit is None or (hit[1].done() and now - hit[0] > (STIM_SECONDS if ready else 10)):
+        if hit is None or (hit[1].done() and now - hit[0] > (STIM_SECONDS if last is not None else 10)):
             task = asyncio.ensure_future(self.app.state.sentiment.stimmung(region))
             task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)  # Fehler nicht unbeachtet lassen
-            if hit is not None and hit[1].done() and not hit[1].cancelled() and hit[1].exception() is None:
-                # bis die neue Rechnung fertig ist, das alte Ergebnis behalten
-                prev = hit[1]
-                self._stim[region] = (now, task)
-                return self._stim_from(prev)
             self._stim[region] = (now, task)
-            hit = self._stim[region]
-        return self._stim_from(hit[1])
+        # bis die neue Rechnung fertig ist (oder falls sie scheitert), das alte Ergebnis zeigen
+        return last if last is not None else DeckStim()
 
     @staticmethod
     def _stim_from(task: asyncio.Task) -> DeckStim:

@@ -29,16 +29,31 @@ const at = (rows: StatementRow[], key: string, i: number): number | null => {
 };
 const pos = (v: number | null) => (v !== null && v > 0 ? v : 0);
 
+/** Anlagevermögen: gemeldet, sonst Bilanzsumme minus Umlaufvermögen. */
+const nonCurrentOf = (b: StatementRow[], i: number): number | null => {
+  const total = at(b, "totalAssets", i), curr = at(b, "totalCurrentAssets", i);
+  return at(b, "nonCurrentAssetsTotal", i) ?? (total !== null && curr !== null ? total - curr : null);
+};
+
 /** Bilanz einer Periode (Index in f.periods, 0 = neueste) in Teile zerlegen. Restposten schließen die Lücke zur Summe. */
 export function splitBalance(f: Financials, i = 0): BalanceSplit | null {
   const b = f.balance;
   const total = at(b, "totalAssets", i);
   if (!total || total <= 0) return null;
-  const cash = pos(at(b, "cash", i));
-  const recv = pos(at(b, "netReceivables", i));
-  const inv = pos(at(b, "inventory", i));
+  let cash = pos(at(b, "cash", i));
+  let recv = pos(at(b, "netReceivables", i));
+  let inv = pos(at(b, "inventory", i));
   const curr = at(b, "totalCurrentAssets", i);
-  const nonCurr = at(b, "nonCurrentAssetsTotal", i) ?? (curr !== null ? total - curr : null);
+  const nonCurr = nonCurrentOf(b, i);
+  // Ohne Umlaufvermögen-Summe (z. B. Banken) dürfen Kasse, Forderungen und Vorräte nicht mehr sein als der Platz
+  // neben dem Anlagevermögen – sonst ragte die Säule über die Bilanzsumme hinaus.
+  if (curr === null && nonCurr !== null) {
+    const room = Math.max(0, total - nonCurr), sumC = cash + recv + inv;
+    if (sumC > room) {
+      const k = sumC > 0 ? room / sumC : 0;
+      cash *= k; recv *= k; inv *= k;
+    }
+  }
   const ppe = pos(at(b, "propertyPlantEquipment", i));
   const gw = goodwillTotal(b, i, nonCurr);
   const otherCurr = curr !== null ? Math.max(0, curr - cash - recv - inv) : 0;
@@ -54,12 +69,15 @@ export function splitBalance(f: Financials, i = 0): BalanceSplit | null {
   ].filter((s) => s.value > total * 0.002);
   // Rundungen/fehlende Posten: Aktiva auf die Bilanzsumme bringen
   const sumA = assets.reduce((s, x) => s + x.value, 0);
-  if (sumA < total * 0.995) assets.push({ key: "rest", label: "Nicht aufgeschlüsselt", value: total - sumA, tone: "bv-other", hint: "von der Datenquelle nicht einzeln gemeldet" });
+  // widersprüchliche Teilposten (Summe größer als die Bilanz): alles maßstäblich auf die Bilanzsumme kürzen
+  if (sumA > total * 1.005) for (const a of assets) a.value *= total / sumA;
+  else if (sumA < total * 0.995) assets.push({ key: "rest", label: "Nicht aufgeschlüsselt", value: total - sumA, tone: "bv-other", hint: "von der Datenquelle nicht einzeln gemeldet" });
 
   const equity = at(b, "totalStockholderEquity", i);
   const currLiab = pos(at(b, "totalCurrentLiabilities", i));
   const totalLiab = at(b, "totalLiab", i);
-  const nonCurrLiab = pos(at(b, "nonCurrentLiabilitiesTotal", i) ?? (totalLiab !== null ? totalLiab - currLiab : null));
+  const nclReported = at(b, "nonCurrentLiabilitiesTotal", i) ?? (totalLiab !== null ? totalLiab - currLiab : null);
+  const nonCurrLiab = pos(nclReported);
   const liabilities: Segment[] = [
     { key: "cl", label: "Kurzfr. Verbindl.", value: currLiab, tone: "bv-cl", hint: "fällig innerhalb eines Jahres (Lieferanten, kurzfristige Kredite …)" },
     { key: "ncl", label: "Langfr. Verbindl.", value: nonCurrLiab, tone: "bv-ncl", hint: "Anleihen, langfristige Kredite, Pensionen …" },
@@ -67,7 +85,11 @@ export function splitBalance(f: Financials, i = 0): BalanceSplit | null {
   if (equity !== null && equity > 0) liabilities.push({ key: "eq", label: "Eigenkapital", value: equity, tone: "bv-eq", hint: "gehört den Aktionären" });
   const sumP = liabilities.reduce((s, x) => s + x.value, 0);
   // Minderheiten und Rundungen: Rest zur Bilanzsumme (nur wenn positiv und nennenswert)
-  if (equity !== null && equity > 0 && total - sumP > total * 0.005) liabilities.push({ key: "min", label: "Minderheiten u. a.", value: total - sumP, tone: "bv-other", hint: "Anteile anderer Gesellschafter, nicht zuordenbar" });
+  // Fehlen langfristige und gesamte Verbindlichkeiten, ist der Rest vor allem Fremdkapital – dann neutral benennen.
+  if (equity !== null && equity > 0 && total - sumP > total * 0.005)
+    liabilities.push(nclReported !== null
+      ? { key: "min", label: "Minderheiten u. a.", value: total - sumP, tone: "bv-other", hint: "Anteile anderer Gesellschafter, nicht zuordenbar" }
+      : { key: "rest", label: "Nicht aufgeschlüsselt", value: total - sumP, tone: "bv-other", hint: "langfristige Verbindlichkeiten u. a. – von der Datenquelle nicht einzeln gemeldet" });
   return {
     period: f.periods[i],
     total,
@@ -101,6 +123,9 @@ export interface Kpi {
 /** EBITDA der Periode i; im Quartal die Summe der letzten vier Quartale (sonst wäre die Schuldenquote 4× zu hoch). */
 export function ebitdaAt(f: Financials, i: number): number | null {
   if (f.period === "annual") return at(f.income, "ebitda", i);
+  // nur vier aufeinanderfolgende Quartale (fehlt eines, umfasste die Summe sonst mehr als ein Jahr)
+  const a = Date.parse(f.periods[i] ?? ""), z = Date.parse(f.periods[i + 3] ?? "");
+  if (!Number.isFinite(a) || !Number.isFinite(z) || (a - z) / 86_400_000 > 300) return null;
   const vals = [0, 1, 2, 3].map((k) => at(f.income, "ebitda", i + k));
   return vals.every((v) => v !== null) ? (vals as number[]).reduce((a, b) => a + b, 0) : null;
 }
@@ -118,7 +143,7 @@ export function kpis(f: Financials): Kpi[] {
     return c !== null && cl ? (c + (r ?? 0)) / cl : null;
   });
   const gwEq = idx.map((i) => {
-    const gw = goodwillTotal(b, i);
+    const gw = goodwillTotal(b, i, nonCurrentOf(b, i));
     const hasGw = at(b, "goodWill", i) !== null || at(b, "intangibleAssets", i) !== null;
     if (!hasGw || eq[i] === null) return null;
     return eq[i]! > 0 ? (gw / eq[i]!) * 100 : Infinity; // negatives Eigenkapital: unbegrenzt

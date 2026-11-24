@@ -59,7 +59,7 @@ const KINDS = ["candle", "line", "area"] as const;
 const MA = [
   { n: 20, color: PAL.c2 },
   { n: 50, color: PAL.c1 },
-  { n: 200, color: PAL.c3 },
+  { n: 200, color: PAL.c6 }, // nicht Hellgrau: läge auf der hellen Kurslinie (Linie/Fläche)
 ];
 
 export interface Bar {

@@ -164,6 +164,27 @@ def _origin_host(origin: str) -> Optional[str]:
     return _hostname(rest)
 
 
+def _netloc(value: Optional[str], scheme: str = "http") -> Optional[str]:
+    """Rechner und Port („127.0.0.1:8000“), fehlender Port = Standardport des Schemas."""
+    host = _hostname(value)
+    if host is None:
+        return None
+    v = (value or "").strip().lower()
+    tail = v.rsplit("]", 1)[-1] if v.startswith("[") else v  # bei IPv6 steht der Port hinter „]“
+    port = tail.rsplit(":", 1)[1] if ":" in tail else ""
+    return f"{host}:{port or ('443' if scheme == 'https' else '80')}"
+
+
+def _same_origin(origin: str, host_header: Optional[str]) -> bool:
+    """Origin gehört zu diesem Server: gleicher Port – ein anderer lokaler Port (andere Anwendung) zählt als fremd."""
+    scheme, sep, rest = origin.strip().lower().partition("://")
+    if not sep or scheme not in ("http", "https"):
+        return False
+    # Rechnername ist schon geprüft (nur lokale Namen); 127.0.0.1 und localhost sind derselbe Rechner – es zählt der Port.
+    mine, server = _netloc(rest, scheme), _netloc(host_header, scheme)
+    return mine is not None and server is not None and mine.rsplit(":", 1)[1] == server.rsplit(":", 1)[1]
+
+
 def access_problem(method: str, path: str, headers: dict[str, str], hosts: frozenset[str] = LOCAL_HOSTS) -> Optional[tuple[int, str, str]]:
     """Grund, eine Anfrage abzulehnen (Status, Code, Meldung), sonst None. ``headers`` mit kleingeschriebenen Namen.
     Anfragen ohne Origin/Sec-Fetch-Site (Startskripte, curl, Tests) bleiben erlaubt – Browser senden sie immer."""
@@ -171,11 +192,12 @@ def access_problem(method: str, path: str, headers: dict[str, str], hosts: froze
         return 400, "host", "Unbekannter Host. Das Terminal ist nur über http://127.0.0.1 oder http://localhost erreichbar."
     if not path.startswith("/api/"):
         return None
-    if headers.get("sec-fetch-site", "").strip().lower() == "cross-site":
+    # „same-site“ = andere lokale Seite (anderer Port, z. B. ein Entwicklungsserver) – ebenfalls fremd
+    if headers.get("sec-fetch-site", "").strip().lower() in ("cross-site", "same-site"):
         return _FOREIGN
     if method.upper() in _WRITE_METHODS:
         origin = headers.get("origin")
-        if origin is not None and _origin_host(origin) not in hosts:
+        if origin is not None and (_origin_host(origin) not in hosts or not _same_origin(origin, headers.get("host"))):
             return _FOREIGN
         # Ohne Content-Type liest FastAPI den Body trotzdem als JSON – so käme eine „einfache“ Anfrage ohne
         # CORS-Vorabprüfung durch (fetch mit Blob). Schreibende Anfragen mit Inhalt daher nur als JSON.

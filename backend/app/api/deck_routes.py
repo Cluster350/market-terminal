@@ -19,6 +19,7 @@ PARTS = {"news", "alerts", "depot", "stim_us", "stim_eu"}
 @router.get("/deck", response_model=DeckData)
 async def deck(request: Request, tickers: str = Query("", max_length=600), parts: str = Query("", max_length=100)):
     tks: list[str] = []
+    asked: dict[str, list[str]] = {}
     for raw in tickers.split(","):
         if raw.strip():
             try:
@@ -27,8 +28,13 @@ async def deck(request: Request, tickers: str = Query("", max_length=600), parts
                 continue
             if t not in tks:
                 tks.append(t)
+            if raw.strip() not in asked.setdefault(t, []):
+                asked[t].append(raw.strip())
     want = {p.strip() for p in parts.split(",") if p.strip() in PARTS}
-    return await request.app.state.deck.data(tks[:20], want)
+    out = await request.app.state.deck.data(tks[:20], want)
+    for q in out.quotes:
+        q.requested = asked.get(q.ticker, [])
+    return out
 
 
 @router.post("/remote")

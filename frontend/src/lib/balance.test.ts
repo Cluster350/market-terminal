@@ -59,9 +59,24 @@ describe("Bilanzbild", () => {
     expect(cashRich.lev.text).toBe("mehr Kasse als Schulden");
   });
   it("Quartale: EBITDA der letzten vier Quartale", () => {
-    const f = { ...fin({}, "quarterly"), periods: ["q4", "q3", "q2", "q1", "q0"], income: [r("ebitda", [5, 6, 7, 8, 9])] };
+    const f = { ...fin({}, "quarterly"), periods: ["2025-12-31", "2025-09-30", "2025-06-30", "2025-03-31", "2024-12-31"], income: [r("ebitda", [5, 6, 7, 8, 9])] };
     expect(ebitdaAt(f, 0)).toBe(26);
     expect(ebitdaAt(f, 2)).toBeNull(); // nur noch drei Quartale
+    // ein Quartal fehlt: die vier Werte umfassten 15 Monate – lieber keine Kennzahl
+    const gap = { ...f, periods: ["2025-09-30", "2025-06-30", "2024-12-31", "2024-09-30", "2024-06-30"] };
+    expect(ebitdaAt(gap, 0)).toBeNull();
+  });
+  it("Goodwill-Kennzahl nutzt dieselbe Doppelzählungs-Prüfung wie die Säule", () => {
+    const f = fin({ nonCurrentAssetsTotal: [null, null], intangibleAssets: [20, 5] }); // 20 enthält Goodwill 15 schon
+    expect(splitBalance(f)!.goodwill).toBe(20);
+    expect(kpis(f).find((k) => k.key === "gwEq")!.values[0]).toBeCloseTo((20 / 42) * 100);
+  });
+  it("fehlende Summen: Säule bleibt bei der Bilanzsumme, Rest heißt neutral", () => {
+    const bank = splitBalance(fin({ totalCurrentAssets: [null, null], nonCurrentAssetsTotal: [80, 80], cash: [10, 10], netReceivables: [60, 60], inventory: [null, null] }))!;
+    expect(bank.assets.reduce((a, x) => a + x.value, 0)).toBeCloseTo(100);
+    const noNcl = splitBalance(fin({ nonCurrentLiabilitiesTotal: [null, null], totalLiab: [null, null] }))!;
+    expect(noNcl.liabilities.map((x) => x.label)).not.toContain("Minderheiten u. a.");
+    expect(noNcl.liabilities.find((x) => x.key === "rest")!.value).toBeCloseTo(38);
   });
   it("Eigenkapital-Brücke geht genau auf", () => {
     const steps = equityBridge(fin())!;
