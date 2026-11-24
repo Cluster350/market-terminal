@@ -17,5 +17,7 @@ export default defineConfig(({ mode }) => ({
   },
   test: {
     environment: "node",
+    // terminal.css als Text lesbar machen (Paletten-Test vergleicht die Farbwerte mit theme/palette.ts)
+    css: { include: [/terminal\.css/] },
   },
 }));

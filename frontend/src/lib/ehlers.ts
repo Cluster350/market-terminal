@@ -5,6 +5,8 @@
 // „Technical Analysis of Stocks & Commodities“). EasyLanguage rechnet Winkel in Grad – hier überall
 // ausdrücklich umgerechnet. Reihen laufen vom ältesten zum neuesten Wert; ``null`` = Anlaufphase.
 
+import { PAL } from "../theme/palette";
+
 export type Num = number | null;
 
 const RAD = Math.PI / 180;
@@ -386,12 +388,12 @@ export type Overlay = (typeof OVERLAYS)[number];
 /** Aussehen der Linien je Auswahl (für den Chartaufbau, bevor Daten da sind; gleiche Farben wie overlayLines). */
 export const OVERLAY_STYLE: Record<Overlay, { color: string; dashed?: boolean }[]> = {
   off: [],
-  ssf: [{ color: "#4dd0e1" }],
-  ultimate: [{ color: "#4dd0e1" }],
-  itrend: [{ color: "#4dd0e1" }, { color: "#f06292", dashed: true }],
-  mama: [{ color: "#4dd0e1" }, { color: "#f06292" }],
-  frama: [{ color: "#4dd0e1" }],
-  decycler: [{ color: "#4dd0e1" }],
+  ssf: [{ color: PAL.c5 }],
+  ultimate: [{ color: PAL.c5 }],
+  itrend: [{ color: PAL.c5 }, { color: PAL.c4, dashed: true }],
+  mama: [{ color: PAL.c5 }, { color: PAL.c4 }],
+  frama: [{ color: PAL.c5 }],
+  decycler: [{ color: PAL.c5 }],
 };
 
 export const OVERLAY_LABEL: Record<Overlay, string> = {
@@ -421,27 +423,27 @@ export function overlayLines(kind: Overlay, bars: OhlcBar[]): EhlersLine[] {
   const hl2 = bars.map((b) => (b.high + b.low) / 2);
   switch (kind) {
     case "ssf":
-      return [{ name: "SuperSmoother 20", color: "#4dd0e1", values: superSmoother(close, 20) }];
+      return [{ name: "SuperSmoother 20", color: PAL.c5, values: superSmoother(close, 20) }];
     case "ultimate":
-      return [{ name: "UltimateSmoother 20", color: "#4dd0e1", values: ultimateSmoother(close, 20) }];
+      return [{ name: "UltimateSmoother 20", color: PAL.c5, values: ultimateSmoother(close, 20) }];
     case "itrend": {
       const r = instantaneousTrend(hl2);
       return [
-        { name: "Trendlinie", color: "#4dd0e1", values: r.it },
-        { name: "Auslöser", color: "#f06292", values: r.trigger, dashed: true },
+        { name: "Trendlinie", color: PAL.c5, values: r.it },
+        { name: "Auslöser", color: PAL.c4, values: r.trigger, dashed: true },
       ];
     }
     case "mama": {
       const r = mesa(hl2);
       return [
-        { name: "MAMA", color: "#4dd0e1", values: r.mama },
-        { name: "FAMA", color: "#f06292", values: r.fama },
+        { name: "MAMA", color: PAL.c5, values: r.mama },
+        { name: "FAMA", color: PAL.c4, values: r.fama },
       ];
     }
     case "frama":
-      return [{ name: "FRAMA 16", color: "#4dd0e1", values: frama(bars.map((b) => b.high), bars.map((b) => b.low), hl2, 16) }];
+      return [{ name: "FRAMA 16", color: PAL.c5, values: frama(bars.map((b) => b.high), bars.map((b) => b.low), hl2, 16) }];
     case "decycler":
-      return [{ name: "Decycler 60", color: "#4dd0e1", values: decycler(close, 60) }];
+      return [{ name: "Decycler 60", color: PAL.c5, values: decycler(close, 60) }];
   }
 }
 
@@ -481,16 +483,16 @@ export const OSC_INFO: Record<Oscillator, string> = {
 /** Linienfarben, Hilfslinien und Nachkommastellen je Unterfenster (für den Chartaufbau). */
 export const OSC_STYLE: Record<Oscillator, { colors: string[]; levels: { value: number; color: string }[]; digits: number }> = {
   off: { colors: [], levels: [], digits: 0 },
-  rsi: { colors: ["#c77dff"], levels: [{ value: 70, color: "#ff5252" }, { value: 30, color: "#29d17d" }], digits: 0 },
-  fisher: { colors: ["#c77dff", "#ffa028"], levels: [{ value: 1.5, color: "#ff5252" }, { value: 0, color: "#555" }, { value: -1.5, color: "#29d17d" }], digits: 2 },
-  lrsi: { colors: ["#c77dff"], levels: [{ value: 0.8, color: "#ff5252" }, { value: 0.2, color: "#29d17d" }], digits: 2 },
-  roof: { colors: ["#c77dff"], levels: [{ value: 0, color: "#555" }], digits: 2 },
-  ebsw: { colors: ["#c77dff"], levels: [{ value: 0.85, color: "#ff5252" }, { value: 0, color: "#555" }, { value: -0.85, color: "#29d17d" }], digits: 2 },
-  reflex: { colors: ["#c77dff", "#ffa028"], levels: [{ value: 0, color: "#555" }], digits: 2 },
-  cti: { colors: ["#c77dff"], levels: [{ value: 0.5, color: "#555" }, { value: 0, color: "#555" }, { value: -0.5, color: "#555" }], digits: 2 },
-  cycle: { colors: ["#c77dff"], levels: [], digits: 1 },
+  rsi: { colors: [PAL.c6], levels: [{ value: 70, color: "#ff5252" }, { value: 30, color: "#29d17d" }], digits: 0 },
+  fisher: { colors: [PAL.c6, "#ffa028"], levels: [{ value: 1.5, color: "#ff5252" }, { value: 0, color: "#555" }, { value: -1.5, color: "#29d17d" }], digits: 2 },
+  lrsi: { colors: [PAL.c6], levels: [{ value: 0.8, color: "#ff5252" }, { value: 0.2, color: "#29d17d" }], digits: 2 },
+  roof: { colors: [PAL.c6], levels: [{ value: 0, color: "#555" }], digits: 2 },
+  ebsw: { colors: [PAL.c6], levels: [{ value: 0.85, color: "#ff5252" }, { value: 0, color: "#555" }, { value: -0.85, color: "#29d17d" }], digits: 2 },
+  reflex: { colors: [PAL.c6, "#ffa028"], levels: [{ value: 0, color: "#555" }], digits: 2 },
+  cti: { colors: [PAL.c6], levels: [{ value: 0.5, color: "#555" }, { value: 0, color: "#555" }, { value: -0.5, color: "#555" }], digits: 2 },
+  cycle: { colors: [PAL.c6], levels: [], digits: 1 },
   // Hilfslinien kommen aus dem Zufallsvergleich (tscanLevels in trendscan.ts)
-  tscan: { colors: ["#c77dff"], levels: [{ value: 0, color: "#555" }], digits: 1 },
+  tscan: { colors: [PAL.c6], levels: [{ value: 0, color: "#555" }], digits: 1 },
 };
 
 export interface OscResult {
@@ -508,7 +510,7 @@ export function oscillatorLines(kind: Exclude<Oscillator, "off" | "rsi" | "tscan
       const r = fisherTransform(hl2, 10);
       return {
         lines: [
-          { name: "Fisher", color: "#c77dff", values: r.fish },
+          { name: "Fisher", color: PAL.c6, values: r.fish },
           { name: "Auslöser", color: "#ffa028", values: r.trigger },
         ],
         levels: [1.5, 0, -1.5],
@@ -516,16 +518,16 @@ export function oscillatorLines(kind: Exclude<Oscillator, "off" | "rsi" | "tscan
       };
     }
     case "lrsi":
-      return { lines: [{ name: "Laguerre-RSI", color: "#c77dff", values: laguerreRsi(close, 0.5) }], levels: [0.8, 0.2], digits: 2 };
+      return { lines: [{ name: "Laguerre-RSI", color: PAL.c6, values: laguerreRsi(close, 0.5) }], levels: [0.8, 0.2], digits: 2 };
     case "roof":
-      return { lines: [{ name: "Roofing-Filter", color: "#c77dff", values: roofingFilter(close) }], levels: [0], digits: close.length && Math.abs(close[close.length - 1]) < 10 ? 4 : 2 };
+      return { lines: [{ name: "Roofing-Filter", color: PAL.c6, values: roofingFilter(close) }], levels: [0], digits: close.length && Math.abs(close[close.length - 1]) < 10 ? 4 : 2 };
     case "ebsw":
-      return { lines: [{ name: "Sinewave", color: "#c77dff", values: evenBetterSinewave(close, 40) }], levels: [0.85, 0, -0.85], digits: 2 };
+      return { lines: [{ name: "Sinewave", color: PAL.c6, values: evenBetterSinewave(close, 40) }], levels: [0.85, 0, -0.85], digits: 2 };
     case "reflex": {
       const r = reflexTrendflex(close, 20);
       return {
         lines: [
-          { name: "Reflex", color: "#c77dff", values: r.reflex },
+          { name: "Reflex", color: PAL.c6, values: r.reflex },
           { name: "Trendflex", color: "#ffa028", values: r.trendflex },
         ],
         levels: [0],
@@ -533,8 +535,8 @@ export function oscillatorLines(kind: Exclude<Oscillator, "off" | "rsi" | "tscan
       };
     }
     case "cti":
-      return { lines: [{ name: "Correlation Trend", color: "#c77dff", values: correlationTrend(close, 20) }], levels: [0.5, 0, -0.5], digits: 2 };
+      return { lines: [{ name: "Correlation Trend", color: PAL.c6, values: correlationTrend(close, 20) }], levels: [0.5, 0, -0.5], digits: 2 };
     case "cycle":
-      return { lines: [{ name: "Zykluslänge", color: "#c77dff", values: mesa(hl2).period }], levels: [], digits: 1 };
+      return { lines: [{ name: "Zykluslänge", color: PAL.c6, values: mesa(hl2).period }], levels: [], digits: 1 };
   }
 }

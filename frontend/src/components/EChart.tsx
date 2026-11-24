@@ -6,6 +6,7 @@ import * as echarts from "echarts/core";
 import { BarChart, LineChart, MapChart, ScatterChart, TreemapChart } from "echarts/charts";
 import { DataZoomComponent, GraphicComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent, VisualMapContinuousComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
+import { PAL } from "../theme/palette";
 
 echarts.use([LineChart, BarChart, ScatterChart, TreemapChart, MapChart, GraphicComponent, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, MarkAreaComponent, VisualMapContinuousComponent, CanvasRenderer]);
 
@@ -15,16 +16,16 @@ export const registerMap = echarts.registerMap;
 export type EOption = echarts.EChartsCoreOption;
 
 export const AXIS = {
-  axisLine: { lineStyle: { color: "#3a3a3a" } },
-  axisTick: { lineStyle: { color: "#3a3a3a" } },
-  axisLabel: { color: "#8f8f8f", fontFamily: "IBM Plex Mono, monospace", fontSize: 10 },
-  splitLine: { lineStyle: { color: "#171717" } },
+  axisLine: { lineStyle: { color: PAL.ruleStrong } },
+  axisTick: { lineStyle: { color: PAL.ruleStrong } },
+  axisLabel: { color: PAL.muted, fontFamily: "IBM Plex Mono, monospace", fontSize: 10 },
+  splitLine: { lineStyle: { color: PAL.grid } },
 };
 
 export const TOOLTIP = {
-  backgroundColor: "#111",
-  borderColor: "#3a3a3a",
-  textStyle: { color: "#ececec", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
+  backgroundColor: PAL.tooltipBg,
+  borderColor: PAL.ruleStrong,
+  textStyle: { color: PAL.value, fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
 };
 
 /**

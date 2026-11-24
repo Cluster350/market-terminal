@@ -7,8 +7,12 @@ import { equityBridge, kpis, money, splitBalance, type BalanceSplit, type Kpi, t
 import { useCsvExport } from "../lib/exporter";
 import { fmt, fmtDate, isNum } from "../lib/format";
 import type { Financials } from "../lib/types";
+import { PAL } from "../theme/palette";
 
-const LIGHT_COLOR: Record<Light, string> = { ok: "var(--up)", watch: "#f2c200", alarm: "var(--down)", none: "var(--dim)" };
+const LIGHT_COLOR: Record<Light, string> = { ok: "var(--up)", watch: "var(--warn)", alarm: "var(--down)", none: "var(--dim)" };
+/** Dunkle Flächen der Palette: Schrift darauf weiß statt schwarz. */
+const DARK_TONES = new Set(["bv-ppe", "bv-gw", "bv-other", "bv-ncl"]);
+const inClass = (tone: string) => (DARK_TONES.has(tone) ? "bv-in light" : "bv-in");
 const LIGHT_WORD: Record<Light, string> = { ok: "im üblichen Rahmen", watch: "genauer hinsehen", alarm: "auffällig", none: "keine Angabe" };
 
 const yearOf = (p: string, period: Financials["period"]) => (period === "annual" ? p.slice(0, 4) : `Q${Math.ceil(Number(p.slice(5, 7)) / 3)}/${p.slice(2, 4)}`);
@@ -53,7 +57,7 @@ function Column({ segs, x, w, top, scale, side, total }: { segs: Segment[]; x: n
           </rect>
           {b.s.key === "gw" && b.h > 6 && <rect x={x + 2} y={b.y0 + 2} width={w - 4} height={Math.max(0, b.h - 5)} className="bv-gw-dash" />}
           {b.h >= 15 && (
-            <text x={x + w / 2} y={b.y0 + b.h / 2 + 4} className="bv-in" textAnchor="middle">{`${fmt(b.share, 0)} %`}</text>
+            <text x={x + w / 2} y={b.y0 + b.h / 2 + 4} className={inClass(b.s.tone)} textAnchor="middle">{`${fmt(b.share, 0)} %`}</text>
           )}
           {Math.abs(ly[i] - (b.y0 + b.h / 2 + 4)) > 3 && (
             <line x1={side === "l" ? x - 1 : x + w + 1} x2={side === "l" ? lx + 2 : lx - 2} y1={b.y0 + b.h / 2} y2={ly[i] - 4} className="bv-link" />
@@ -78,6 +82,13 @@ function Pillars({ s, currency }: { s: BalanceSplit; currency: string | null }) 
   const debtH = s.debt && s.debt > 0 ? Math.min(s.debt * scale, liabEnd - top) : 0;
   return (
     <svg viewBox="0 0 556 322" className="bv-svg bv-pillars" role="img" aria-label="Bilanzsäulen: Aktiva und Passiva">
+      <defs>
+        {/* Goodwill: Schraffur statt Fläche – kein greifbares Vermögen, erkennbar an der Form statt nur an der Farbe */}
+        <pattern id="bv-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="6" height="6" fill="#000" />
+          <rect width="3" height="6" fill={PAL.bsFixed} />
+        </pattern>
+      </defs>
       <text x={ax + w / 2} y={13} className="bv-head" textAnchor="middle">AKTIVA</text>
       <text x={ax + w / 2} y={26} className="bv-axis" textAnchor="middle">wofür</text>
       <text x={px + w / 2} y={13} className="bv-head" textAnchor="middle">PASSIVA</text>
@@ -161,7 +172,7 @@ function Structure({ splits, labels }: { splits: (BalanceSplit | null)[]; labels
                     <title>{`${l} · ${p.label}: ${fmt(p.share, 1)} % (${money(p.value)})`}</title>
                   </rect>
                   {p.key === "eq" && h >= 14 && (
-                    <text x={x + bw / 2} y={y + h / 2 + 4} className="bv-in" textAnchor="middle">{fmt(p.share, 0)}</text>
+                    <text x={x + bw / 2} y={y + h / 2 + 4} className={inClass(p.tone)} textAnchor="middle">{fmt(p.share, 0)}</text>
                   )}
                 </g>
               );
@@ -213,7 +224,7 @@ function DebtCash({ f, labels, lev }: { f: Financials; labels: string[]; lev: Kp
           <g key={f.periods[i]}>
             <rect x={x} y={top + H - hd} width={bw} height={hd} className="bv-ncl"><title>{`${labels[i]} · Finanzschulden ${money(debt[i])}`}</title></rect>
             <rect x={x + bw + 3} y={top + H - hc} width={bw} height={hc} className="bv-cash"><title>{`${labels[i]} · Liquide Mittel ${money(cash[i])}`}</title></rect>
-            <text x={x + bw + 1} y={top + H - Math.max(hd, hc) - 5} className="bv-ratio" textAnchor="middle" style={{ fill: isNum(r) && r > 3.5 ? "var(--down)" : isNum(r) && r > 2 ? "#f2c200" : undefined }}>
+            <text x={x + bw + 1} y={top + H - Math.max(hd, hc) - 5} className="bv-ratio" textAnchor="middle" style={{ fill: isNum(r) && r > 3.5 ? "var(--down)" : isNum(r) && r > 2 ? "var(--warn)" : undefined }}>
               {isNum(r) ? (r === 0 ? "Kasse" : `${fmt(r, 1)}×`) : ""}
             </text>
             <text x={x + bw + 1} y={top + H + 15} className="bv-axis" textAnchor="middle">{labels[i]}</text>

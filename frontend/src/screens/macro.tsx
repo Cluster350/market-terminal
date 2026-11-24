@@ -14,6 +14,7 @@ import { useCsvExport } from "../lib/exporter";
 import { IS_STATIC } from "../lib/api";
 import { cleanFeatures, unusedFeatures, digitsFor, fcTime, fmtVal, isFeatureList, useEventForecast, useMacroForecast, type ForecastResult } from "../lib/forecast";
 import type { ScreenProps } from "./types";
+import { PAL } from "../theme/palette";
 
 function MarketTable({ rows, grouped, digits }: { rows: MarketRow[]; grouped?: boolean; digits?: number }) {
   const ws = useWorkspace();
@@ -133,7 +134,7 @@ export function FX(_: ScreenProps) {
   );
 }
 
-const CURVE_COLORS: Record<string, string> = { US: "#ffa028", DE: "#66b8ff", UK: "#c77dff", FR: "#29d17d", IT: "#ff8a65", JP: "#f2c200" };
+const CURVE_COLORS: Record<string, string> = { US: PAL.c1, DE: PAL.c2, UK: PAL.c4, FR: PAL.c5, IT: PAL.c6, JP: PAL.c3 };
 
 export function GC(_: ScreenProps) {
   const status = useStatus();
@@ -271,7 +272,7 @@ function surpriseSign(e: EconEvent): number | null {
   return /Unemployment|Jobless|Claims/i.test(e.event) ? -e.surprise : e.surprise;
 }
 
-const SPREAD_COLORS = ["#ffa028", "#66b8ff", "#c77dff", "#29d17d"];
+const SPREAD_COLORS = [PAL.c1, PAL.c2, PAL.c4, PAL.c5];
 
 const SPRD_RANGES = [
   { value: "3", label: "3M" },

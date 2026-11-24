@@ -37,9 +37,9 @@ test("Zahlen deutsch, Farben wie im Terminal", () => {
   assert.equal(fmtPct(null), "–");
   assert.equal(fmtPrice(24892.04), "24.892");
   assert.equal(fmtPrice(1.16973), "1,1697");
-  assert.equal(rankColor(50), "#8f8f8f");
-  assert.equal(rankColor(95), "#ff5fa2");
-  assert.equal(rankColor(5), "#5b8cff");
+  assert.equal(rankColor(50), "#6e6e6e");
+  assert.equal(rankColor(95), "#f06aa8");
+  assert.equal(rankColor(5), "#66b8ff");
   assert.match(changeColor(2), /^rgb\(41,209,125\)$/);
 });
 

@@ -7,13 +7,14 @@ import { Change, Empty, ErrorState, Loading, Seg } from "../components/ui";
 import { IS_STATIC } from "../lib/api";
 import { monthsBack, normalized } from "../lib/crypto";
 import { useCsvExport } from "../lib/exporter";
-import { FACTOR_COLORS, PERIOD_LABEL, PERIODS, relativeLine, useFactors, type FactorOverview, type FactorRegion, type FactorRow } from "../lib/factors";
+import { FACTOR_COLORS, FACTOR_DASHED, factorLine, PERIOD_LABEL, PERIODS, relativeLine, useFactors, type FactorOverview, type FactorRegion, type FactorRow } from "../lib/factors";
 import { DASH, displayTicker, fmt, fmtDate, fmtPrice, isNum, tone } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
 import { intradayNormalized, intradayRatio, useIntradaySet } from "../lib/intradayLines";
 import type { Intraday } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
+import { PAL } from "../theme/palette";
 
 const RANGES = [
   { value: "d1", label: "Heute" },
@@ -37,8 +38,8 @@ function chartOption(o: FactorOverview, view: View, months: number): EOption | n
       type: "line",
       showSymbol: false,
       data: normalized(line, from),
-      lineStyle: { width: 1.4, color: FACTOR_COLORS[r.key] ?? "#d8d8d8" },
-      itemStyle: { color: FACTOR_COLORS[r.key] ?? "#d8d8d8" },
+      lineStyle: { width: 1.4, color: FACTOR_COLORS[r.key] ?? PAL.c3, type: factorLine(r.key) },
+      itemStyle: { color: FACTOR_COLORS[r.key] ?? PAL.c3 },
       // Linie „Markt = 100“: darüber läuft der Stil besser als der Markt
       markLine: view === "rel" && i === 0 ? { silent: true, symbol: "none", lineStyle: { color: "#555", type: "dashed" }, data: [{ yAxis: 100 }], label: { show: false } } : undefined,
     };
@@ -74,8 +75,8 @@ function intradayOption(o: FactorOverview, view: View, sets: (Intraday | undefin
     type: "line",
     showSymbol: false,
     data: view === "rel" ? intradayRatio(sets[i + 1], market, from) : intradayNormalized(sets[i + 1], from),
-    lineStyle: { width: 1.4, color: FACTOR_COLORS[r.key] ?? "#d8d8d8" },
-    itemStyle: { color: FACTOR_COLORS[r.key] ?? "#d8d8d8" },
+    lineStyle: { width: 1.4, color: FACTOR_COLORS[r.key] ?? PAL.c3, type: factorLine(r.key) },
+    itemStyle: { color: FACTOR_COLORS[r.key] ?? PAL.c3 },
     markLine: view === "rel" && i === 0 ? { silent: true, symbol: "none", lineStyle: { color: "#555", type: "dashed" }, data: [{ yAxis: 100 }], label: { show: false } } : undefined,
   }));
   if (view === "abs") {
@@ -191,7 +192,8 @@ export function FCTR(_: ScreenProps) {
                       onClick={() => ws.setSecurity(r.ticker, { open: "GP", stay: true })}
                     >
                       <td title={r.help ? `${r.label}: ${r.help}\n${r.name}${r.isin ? ` · ISIN ${r.isin}` : ""}` : r.name}>
-                        <span className="fctr-dot" style={{ background: FACTOR_COLORS[r.key] ?? "#888" }} /> <b>{r.label}</b>
+                        <span className="fctr-dot" style={FACTOR_DASHED.has(r.key) ? { background: "transparent", boxShadow: `inset 0 0 0 2px ${FACTOR_COLORS[r.key]}` } : { background: FACTOR_COLORS[r.key] ?? PAL.muted }}
+                          title={FACTOR_DASHED.has(r.key) ? "Ring = im Diagramm gestrichelte Linie" : undefined} /> <b>{r.label}</b>
                       </td>
                       <td className="col-opt1 muted" title={r.name}>{displayTicker(r.ticker)}</td>
                       <td className="num">{fmtPrice(r.last)}</td>

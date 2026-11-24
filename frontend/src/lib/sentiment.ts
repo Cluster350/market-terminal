@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { IS_STATIC, qs, request } from "./api";
 import { DASH, fmt, isNum } from "./format";
+import { PAL } from "../theme/palette";
 
 export type SentRegion = "us" | "eu";
 
@@ -95,9 +96,11 @@ export const useSentiment = (region: SentRegion) =>
 
 // --- Farbskala: Blau (Angst) – Grau – Magenta (Sorglosigkeit); grau zwischen Rang 30 und 70 ---
 
-const BLUE = [0x5b, 0x8c, 0xff];
-const GREY = [0x8f, 0x8f, 0x8f];
-const MAGENTA = [0xff, 0x5f, 0xa2];
+// aus der zentralen Palette (theme/palette.ts): Angst = Blau, normal = Grau, Gier = Rosa
+const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const BLUE = rgb(PAL.scaleLow);
+const GREY = rgb(PAL.scaleMid);
+const MAGENTA = rgb(PAL.scaleHigh);
 
 const mix = (a: number[], b: number[], t: number) =>
   `#${a.map((x, i) => Math.round(x + (b[i] - x) * t).toString(16).padStart(2, "0")).join("")}`;

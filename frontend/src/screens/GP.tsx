@@ -47,6 +47,7 @@ import { retry, useEarnings, useHistory, useIntraday } from "../lib/queries";
 import { live, useLiveStatus } from "../lib/realtime";
 import type { EarningsItem, History, Intraday } from "../lib/types";
 import type { ScreenProps } from "./types";
+import { PAL } from "../theme/palette";
 
 type Range = "1T" | "5T" | "1M" | "3M" | "6M" | "YTD" | "1J" | "5J" | "MAX";
 type Kind = "candle" | "line" | "area";
@@ -56,9 +57,9 @@ const RANGES: { value: Range; label: string }[] = RANGE_VALUES.map((r) => ({ val
 const KINDS = ["candle", "line", "area"] as const;
 
 const MA = [
-  { n: 20, color: "#66b8ff" },
-  { n: 50, color: "#ffa028" },
-  { n: 200, color: "#c77dff" },
+  { n: 20, color: PAL.c2 },
+  { n: 50, color: PAL.c1 },
+  { n: 200, color: PAL.c3 },
 ];
 
 export interface Bar {
@@ -359,7 +360,7 @@ const BENCHMARK: Record<string, string> = {
   US: "GSPC.INDX", XETRA: "GDAXI.INDX", PA: "FCHI.INDX", AS: "STOXX50E.INDX", SW: "SSMI.INDX", LSE: "FTSE.INDX",
 };
 // Unterscheidbar vom eigenen Kurs (orange), den SMAs (blau/orange/lila) und dem RSI (lila)
-const COMPARE_COLORS = ["#4dd0e1", "#f06292", "#aed581", "#fff176"];
+const COMPARE_COLORS = [PAL.c4, PAL.c5, PAL.c6, PAL.c3];
 
 /** Aussehen einer Kursmarke im Chart je Zustand. */
 export function markStyle(a: Pick<Alert, "alarm" | "active" | "triggeredAt" | "note">): { color: string; style: LineStyle; title: string } {
@@ -450,12 +451,12 @@ export default function GP({ ticker }: ScreenProps) {
         osc === "off"
           ? []
           : osc === "rsi"
-            ? [{ name: "RSI 14", color: "#c77dff", values: rsiSeries(closes) }]
+            ? [{ name: "RSI 14", color: PAL.c6, values: rsiSeries(closes) }]
             : osc === "tscan"
               ? (() => {
                   // folgt der Trend-Scan-Auswahl oben (sonst laufend 20)
                   const tp = scanParams(tscanMode)!;
-                  return [{ name: `Trend-Scan ${SCAN_LABEL[tscanMode]} t-Wert`, color: "#c77dff", values: trendScan(closes, tp.direction, tp.window).map((p) => p.t) }];
+                  return [{ name: `Trend-Scan ${SCAN_LABEL[tscanMode]} t-Wert`, color: PAL.c6, values: trendScan(closes, tp.direction, tp.window).map((p) => p.t) }];
                 })()
               : oscillatorLines(osc, src).lines;
       const oscLines: OscLine[] = raw.map((l) => ({
@@ -1377,7 +1378,7 @@ export default function GP({ ticker }: ScreenProps) {
           </label>
         )}
         {!comparing && (
-          <label className="small muted" style={{ color: ehlers !== "off" ? "#4dd0e1" : undefined }} title={OVERLAY_INFO[ehlers]}>
+          <label className="small muted" style={{ color: ehlers !== "off" ? PAL.c5 : undefined }} title={OVERLAY_INFO[ehlers]}>
             Ehlers{" "}
             <select className="field" aria-label="Ehlers-Linie auf dem Kurs" value={ehlers} onChange={(e) => setEhlers(e.target.value as Overlay)}>
               {OVERLAYS.map((o) => (
@@ -1417,7 +1418,7 @@ export default function GP({ ticker }: ScreenProps) {
             {scanStats.strong} von {scanStats.n} Punkten deutlich · reiner Zufall ≈ {scanStats.expected}
           </span>
         )}
-        <label className="small muted" style={{ color: showRsi ? "#c77dff" : undefined }} title={OSC_INFO[osc]}>
+        <label className="small muted" style={{ color: showRsi ? PAL.c6 : undefined }} title={OSC_INFO[osc]}>
           Unterfenster{" "}
           <select className="field" aria-label="Unterfenster" value={osc} onChange={(e) => setOsc(e.target.value as Oscillator)}>
             <option value="off">{OSC_LABEL.off}</option>
@@ -1636,7 +1637,7 @@ export default function GP({ ticker }: ScreenProps) {
             {showRsi && (
               <div style={{ position: "relative", flex: "0 0 26%", minHeight: 70, borderTop: "1px solid var(--rule)" }}>
                 <span className="xs gp-osc-label" title={OSC_INFO[osc]}>
-                  <span style={{ color: "#c77dff" }}>{osc === "tscan" ? `Trend-Scan t-Wert (${SCAN_LABEL[scanOn ? scan : "live20"]})` : OSC_LABEL[osc]}</span>
+                  <span style={{ color: PAL.c6 }}>{osc === "tscan" ? `Trend-Scan t-Wert (${SCAN_LABEL[scanOn ? scan : "live20"]})` : OSC_LABEL[osc]}</span>
                   {oscLines.map((l) => {
                     const t = (hover ?? bars[bars.length - 1])?.time;
                     const at = l.data.find((p) => p.time === t);

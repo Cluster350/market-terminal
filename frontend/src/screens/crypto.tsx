@@ -12,6 +12,7 @@ import { inEur, intradayNormalized, useIntradaySet, windowStart } from "../lib/i
 import type { Intraday } from "../lib/types";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
+import { PAL } from "../theme/palette";
 
 const RANGES = [
   { value: "h24", label: "24 h" },
@@ -22,8 +23,8 @@ const RANGES = [
   { value: "60", label: "5J" },
 ] as const;
 type RangeKey = (typeof RANGES)[number]["value"];
-const CROSS_COLORS: Record<string, string> = { "BTC-USD.CC": "#ffa028", "ETH-USD.CC": "#c792ea", "NDX.INDX": "#66b8ff", "GSPC.INDX": "#29d17d", "GOLD.COMM": "#f2c200", "GLD.US": "#f2c200" };
-const CORR_COLORS = ["#66b8ff", "#29d17d", "#f2c200"];
+const CROSS_COLORS: Record<string, string> = { "BTC-USD.CC": PAL.c1, "ETH-USD.CC": PAL.c6, "NDX.INDX": PAL.c2, "GSPC.INDX": PAL.c5, "GOLD.COMM": PAL.c4, "GLD.US": PAL.c4 };
+const CORR_COLORS = [PAL.c2, PAL.c5, PAL.c4];
 
 function Kpi({ label, value, sub, title }: { label: string; value: string; sub?: string; title?: string }) {
   return (
@@ -52,8 +53,8 @@ function crossOption(o: CryptoOverview, months: number): EOption | null {
       type: "line",
       showSymbol: false,
       data: normalized(c, from),
-      lineStyle: { width: c.key === "BTC-USD.CC" ? 2 : 1.2, color: CROSS_COLORS[c.key] ?? "#d8d8d8" },
-      itemStyle: { color: CROSS_COLORS[c.key] ?? "#d8d8d8" },
+      lineStyle: { width: c.key === "BTC-USD.CC" ? 2 : 1.2, color: CROSS_COLORS[c.key] ?? PAL.c3 },
+      itemStyle: { color: CROSS_COLORS[c.key] ?? PAL.c3 },
     })),
   };
 }
@@ -77,8 +78,8 @@ function intradayCrossOption(o: CryptoOverview, sets: (Intraday | undefined)[], 
       showSymbol: false,
       connectNulls: false,
       data: intradayNormalized(sets[i], from),
-      lineStyle: { width: c.key === "BTC-USD.CC" ? 2 : 1.2, color: CROSS_COLORS[c.key] ?? "#d8d8d8" },
-      itemStyle: { color: CROSS_COLORS[c.key] ?? "#d8d8d8" },
+      lineStyle: { width: c.key === "BTC-USD.CC" ? 2 : 1.2, color: CROSS_COLORS[c.key] ?? PAL.c3 },
+      itemStyle: { color: CROSS_COLORS[c.key] ?? PAL.c3 },
     })),
   };
 }

@@ -25,6 +25,7 @@ import {
   type SentRegion,
 } from "../lib/sentiment";
 import type { ScreenProps } from "./types";
+import { PAL } from "../theme/palette";
 
 const REGIONS: { value: SentRegion; label: string }[] = [
   { value: "us", label: "USA" },
@@ -46,7 +47,7 @@ const BREADTH_TABS = [
   { value: "trin", label: "TRIN", title: "Arms-Index, 10-Tage-Schnitt: über 1 = Volumen drängt in fallende Werte" },
 ] as const;
 type BreadthKey = (typeof BREADTH_TABS)[number]["value"];
-const GRADIENT = "linear-gradient(90deg, #5b8cff 0%, #5b8cff 10%, #8f8f8f 30%, #8f8f8f 70%, #ff5fa2 90%, #ff5fa2 100%)";
+const GRADIENT = `linear-gradient(90deg, ${PAL.scaleLow} 0%, ${PAL.scaleLow} 10%, ${PAL.scaleMid} 30%, ${PAL.scaleMid} 70%, ${PAL.scaleHigh} 90%, ${PAL.scaleHigh} 100%)`;
 const MAX_W = 980;
 const MAX_H = 540;
 const DISCLAIMER = "Sehr hohe oder sehr niedrige Werte kippten früher eher ins Gegenteil – oft erst nach Monaten. Beschreibung der Lage, keine Empfehlung.";
@@ -207,7 +208,7 @@ function historyOption(d: SentimentResult, from: number): EOption {
         data: total.map((v) => ({ value: isNum(v) ? 1 : 0, raw: v, itemStyle: { color: rankColor(v) } })),
         tooltip: { valueFormatter: () => "" },
       },
-      { name: d.indexLabel, type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, data: index, lineStyle: { width: 1.3, color: "#d8d8d8" }, itemStyle: { color: "#d8d8d8" } },
+      { name: d.indexLabel, type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, data: index, lineStyle: { width: 1.3, color: PAL.c3 }, itemStyle: { color: PAL.c3 } },
     ],
   };
 }
@@ -246,14 +247,14 @@ function breadthOption(d: SentimentResult, key: BreadthKey, days: number): EOpti
         yAxisIndex: 0,
         showSymbol: false,
         data: values,
-        lineStyle: { width: 1.3, color: "#ffa028" },
-        itemStyle: { color: "#ffa028" },
+        lineStyle: { width: 1.3, color: PAL.c1 },
+        itemStyle: { color: PAL.c1 },
         markLine: ref === null ? undefined : { silent: true, symbol: "none", lineStyle: { color: "#444", type: "dashed" }, label: { show: false }, data: [{ yAxis: ref }] },
         markArea: areas.length
           ? { silent: true, itemStyle: { color: "rgba(255,160,40,0.08)" }, label: { show: false }, data: areas }
           : undefined,
       },
-      { name: d.indexLabel, type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, data: index, lineStyle: { width: 1.2, color: "#d8d8d8" }, itemStyle: { color: "#d8d8d8" } },
+      { name: d.indexLabel, type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, data: index, lineStyle: { width: 1.2, color: PAL.c3 }, itemStyle: { color: PAL.c3 } },
     ],
   };
 }

@@ -34,6 +34,7 @@ import type { Company, Earnings, StatementRow } from "../lib/types";
 import { InstrumentOverview, NotForInstrument } from "./extra";
 import { BalancePicture } from "./balance";
 import type { ScreenProps } from "./types";
+import { PAL } from "../theme/palette";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -661,10 +662,10 @@ export function ANR({ ticker }: ScreenProps) {
         {(c) => {
           const a = c.analyst;
           const buckets = [
-            { label: "Starker Kauf", n: a.strongBuy ?? 0, color: "#1f9d5c" },
+            { label: "Starker Kauf", n: a.strongBuy ?? 0, color: PAL.upFill },
             { label: "Kaufen", n: a.buy ?? 0, color: "#29d17d" },
             { label: "Halten", n: a.hold ?? 0, color: "#8f8f8f" },
-            { label: "Verkaufen", n: a.sell ?? 0, color: "#ff8a65" },
+            { label: "Verkaufen", n: a.sell ?? 0, color: PAL.downFill },
             { label: "Starker Verkauf", n: a.strongSell ?? 0, color: "#ff5252" },
           ];
           const total = buckets.reduce((s, b) => s + b.n, 0);

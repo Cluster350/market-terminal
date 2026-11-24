@@ -10,6 +10,7 @@ import { DASH, displayTicker, fmt, fmtDate, isNum } from "../lib/format";
 import { isOneOf, usePersistentState } from "../lib/persist";
 import { chance, dayLabel, monthShort, monthTicks, pct, useSeasonality, VERDICT_WORD, type SeasonBlock, type Seasonality } from "../lib/seasonality";
 import type { ScreenProps } from "./types";
+import { PAL } from "../theme/palette";
 
 const SPANS = [
   { value: "10", label: "10 Jahre" },
@@ -17,8 +18,8 @@ const SPANS = [
 ] as const;
 type Span = (typeof SPANS)[number]["value"];
 
-const UP = "#29d17d";
-const DOWN = "#ff5252";
+const UP = PAL.up;
+const DOWN = PAL.down;
 
 function pathOption(s: Seasonality): EOption {
   const p = s.path;
@@ -44,7 +45,7 @@ function pathOption(s: Seasonality): EOption {
       ...AXIS,
       axisLabel: { ...AXIS.axisLabel, customValues: monthTicks, formatter: (v: number) => monthShort[monthTicks.indexOf(v)] ?? "" },
       axisTick: { ...AXIS.axisTick, customValues: monthTicks },
-      splitLine: { show: true, lineStyle: { color: "#171717" }, showMinLine: false },
+      splitLine: { show: true, lineStyle: { color: PAL.grid }, showMinLine: false },
     },
     yAxis: [
       { type: "value", scale: true, ...AXIS, axisLabel: { ...AXIS.axisLabel, formatter: (v: number) => `${fmt(v, 0)} %` } },
@@ -59,15 +60,15 @@ function pathOption(s: Seasonality): EOption {
         data: p.days.map((d, i) => [d, p.plusShare[i]]),
         lineStyle: { width: 0 },
         areaStyle: { color: "rgba(102,184,255,0.10)" },
-        itemStyle: { color: "#66b8ff" },
+        itemStyle: { color: PAL.c2 },
       },
       {
         name: `Durchschnitt ${p.years[0] ?? ""}–${p.years[p.years.length - 1] ?? ""}`,
         type: "line",
         showSymbol: false,
         data: p.days.map((d, i) => [d, p.average[i]]),
-        lineStyle: { width: 2, color: "#ffa028" },
-        itemStyle: { color: "#ffa028" },
+        lineStyle: { width: 2, color: PAL.c1 },
+        itemStyle: { color: PAL.c1 },
         markLine: { silent: true, symbol: "none", lineStyle: { color: "#444", type: "dashed" }, label: { show: false }, data: [{ yAxis: 0 }] },
       },
       {
@@ -75,8 +76,8 @@ function pathOption(s: Seasonality): EOption {
         type: "line",
         showSymbol: false,
         data: p.days.map((d, i) => [d, p.current[i] ?? null]),
-        lineStyle: { width: 1.3, color: "#d8d8d8" },
-        itemStyle: { color: "#d8d8d8" },
+        lineStyle: { width: 1.3, color: PAL.c3 },
+        itemStyle: { color: PAL.c3 },
       },
     ],
   };

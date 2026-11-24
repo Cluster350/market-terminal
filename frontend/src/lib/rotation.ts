@@ -4,6 +4,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { IS_STATIC, qs, request } from "./api";
 import { fmt } from "./format";
+import { PAL } from "../theme/palette";
 
 export type Universe = "sectors" | "sector" | "countries" | "currencies" | "crypto" | "factors";
 export type Quadrant = "fuehrend" | "schwaecher" | "nachzuegler" | "erholend";
@@ -78,7 +79,7 @@ export const QUADRANT_LABEL: Record<Quadrant, string> = {
 
 export const QUADRANT_COLOR: Record<Quadrant, string> = {
   fuehrend: "#29d17d",
-  schwaecher: "#f2c200",
+  schwaecher: PAL.warn,
   nachzuegler: "#ff5252",
   erholend: "#66b8ff",
 };

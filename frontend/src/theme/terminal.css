@@ -24,6 +24,33 @@
   --flash-up: rgba(41, 209, 125, 0.32);
   --flash-down: rgba(255, 82, 82, 0.32);
 
+  /* Palette (gleiche Werte wie theme/palette.ts). Jede Farbe hat genau eine Aufgabe. */
+  /* Signal: nur gut/schlecht bzw. steigt/fällt */
+  --warn: #f2c200;          /* Ampel Gelb „genauer hinsehen“ */
+  --up-fill: #1d9258;       /* Flächen „steigt“ (gedämpft) */
+  --down-fill: #b33939;     /* Flächen „fällt“ (gedämpft) */
+  /* Datenreihen in fester Reihenfolge; ab der 7. Reihe gestrichelt wiederholt */
+  --c1: #ffa028;            /* Bernstein */
+  --c2: #66b8ff;            /* Blau */
+  --c3: #d8d8d8;            /* Hellgrau: Bezugslinie */
+  --c4: #f06aa8;            /* Rosa */
+  --c5: #1f8f88;            /* Petrol */
+  --c6: #7b70c8;            /* Indigo */
+  /* Skala Angst – normal – Gier (STIM) */
+  --scale-low: #66b8ff;
+  --scale-mid: #6e6e6e;
+  --scale-high: #f06aa8;
+  /* Bilanzflächen: Vermögen kühl nach Liquidität, Fremdkapital warm nach Fälligkeit, Eigenkapital silber */
+  --bs-cash: #8ecef6;
+  --bs-recv: #57a9da;
+  --bs-inv: #3083b4;
+  --bs-fixed: #1e618c;
+  --bs-other: #5e5e5e;
+  --bs-cl: #de8c63;
+  --bs-ncl: #9a5237;
+  --bs-eq: #c6c6c6;
+  --grid: #171717;
+
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --sans: "IBM Plex Sans Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
   --fs: 12px;
@@ -972,14 +999,14 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .bv-grid2.wide { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .bv-grid2 > section { min-width: 0; }
 .bv-span { grid-column: 1 / -1; }
-.bv-bridge { max-width: 620px; }
+.bv-bridge { max-width: 600px; }
 .bv-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .bv-chips { display: inline-flex; gap: 2px; text-transform: none; letter-spacing: 0; }
 .bv-chips button { font: inherit; font-family: var(--mono); font-size: var(--fs-xs); background: transparent; color: var(--muted); border: 1px solid var(--rule-strong); padding: 0 5px; cursor: pointer; }
 .bv-chips button[aria-pressed="true"] { color: #000; background: var(--label); border-color: var(--label); }
 .bv-chips button:disabled { opacity: .35; cursor: default; }
-.bv-svg { width: 100%; height: auto; display: block; max-width: 520px; }
-.bv-pillars { max-width: 600px; }
+.bv-svg { width: 100%; height: auto; display: block; max-width: 440px; }
+.bv-pillars { max-width: 580px; }
 .bv-lbl { fill: var(--value); }
 .bv-svg text { font-family: var(--mono); }
 .bv-head { font-size: 11px; fill: var(--label); font-weight: 600; letter-spacing: .06em; }
@@ -992,11 +1019,12 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .bv-grid { stroke: var(--rule); stroke-width: 1; }
 .bv-link { stroke: var(--dim); stroke-dasharray: 2 2; }
 .bv-seg { stroke: #000; stroke-width: 1; }
-.bv-cash { fill: #4dd0e1; } .bv-recv { fill: #5b8cff; } .bv-inv { fill: #9ccc65; } .bv-ppe { fill: #8a8a8a; }
-.bv-gw { fill: #c792ea; fill-opacity: .55; } .bv-gw-dash { fill: none; stroke: #c792ea; stroke-dasharray: 4 3; pointer-events: none; }
-.bv-other { fill: #4a4a4a; } .bv-cl { fill: #ff8a65; } .bv-ncl { fill: #e05252; } .bv-eq { fill: #29d17d; }
-.bv-debt { fill: #ffd166; }
-.bv-total { fill: #8a8a8a; } .bv-up { fill: var(--up); } .bv-down { fill: var(--down); }
+.bv-cash { fill: var(--bs-cash); } .bv-recv { fill: var(--bs-recv); } .bv-inv { fill: var(--bs-inv); } .bv-ppe { fill: var(--bs-fixed); }
+.bv-gw { fill: url(#bv-hatch); } .bv-gw-dash { fill: none; stroke: var(--muted); stroke-dasharray: 4 3; pointer-events: none; }
+.bv-other { fill: var(--bs-other); } .bv-cl { fill: var(--bs-cl); } .bv-ncl { fill: var(--bs-ncl); } .bv-eq { fill: var(--bs-eq); }
+.bv-debt { fill: var(--value); }
+.bv-total { fill: var(--bs-eq); } .bv-up { fill: var(--up-fill); } .bv-down { fill: var(--down-fill); }
+.bv-in.light { fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 2px; }
 .bv-note { color: var(--dim); font-size: var(--fs-xs); line-height: 1.4; margin-top: 2px; }
 .bv-empty { color: var(--muted); font-size: var(--fs-s); padding: 18px 4px; }
 .bv-kpis { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }

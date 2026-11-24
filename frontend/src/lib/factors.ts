@@ -3,6 +3,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { IS_STATIC, qs, request } from "./api";
 import { fmt } from "./format";
+import { PAL } from "../theme/palette";
 
 export type FactorRegion = "us" | "eu";
 export const PERIODS = ["1d", "1w", "1m", "3m", "ytd", "1y", "3y", "5y"] as const;
@@ -61,10 +62,14 @@ export interface FactorExposure {
   notes: string[];
 }
 
+// Reihenfarben aus der zentralen Palette; Grün/Rot bleiben für gut/schlecht reserviert.
+// Die letzten drei Faktoren wiederholen C2/C1/C4 gestrichelt.
 export const FACTOR_COLORS: Record<string, string> = {
-  market: "#d8d8d8", value: "#ffa028", growth: "#66b8ff", momentum: "#29d17d", quality: "#c792ea",
-  size: "#f2c200", lowvol: "#4dd0e1", dividend: "#ff7a7a", equal: "#9ccc65",
+  market: PAL.c3, value: PAL.c1, growth: PAL.c2, momentum: PAL.c4, quality: PAL.c5,
+  size: PAL.c6, lowvol: PAL.c2, dividend: PAL.c1, equal: PAL.c4,
 };
+export const FACTOR_DASHED = new Set(["lowvol", "dividend", "equal"]);
+export const factorLine = (key: string) => (FACTOR_DASHED.has(key) ? ("dashed" as const) : ("solid" as const));
 
 export const useFactors = (region: FactorRegion) =>
   useQuery({

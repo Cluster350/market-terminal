@@ -118,7 +118,8 @@ export function fmtMoney(v) {
 export function rankColor(r) {
   if (r === null || r === undefined || !Number.isFinite(r)) return "#5c5c5c";
   const mix = (a, b, t) => `#${a.map((x, i) => Math.round(x + (b[i] - x) * t).toString(16).padStart(2, "0")).join("")}`;
-  const B = [0x5b, 0x8c, 0xff], G = [0x8f, 0x8f, 0x8f], M = [0xff, 0x5f, 0xa2];
+  // gleiche Werte wie scaleLow/scaleMid/scaleHigh in frontend/src/theme/palette.ts (palette.test.ts prüft das)
+  const B = [0x66, 0xb8, 0xff], G = [0x6e, 0x6e, 0x6e], M = [0xf0, 0x6a, 0xa8];
   if (r <= 10) return mix(B, B, 0);
   if (r < 30) return mix(B, G, (r - 10) / 20);
   if (r <= 70) return mix(G, G, 0);

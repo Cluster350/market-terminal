@@ -3747,7 +3747,7 @@ function fmtMoney(v) {
 function rankColor(r) {
   if (r === null || r === void 0 || !Number.isFinite(r)) return "#5c5c5c";
   const mix = (a, b, t) => `#${a.map((x, i) => Math.round(x + (b[i] - x) * t).toString(16).padStart(2, "0")).join("")}`;
-  const B = [91, 140, 255], G = [143, 143, 143], M = [255, 95, 162];
+  const B = [102, 184, 255], G = [110, 110, 110], M = [240, 106, 168];
   if (r <= 10) return mix(B, B, 0);
   if (r < 30) return mix(B, G, (r - 10) / 20);
   if (r <= 70) return mix(G, G, 0);

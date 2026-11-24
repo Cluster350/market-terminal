@@ -981,6 +981,18 @@ Kursfunktionen; Panels ohne Planabdeckung zeigen eine klare Meldung.
   Wertpapier; alle Aktien-Panels folgen. In WEI/FX/CMDT öffnet der Klick den Chart auf der
   Makroseite. HELP enthält ein Glossar; Kennzahlen in DES erklären sich per Tooltip.
 
+## Farben (einheitliche Palette)
+
+Jede Farbe hat genau eine Aufgabe. Festgelegt in `frontend/src/theme/palette.ts`, dieselben Werte als
+CSS-Variablen in `frontend/src/theme/terminal.css`; ein Test prüft, dass beide (und das Stream-Deck-Plugin) gleich sind.
+
+- **Grün / Rot / Gelb** bedeuten nur „gut / schlecht / genauer hinsehen“ bzw. „steigt / fällt“ – nie bloß „Linie Nr. 3“.
+- **Linien in Diagrammen** bekommen der Reihe nach Bernstein, Blau, Hellgrau (Bezug, z. B. Markt), Rosa, Petrol,
+  Indigo. Ab der siebten Linie wiederholen sich die Farben **gestrichelt** (in FCTR: Ring statt Punkt in der Tabelle).
+- **Bilanzbild:** Vermögen kühl (hellblau = Kasse bis dunkelblau = Sachanlagen), Schulden warm (hell = kurzfristig,
+  Kupfer = langfristig), Eigenkapital silber, Goodwill schraffiert.
+- **Stimmung (STIM):** Blau = Angst, Grau = gewöhnlich, Rosa = Sorglosigkeit.
+
 ## Architektur
 
 ```

@@ -5,12 +5,12 @@ import { bandLabel, compChange, compValue, divergences, isExtreme, rankColor, sl
 
 describe("Stimmungsterminal", () => {
   it("färbt Ränge: blau – grau – magenta, grau zwischen 30 und 70", () => {
-    expect(rankColor(0)).toBe("#5b8cff");
-    expect(rankColor(10)).toBe("#5b8cff");
-    expect(rankColor(30)).toBe("#8f8f8f");
-    expect(rankColor(50)).toBe("#8f8f8f");
-    expect(rankColor(70)).toBe("#8f8f8f");
-    expect(rankColor(95)).toBe("#ff5fa2");
+    expect(rankColor(0)).toBe("#66b8ff");
+    expect(rankColor(10)).toBe("#66b8ff");
+    expect(rankColor(30)).toBe("#6e6e6e");
+    expect(rankColor(50)).toBe("#6e6e6e");
+    expect(rankColor(70)).toBe("#6e6e6e");
+    expect(rankColor(95)).toBe("#f06aa8");
     expect(rankColor(20)).not.toBe(rankColor(10));
     expect(rankColor(null)).toBe("#5c5c5c");
     expect(isExtreme(4)).toBe(true);

@@ -28,12 +28,12 @@ import {
 } from "../lib/rotation";
 import { useWorkspace } from "../state/workspace";
 import type { ScreenProps } from "./types";
+import { PAL, seriesStyle } from "../theme/palette";
 
 const SECTORS = [
   "Technology", "Communication Services", "Consumer Cyclical", "Consumer Defensive", "Energy", "Financial Services",
   "Healthcare", "Industrials", "Basic Materials", "Real Estate", "Utilities",
 ];
-const PALETTE = ["#ffa028", "#66b8ff", "#29d17d", "#c77dff", "#ff5252", "#f2c200", "#4dd0e1", "#ff8ad8", "#a0e060", "#d8d8d8", "#ff7043", "#7986cb", "#80cbc4", "#bcaaa4"];
 const pct = signedPct;
 const tone = (x: number | null | undefined) => (isNum(x) ? (x > 0.0005 ? "up" : x < -0.0005 ? "down" : "") : "");
 
@@ -291,7 +291,7 @@ export function rrgOption(r: RotationResult, at: number, len: number, focus: str
   ];
   tails.forEach(({ m, pts }, idx) => {
     if (!pts.length) return;
-    const color = PALETTE[idx % PALETTE.length];
+    const { color, dashed } = seriesStyle(idx);
     const dim = focus !== null && focus !== m.key;
     const hd = headingOf(pts);
     series.push({
@@ -309,7 +309,7 @@ export function rrgOption(r: RotationResult, at: number, len: number, focus: str
           label: head ? { show: true, position: "right", formatter: m.label.length > 22 ? `${m.label.slice(0, 20)}…` : m.label, color: dim ? "#5c5c5c" : "#ececec", fontSize: 10 } : undefined,
         };
       }),
-      lineStyle: { color, width: focus === m.key ? 2.5 : 1.5, opacity: dim ? 0.18 : 0.9 },
+      lineStyle: { color, type: dashed ? "dashed" : "solid", width: focus === m.key ? 2.5 : 1.5, opacity: dim ? 0.18 : 0.9 },
       itemStyle: { color, opacity: dim ? 0.18 : 1 },
       z: focus === m.key ? 10 : 3,
     });
@@ -336,7 +336,7 @@ export function rrgOption(r: RotationResult, at: number, len: number, focus: str
     },
     graphic: [
       { type: "text", right: 118, top: 26, style: { text: "FÜHREND", fill: "#29d17d", fontSize: 11, fontWeight: "bold", align: "right" } },
-      { type: "text", right: 118, bottom: 48, style: { text: "SCHWÄCHER WERDEND", fill: "#f2c200", fontSize: 11, fontWeight: "bold", align: "right" } },
+      { type: "text", right: 118, bottom: 48, style: { text: "SCHWÄCHER WERDEND", fill: PAL.warn, fontSize: 11, fontWeight: "bold", align: "right" } },
       { type: "text", left: 60, bottom: 48, style: { text: "NACHZÜGLER", fill: "#ff5252", fontSize: 11, fontWeight: "bold" } },
       { type: "text", left: 60, top: 26, style: { text: "ERHOLEND", fill: "#66b8ff", fontSize: 11, fontWeight: "bold" } },
     ],
