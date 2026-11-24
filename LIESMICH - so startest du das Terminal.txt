@@ -74,6 +74,18 @@ Gestartet wird es mit einem Doppelklick.
   In der Statusleiste unten (neben "Aktualisiert") steht dann "KI: Claude".
 
 
+6b) STREAM DECK (freiwillig, Stream Deck mit 15 Tasten)
+---------------------------------------------------------
+- Stream-Deck-Software von Elgato installieren (Version 6.5 oder neuer).
+- werkzeuge\Stream Deck einrichten.bat doppelklicken und die Installation bestaetigen.
+- In der Stream-Deck-Software die Aktion "Terminal-Taste" (Gruppe "Market Terminal") auf alle
+  15 Tasten ziehen. Jede Taste belegt sich nach ihrer Position selbst:
+    Reihe 1: DAX, S&P 500, Nasdaq 100, VIX, EUR/USD (Kurs live)
+    Reihe 2: Depot heute, Angst & Gier USA, Angst & Gier Europa, Eilmeldungen, Alarme
+    Reihe 3: Seite AKTIE, Seite MAKRO, Seite NEWS, Briefing (BRIEF), Panel maximieren
+- Taste anklicken (in der Stream-Deck-Software) -> unten aendern: anderer Wert, andere Art, Befehl.
+- Druecken steuert das Terminal-Fenster, auch wenn es im Hintergrund ist. Nur lesend.
+
 7) DER ORDNER "werkzeuge"
 -------------------------
 - Starten mit Fenster.bat      Start mit sichtbarem Fenster (alle Meldungen,
@@ -81,7 +93,8 @@ Gestartet wird es mit einem Doppelklick.
 - Desktop-Symbol anlegen.vbs   Symbol neu anlegen, z. B. nach dem Verschieben
                                des Ordners oder einer neuen Version.
 - EODHD pruefen.bat            prueft den Datenzugang.
-- KI pruefen.bat               prueft LM Studio.
+- KI pruefen.bat               prueft LM Studio bzw. Claude.
+- Stream Deck einrichten.bat   installiert das Stream-Deck-Plugin.
 - Prognose installieren.bat    Zusatzpaket fuer die Prognose (ca. 1-2 GB).
 - Notebook installieren.bat    Zusatzpaket fuer das Notebook (Befehl NB): eigene
                                Auswertungen mit Python im Terminal (ca. 300 MB).

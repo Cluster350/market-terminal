@@ -1,0 +1,17 @@
+{
+  "name": "market-terminal-streamdeck",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Stream-Deck-Plugin für das Market Terminal: Live-Tasten und Fernsteuerung (nur lesend)",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ws": "8.18.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
+  }
+}

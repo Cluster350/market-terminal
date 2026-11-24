@@ -6,6 +6,7 @@ import { countryDe, displayTicker, typeDe } from "../lib/format";
 import { api, ApiError } from "../lib/api";
 import { useResolve, useSearch } from "../lib/queries";
 import { useWorkspace } from "../state/workspace";
+import { useRemoteControl } from "../lib/remote";
 import { sendIntent } from "../lib/intents";
 
 type Suggestion =
@@ -290,6 +291,26 @@ export function CommandLine() {
     if (cmd.kind === "fn") return runFn(cmd.fn, cmd.ticker);
     void activate(cmd.ticker, null, false);
   }
+
+  // Fernsteuerung (Stream Deck): Befehl in die Befehlszeile setzen und wie mit Enter ausführen
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useRemoteControl(ws.state.window, {
+    command: (text) => {
+      requestId.current++;
+      setChecking(false);
+      setValue(text);
+      setCursor(-1);
+      setError(null);
+      setOpen(false);
+      setTimeout(() => submitRef.current(), 60); // nach dem Neuzeichnen, damit submit den neuen Text sieht
+    },
+    page: (p) => ws.setPage(p),
+    maximize: () => {
+      const s = ws.state;
+      ws.maximize(s.maximized === null ? s.active[s.page] ?? 0 : null);
+    },
+  });
 
   const showMenu = open && (suggestions.length > 0 || !!error || !!unknownHint);
   let lastKind: string | null = null;

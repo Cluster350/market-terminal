@@ -410,6 +410,42 @@ Rohstoff, Krypto – ob es **Kalendermuster** gibt, und prüft jedes ehrlich geg
 Auch ein deutliches Muster der Vergangenheit muss sich nicht wiederholen. SAIS beschreibt, es empfiehlt
 nichts.
 
+## Stream Deck (Live-Tasten und Fernsteuerung)
+
+Für das **Stream Deck mit 15 Tasten** (3 × 5) gibt es ein eigenes Plugin. Die Tasten zeigen Live-Daten aus dem
+Terminal und steuern es per Druck – auch wenn das Terminal-Fenster im Hintergrund liegt. Alles bleibt **nur lesend**:
+Eine Taste kann nichts kaufen, verkaufen, speichern oder löschen, sondern nur das tun, was auch die Befehlszeile kann.
+
+Einrichten (einmalig, Windows):
+1. Die Stream-Deck-Software von Elgato installieren (Version 6.5 oder neuer).
+2. **`werkzeuge\Stream Deck einrichten.bat`** doppelklicken und die Installation in der Stream-Deck-Software bestätigen.
+3. Rechts in der Stream-Deck-Software die Gruppe **„Market Terminal“** öffnen und die Aktion **„Terminal-Taste“** auf
+   alle 15 Tasten ziehen. Jede Taste belegt sich nach ihrer Position selbst:
+
+| | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| **Reihe 1** | DAX | S&P 500 | Nasdaq 100 | VIX | EUR/USD |
+| **Reihe 2** | Depot heute | Angst & Gier USA | Angst & Gier Europa | Eilmeldungen | Kursalarme |
+| **Reihe 3** | Seite AKTIE | Seite MAKRO | Seite NEWS | Briefing (BRIEF) | Panel maximieren |
+
+- **Kurs-Tasten:** Kurs und Tagesveränderung (grün/rot, je kräftiger, desto größer die Bewegung), alle 5 Sekunden neu;
+  Druck öffnet den Kurschart.
+- **Angst & Gier:** Gesamtwert aus STIM in der STIM-Farbe; Druck öffnet STIM.
+- **Eilmeldungen:** Zahl der Eilmeldungen der letzten 3 Stunden, die Taste **blinkt bei einer neuen**; Druck öffnet TOP.
+- **Kursalarme:** Zahl der scharfen Alarme, die Taste **blinkt rot, wenn einer auslöst**; Druck öffnet ALRT.
+- **Depot heute:** Ergebnis des Tages in % und Betrag; Druck öffnet die Seite DEPOT.
+- **Seite, Befehl, Maximieren:** wie Alt+1…5, ein Befehl in der Befehlszeile (z. B. `SAIS`, `SAP GR GP`, `ASK`) bzw. Alt+M.
+
+Ändern: In der Stream-Deck-Software eine Taste anklicken – unten lassen sich Art, Wert (Ticker wie im Terminal, z. B.
+`SAP.XETRA`), Beschriftung oder Befehl einstellen. Die Terminal-Adresse (Standard `http://127.0.0.1:8000`) nur ändern,
+wenn in der `.env` ein anderer Port steht. Läuft das Terminal nicht, zeigen die Daten-Tasten „Terminal nicht offen“;
+ist kein Terminal-Fenster offen, zeigt ein Druck ein Warndreieck. Die Aufträge gehen an das zuletzt benutzte Fenster.
+
+Technik: Das Plugin (`streamdeck/`) spricht die Stream-Deck-Schnittstelle direkt (ohne Elgato-Bibliothek, läuft ab
+Stream Deck 6.5 mit Node 20), holt Daten über `GET /api/deck` und schickt Aufträge an `POST /api/remote`; das Terminal
+empfängt sie über `GET /api/remote/events`. Beides nur vom eigenen Rechner. Neu bauen: `cd streamdeck && npm install &&
+npm run build` (erzeugt `dist/Market Terminal.streamDeckPlugin`), Tests: `npm test`.
+
 ## Faktoren (FCTR) und Faktorlast im Depot
 
 `FCTR` (oder „Faktoren“, „Stile“) zeigt, **welcher Anlagestil gerade läuft** – gemessen mit Stil-ETFs:

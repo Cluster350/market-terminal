@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Terminal-Taste</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background: #2d2d2d; color: #d8d8d8; font: 12px -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 8px 12px; }
+  .row { display: flex; align-items: center; margin: 6px 0; gap: 8px; }
+  .row label { flex: 0 0 96px; color: #969696; }
+  .row input, .row select { flex: 1; background: #3d3d3d; color: #d8d8d8; border: 1px solid #4a4a4a; border-radius: 3px; padding: 4px 6px; font: inherit; min-width: 0; }
+  .hint { color: #969696; font-size: 11px; line-height: 1.4; margin: 4px 0 8px 104px; }
+  .hidden { display: none; }
+  hr { border: 0; border-top: 1px solid #444; margin: 10px 0; }
+</style>
+</head>
+<body>
+  <div class="row"><label for="art">Art</label>
+    <select id="art">
+      <option value="kurs">Kurs (Live)</option>
+      <option value="stimmung">Angst &amp; Gier (STIM)</option>
+      <option value="news">Eilmeldungen</option>
+      <option value="alarme">Kursalarme</option>
+      <option value="depot">Depot heute</option>
+      <option value="seite">Seite wechseln</option>
+      <option value="befehl">Befehl</option>
+      <option value="max">Panel maximieren</option>
+    </select>
+  </div>
+  <div class="hint" id="art-hint"></div>
+
+  <div id="f-kurs">
+    <div class="row"><label for="ticker">Wert</label><input id="ticker" placeholder="z. B. GDAXI.INDX oder SAP.XETRA" maxlength="30" /></div>
+    <div class="row"><label for="label">Beschriftung</label><input id="label" placeholder="leer = Name" maxlength="12" /></div>
+    <div class="hint">Ticker wie im Terminal (EODHD-Schreibweise), z. B. GDAXI.INDX (DAX), GSPC.INDX (S&amp;P 500), EURUSD.FOREX, SAP.XETRA, NWND.US. Drücken öffnet den Kurschart.</div>
+  </div>
+  <div id="f-stimmung" class="hidden">
+    <div class="row"><label for="region">Region</label>
+      <select id="region"><option value="us">USA</option><option value="eu">Europa</option></select>
+    </div>
+  </div>
+  <div id="f-seite" class="hidden">
+    <div class="row"><label for="page">Seite</label>
+      <select id="page">
+        <option value="equity">1 AKTIE</option><option value="macro">2 MAKRO</option><option value="screener">3 SCREENER</option>
+        <option value="news">4 NEWS</option><option value="depot">5 DEPOT</option>
+      </select>
+    </div>
+  </div>
+  <div id="f-befehl" class="hidden">
+    <div class="row"><label for="command">Befehl</label><input id="command" placeholder="z. B. SAIS, SAP GR GP, ASK" maxlength="80" /></div>
+    <div class="row"><label for="blabel">Beschriftung</label><input id="blabel" placeholder="leer = Befehl" maxlength="12" /></div>
+    <div class="hint">Genau das, was man in die Befehlszeile tippt – die Taste führt es aus, als hätte man Enter gedrückt.</div>
+  </div>
+
+  <hr />
+  <div class="row"><label for="url">Terminal</label><input id="url" placeholder="http://127.0.0.1:8000" /></div>
+  <div class="hint">Adresse des Terminals auf diesem Rechner (gilt für alle Tasten). Nur ändern, wenn der Port in der .env nicht 8000 ist.</div>
+
+<script>
+  // Einstellungsseite (Property Inspector) einer Terminal-Taste – ohne fremde Bibliotheken.
+  const HINTS = {
+    kurs: "Zeigt Kurs und Tagesveränderung, alle 5 Sekunden neu.",
+    stimmung: "Gesamtwert aus dem Stimmungsterminal, 0 = Angst, 100 = Gier. Drücken öffnet STIM.",
+    news: "Zahl der Eilmeldungen der letzten 3 Stunden; blinkt bei einer neuen. Drücken öffnet TOP.",
+    alarme: "Zahl der scharfen Kursalarme; blinkt rot, wenn einer auslöst. Drücken öffnet ALRT.",
+    depot: "Ergebnis des Depots heute in % und Betrag. Drücken öffnet die Seite DEPOT.",
+    seite: "Wechselt im Terminal auf die gewählte Seite.",
+    befehl: "Führt einen Befehl im Terminal aus.",
+    max: "Maximiert das aktive Panel bzw. stellt es wieder her (wie Alt+M).",
+  };
+  let ws, uuid, settings = {}, globals = {};
+  const $ = (id) => document.getElementById(id);
+
+  function show() {
+    const art = $("art").value;
+    for (const k of ["kurs", "stimmung", "seite", "befehl"]) $("f-" + k).classList.toggle("hidden", k !== art);
+    $("art-hint").textContent = HINTS[art] || "";
+  }
+  function fill() {
+    $("art").value = settings.art || "kurs";
+    $("ticker").value = settings.ticker || "";
+    $("label").value = settings.art === "kurs" ? settings.label || "" : "";
+    $("region").value = settings.region || "us";
+    $("page").value = settings.page || "equity";
+    $("command").value = settings.command || "";
+    $("blabel").value = settings.art === "befehl" ? settings.label || "" : "";
+    show();
+  }
+  function save() {
+    const art = $("art").value;
+    const s = { art };
+    if (art === "kurs") { s.ticker = $("ticker").value.trim().toUpperCase(); s.label = $("label").value.trim(); }
+    if (art === "stimmung") s.region = $("region").value;
+    if (art === "seite") s.page = $("page").value;
+    if (art === "befehl") { s.command = $("command").value.trim(); s.label = $("blabel").value.trim(); }
+    settings = s;
+    ws && ws.send(JSON.stringify({ event: "setSettings", context: uuid, payload: s }));
+    show();
+  }
+  function saveGlobal() {
+    globals = { ...globals, url: $("url").value.trim() };
+    ws && ws.send(JSON.stringify({ event: "setGlobalSettings", context: uuid, payload: globals }));
+  }
+  for (const id of ["art", "region", "page"]) $(id).addEventListener("change", save);
+  for (const id of ["ticker", "label", "command", "blabel"]) $(id).addEventListener("change", save);
+  $("url").addEventListener("change", saveGlobal);
+
+  // Von der Stream-Deck-Software aufgerufen
+  function connectElgatoStreamDeckSocket(port, inUuid, registerEvent, info, actionInfo) {
+    uuid = inUuid;
+    try { settings = JSON.parse(actionInfo).payload.settings || {}; } catch (e) { settings = {}; }
+    fill();
+    ws = new WebSocket("ws://127.0.0.1:" + port);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ event: registerEvent, uuid }));
+      ws.send(JSON.stringify({ event: "getGlobalSettings", context: uuid }));
+    };
+    ws.onmessage = (m) => {
+      const msg = JSON.parse(m.data);
+      if (msg.event === "didReceiveGlobalSettings") { globals = msg.payload.settings || {}; $("url").value = globals.url || ""; }
+      if (msg.event === "didReceiveSettings") { settings = msg.payload.settings || {}; fill(); }
+    };
+  }
+  window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
+</script>
+</body>
+</html>

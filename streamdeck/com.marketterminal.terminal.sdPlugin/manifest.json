@@ -1,0 +1,30 @@
+{
+  "Name": "Market Terminal",
+  "Version": "1.0.0.0",
+  "Author": "Market Terminal",
+  "Description": "Live-Tasten für das Market Terminal: Kurse, Angst & Gier, Eilmeldungen, Kursalarme, Depot – und Fernsteuerung des Terminals. Nur lesend.",
+  "Category": "Market Terminal",
+  "CategoryIcon": "imgs/category",
+  "Icon": "imgs/plugin",
+  "CodePath": "bin/plugin.js",
+  "SDKVersion": 2,
+  "Software": { "MinimumVersion": "6.5" },
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "mac", "MinimumVersion": "12" }
+  ],
+  "Nodejs": { "Version": "20", "Debug": "disabled" },
+  "UUID": "com.marketterminal.terminal",
+  "Actions": [
+    {
+      "UUID": "com.marketterminal.terminal.taste",
+      "Name": "Terminal-Taste",
+      "Tooltip": "Kurs, Angst & Gier, Eilmeldungen, Alarme, Depot, Seite oder Befehl – belegt sich nach Position selbst",
+      "Icon": "imgs/action",
+      "PropertyInspectorPath": "ui/taste.html",
+      "Controllers": ["Keypad"],
+      "SupportedInMultiActions": false,
+      "States": [{ "Image": "imgs/key", "ShowTitle": false }]
+    }
+  ]
+}

@@ -37,6 +37,7 @@ from .api.rotation_routes import router as rotation_router
 from .api.valuation_routes import router as valuation_router
 from .api.sentiment_routes import router as sentiment_router
 from .api.seasonality_routes import router as seasonality_router
+from .api.deck_routes import router as deck_router
 from .cache import TTLCache
 from .config import Settings, settings
 from .crypto.service import CryptoService
@@ -54,6 +55,7 @@ from .rotation.service import RotationService
 from .valuation.service import ValuationService
 from .sentiment.service import SentimentService
 from .seasonality.service import SeasonalityService
+from .deck import DeckService, RemoteHub
 
 log = logging.getLogger("terminal")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -124,10 +126,10 @@ GZIP_LEVEL = 1
 
 
 class _GZipExceptStream(GZipMiddleware):
-    """GZip für alle Antworten außer dem Echtzeit-Strom: Komprimierung würde die Ereignisse puffern."""
+    """GZip für alle Antworten außer den Ereignis-Strömen (Echtzeit, Fernsteuerung): Komprimierung würde puffern."""
 
     async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
-        if scope.get("type") == "http" and str(scope.get("path", "")).startswith("/api/stream"):
+        if scope.get("type") == "http" and str(scope.get("path", "")).startswith(("/api/stream", "/api/remote/events")):
             await self.app(scope, receive, send)
             return
         await super().__call__(scope, receive, send)
@@ -264,6 +266,8 @@ def create_app(
         app.state.terminal.factors = app.state.factors
         app.state.rotation = RotationService(app.state.terminal, app.state.valuation, app.state.factors)
         app.state.seasonality = SeasonalityService(app.state.terminal)
+        app.state.remote = RemoteHub()
+        app.state.deck = DeckService(app)
         app.state.sentiment = SentimentService(app.state.terminal, app.state.valuation, cfg.portfolio_dir, prov.mode)
         app.state.intrinsic = IntrinsicService(app.state.terminal, cfg.portfolio_dir)
         app.state.intrinsic.start(prov.mode)
@@ -344,6 +348,7 @@ def create_app(
     app.include_router(notebook_router)
     app.include_router(sentiment_router)
     app.include_router(seasonality_router)
+    app.include_router(deck_router)
 
     static = Path(cfg.static_dir)
     if static.is_dir() and (static / "index.html").is_file():

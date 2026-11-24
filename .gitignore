@@ -11,3 +11,7 @@ frontend/dist-static/
 # Notebook: Zwischenstände von Jupyter
 notebook/.ipynb_checkpoints/
 notebook/__pycache__/
+
+# Stream Deck: Pakete zum Bauen und Protokolle der Stream-Deck-Software
+streamdeck/node_modules/
+streamdeck/com.marketterminal.terminal.sdPlugin/logs/
