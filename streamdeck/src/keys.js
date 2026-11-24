@@ -164,10 +164,11 @@ export function render(s, data, opts = {}) {
       const label = s.label || shortName(q?.name, s.ticker);
       const price = fmtPrice(q?.last);
       return svg(
-        text(72, 36, fit(label, 124, 24), "#ffa028", label, "bold") +
-          text(72, 80, fit(price, 128, 32), "#ececec", price, "bold") +
-          `<rect x='8' y='98' width='128' height='36' rx='6' fill='${changeColor(q?.changePct)}'/>` +
-          text(72, 124, 24, "#fff", fmtPct(q?.changePct), "bold"),
+        text(72, 27, fit(label, 124, 21), "#ffa028", label, "bold") +
+          text(72, 59, fit(price, 128, 29), "#ececec", price, "bold") +
+          rangeBar(q) +
+          `<rect x='8' y='106' width='128' height='30' rx='6' fill='${changeColor(q?.changePct)}'/>` +
+          text(72, 128, 21, "#fff", fmtPct(q?.changePct), "bold"),
       );
     }
     case "stimmung": {
@@ -224,6 +225,38 @@ export function render(s, data, opts = {}) {
       return svg(text(72, 66, 16, "#8f8f8f", "BEFEHL") + text(72, 104, fit(label, 124, 30), "#ffa028", label, "bold"), "#ff8000");
     }
   }
+}
+
+/** Lage des Kurses in der Tagesspanne (0 = Tagestief, 1 = Tageshoch); null ohne Spanne. */
+export function rangePos(v, low, high) {
+  if (![v, low, high].every(Number.isFinite) || high <= low) return null;
+  return Math.min(1, Math.max(0, (v - low) / (high - low)));
+}
+
+const lowHighSize = (q) => {
+  const chars = fmtPrice(q.low).length + fmtPrice(q.high).length + 1;
+  return Math.max(13, Math.min(19, Math.floor(132 / (chars * 0.6))));
+};
+
+/** Tagesspanne: Balken von Tief bis Hoch, Punkt = aktueller Kurs, Strich = Vortagesschluss, darunter Tief und Hoch. */
+function rangeBar(q) {
+  const x0 = 14, x1 = 130, y = 74;
+  const pos = rangePos(q?.last, q?.low, q?.high);
+  if (pos === null) return text(72, 90, 13, "#5c5c5c", "keine Tagesspanne");
+  const px = x0 + (x1 - x0) * pos;
+  const prev = rangePos(q?.prevClose, q?.low, q?.high);
+  const up = (q?.changePct ?? 0) >= 0;
+  const dot = up ? "#29d17d" : "#ff5252";
+  return (
+    `<rect x='${x0}' y='${y - 3}' width='${x1 - x0}' height='6' rx='3' fill='#3a3a3a'/>` +
+    // vom Vortagesschluss bis zum Kurs eingefärbt (wie weit der Tag gelaufen ist)
+    (prev !== null ? `<rect x='${Math.min(px, x0 + (x1 - x0) * prev)}' y='${y - 3}' width='${Math.abs(px - (x0 + (x1 - x0) * prev))}' height='6' fill='${dot}' opacity='0.55'/>` : "") +
+    (prev !== null ? `<rect x='${x0 + (x1 - x0) * prev - 1}' y='${y - 7}' width='2' height='14' fill='#d8d8d8'/>` : "") +
+    `<circle cx='${px}' cy='${y}' r='6' fill='${dot}' stroke='#000' stroke-width='1.5'/>` +
+    // so groß, wie beide Zahlen nebeneinander passen (auf dem Gerät wird das Bild auf 72 Pixel verkleinert)
+    text(x0 - 6, 98, lowHighSize(q), "#b0b0b0", fmtPrice(q.low), "normal", "start") +
+    text(x1 + 6, 98, lowHighSize(q), "#b0b0b0", fmtPrice(q.high), "normal", "end")
+  );
 }
 
 export function titleOf(s) {

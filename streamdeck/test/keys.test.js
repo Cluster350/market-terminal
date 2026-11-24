@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LAYOUT_15, defaultFor, normalizeSettings, remoteFor, partsFor, render, rankColor, fmtPct, fmtPrice, changeColor } from "../src/keys.js";
+import { rangePos, LAYOUT_15, defaultFor, normalizeSettings, remoteFor, partsFor, render, rankColor, fmtPct, fmtPrice, changeColor } from "../src/keys.js";
 
 test("Vorbelegung nach Position (3 × 5)", () => {
   assert.equal(LAYOUT_15.length, 15);
@@ -37,6 +37,18 @@ test("Zahlen deutsch, Farben wie im Terminal", () => {
   assert.equal(rankColor(95), "#ff5fa2");
   assert.equal(rankColor(5), "#5b8cff");
   assert.match(changeColor(2), /^rgb\(41,209,125\)$/);
+});
+
+test("Tagesspanne", () => {
+  assert.equal(rangePos(24900, 24600, 25000), 0.75);
+  assert.equal(rangePos(26000, 24600, 25000), 1);
+  assert.equal(rangePos(1, 1, 1), null); // keine Spanne (z. B. vor Handelsbeginn)
+  assert.equal(rangePos(null, 1, 2), null);
+  const svg = render({ art: "kurs", ticker: "GDAXI.INDX", label: "DAX" }, { quotes: [{ ticker: "GDAXI.INDX", last: 24900, low: 24600, high: 25000, prevClose: 24700, changePct: 0.8 }] });
+  assert.match(svg, /24\.600/);
+  assert.match(svg, /25\.000/);
+  assert.match(svg, /<circle cx='101'/); // 14 + 116 × 0,75
+  assert.match(render({ art: "kurs", ticker: "X.US" }, { quotes: [{ ticker: "X.US", last: 5 }] }), /keine Tagesspanne/);
 });
 
 test("Bilder zeigen die Daten", () => {

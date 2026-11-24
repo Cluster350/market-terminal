@@ -17,7 +17,7 @@ function fakeTerminal() {
       res.setHeader("Content-Type", "application/json");
       if (req.url.startsWith("/api/deck")) {
         state.deck.push(req.url);
-        res.end(JSON.stringify({ quotes: [{ ticker: "GDAXI.INDX", name: "DAX", last: 24012.4, changePct: -0.8 }],
+        res.end(JSON.stringify({ quotes: [{ ticker: "GDAXI.INDX", name: "DAX", last: 24012.4, changePct: -0.8, low: 23900, high: 24250, prevClose: 24206 }],
           stim: { us: { value: 42, word: "eher vorsichtig", state: "ready" } }, news: { urgent: 1, latestId: state.urgentId },
           alerts: { active: 2, lastEventId: null }, depot: null, windows: 1 }));
       } else if (req.url === "/api/remote" && req.method === "POST") {
@@ -68,7 +68,7 @@ test("Plugin mit nachgebauter Stream-Deck-Software und Terminal", async () => {
     assert.deepEqual(got.find((m) => m.event === "setSettings" && m.context === "k0").payload, { art: "kurs", ticker: "GDAXI.INDX", label: "DAX" });
     assert.deepEqual(got.find((m) => m.event === "setSettings" && m.context === "k6").payload, { art: "stimmung", region: "us" });
     const img = (ctx, re) => got.some((m) => m.event === "setImage" && m.context === ctx && re.test(decodeURIComponent(m.payload.image)));
-    await until(() => img("k0", /24\.012/) && img("k0", /−0,80 %/));
+    await until(() => img("k0", /24\.012/) && img("k0", /−0,80 %/) && img("k0", /23\.900/) && img("k0", /24\.250/));
     await until(() => img("k6", />42</));
     assert.ok(term.state.deck.some((u) => u.includes("tickers=GDAXI.INDX") && u.includes("stim_us") && u.includes("news")));
     // Drücken: Auftrag als JSON ohne Origin (wird von der Zugriffsprüfung des Terminals angenommen)

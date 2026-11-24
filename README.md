@@ -428,8 +428,9 @@ Einrichten (einmalig, Windows):
 | **Reihe 2** | Depot heute | Angst & Gier USA | Angst & Gier Europa | Eilmeldungen | Kursalarme |
 | **Reihe 3** | Seite AKTIE | Seite MAKRO | Seite NEWS | Briefing (BRIEF) | Panel maximieren |
 
-- **Kurs-Tasten:** Kurs und Tagesveränderung (grün/rot, je kräftiger, desto größer die Bewegung), alle 5 Sekunden neu;
-  Druck öffnet den Kurschart.
+- **Kurs-Tasten:** Kurs, **Tagesspanne** (Balken von Tagestief bis Tageshoch, Punkt = aktueller Kurs, Strich =
+  Vortagesschluss, darunter Tief und Hoch) und Tagesveränderung (grün/rot, je kräftiger, desto größer die Bewegung),
+  alle 5 Sekunden neu; Druck öffnet den Kurschart.
 - **Angst & Gier:** Gesamtwert aus STIM in der STIM-Farbe; Druck öffnet STIM.
 - **Eilmeldungen:** Zahl der Eilmeldungen der letzten 3 Stunden, die Taste **blinkt bei einer neuen**; Druck öffnet TOP.
 - **Kursalarme:** Zahl der scharfen Alarme, die Taste **blinkt rot, wenn einer auslöst**; Druck öffnet ALRT.

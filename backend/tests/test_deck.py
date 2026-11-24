@@ -61,6 +61,8 @@ def test_deck_data_and_remote_endpoint(tmp_path, monkeypatch):
                 break
             time.sleep(0.5)
         assert [q["ticker"] for q in j["quotes"]] == ["GDAXI.INDX", "GSPC.INDX"]
+        dax = j["quotes"][0]
+        assert dax["low"] <= dax["last"] <= dax["high"] and dax["prevClose"]
         assert j["stim"]["us"]["state"] == "ready" and 0 <= j["stim"]["us"]["value"] <= 100 and "eu" not in j["stim"]
         assert j["depot"]["count"] > 0 and j["depot"]["currency"] == "EUR"
         assert set(j["alerts"]) >= {"active", "lastEventId"} and set(j["news"]) >= {"urgent", "latestId"}

@@ -80,7 +80,7 @@ Gestartet wird es mit einem Doppelklick.
 - werkzeuge\Stream Deck einrichten.bat doppelklicken und die Installation bestaetigen.
 - In der Stream-Deck-Software die Aktion "Terminal-Taste" (Gruppe "Market Terminal") auf alle
   15 Tasten ziehen. Jede Taste belegt sich nach ihrer Position selbst:
-    Reihe 1: DAX, S&P 500, Nasdaq 100, VIX, EUR/USD (Kurs live)
+    Reihe 1: DAX, S&P 500, Nasdaq 100, VIX, EUR/USD (Kurs live mit Tagesspanne Tief-Hoch)
     Reihe 2: Depot heute, Angst & Gier USA, Angst & Gier Europa, Eilmeldungen, Alarme
     Reihe 3: Seite AKTIE, Seite MAKRO, Seite NEWS, Briefing (BRIEF), Panel maximieren
 - Taste anklicken (in der Stream-Deck-Software) -> unten aendern: anderer Wert, andere Art, Befehl.

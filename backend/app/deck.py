@@ -99,6 +99,9 @@ class DeckQuote(Model):
     name: Optional[str] = None
     last: Optional[float] = None
     change_pct: Optional[float] = None
+    high: Optional[float] = None  # Tageshoch und -tief (Tagesspanne auf der Taste)
+    low: Optional[float] = None
+    prev_close: Optional[float] = None
     currency: Optional[str] = None
 
 
@@ -173,7 +176,8 @@ class DeckService:
         except TerminalError as e:
             log.info("Stream Deck: Kurse nicht verfügbar (%s)", e)
             return
-        out.quotes = [DeckQuote(ticker=q.ticker, name=q.name, last=q.last, change_pct=q.change_pct, currency=q.currency) for q in qs]
+        out.quotes = [DeckQuote(ticker=q.ticker, name=q.name, last=q.last, change_pct=q.change_pct, high=q.high, low=q.low,
+                              prev_close=q.prev_close, currency=q.currency) for q in qs]
 
     def _stim_part(self, region: str) -> DeckStim:
         """Stimmung ohne zu warten: Die Rechnung läuft im Hintergrund, die Taste zeigt das letzte fertige Ergebnis."""
