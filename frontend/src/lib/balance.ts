@@ -40,7 +40,7 @@ export function splitBalance(f: Financials, i = 0): BalanceSplit | null {
   const curr = at(b, "totalCurrentAssets", i);
   const nonCurr = at(b, "nonCurrentAssetsTotal", i) ?? (curr !== null ? total - curr : null);
   const ppe = pos(at(b, "propertyPlantEquipment", i));
-  const gw = pos(at(b, "goodWill", i)) + pos(at(b, "intangibleAssets", i));
+  const gw = goodwillTotal(b, i, nonCurr);
   const otherCurr = curr !== null ? Math.max(0, curr - cash - recv - inv) : 0;
   const otherFixed = nonCurr !== null ? Math.max(0, nonCurr - ppe - gw) : Math.max(0, total - cash - recv - inv - otherCurr - ppe - gw);
   const assets: Segment[] = [
@@ -79,6 +79,15 @@ export function splitBalance(f: Financials, i = 0): BalanceSplit | null {
   };
 }
 
+/** Goodwill + immaterielle Werte. Laut EODHD-Glossar können „intangibleAssets“ den Goodwill schon enthalten: Passt die
+ * Summe nicht ins Anlagevermögen, ist er doppelt gezählt – dann den größeren der beiden Werte nehmen. */
+export function goodwillTotal(b: StatementRow[], i: number, nonCurr: number | null = at(b, "nonCurrentAssetsTotal", i)): number {
+  const gw = pos(at(b, "goodWill", i)), ia = pos(at(b, "intangibleAssets", i));
+  const ppe = pos(at(b, "propertyPlantEquipment", i));
+  if (nonCurr !== null && gw > 0 && ia > 0 && ppe + gw + ia > nonCurr * 1.001) return Math.max(gw, ia);
+  return gw + ia;
+}
+
 export interface Kpi {
   key: string;
   label: string;
@@ -109,7 +118,7 @@ export function kpis(f: Financials): Kpi[] {
     return c !== null && cl ? (c + (r ?? 0)) / cl : null;
   });
   const gwEq = idx.map((i) => {
-    const gw = pos(at(b, "goodWill", i)) + pos(at(b, "intangibleAssets", i));
+    const gw = goodwillTotal(b, i);
     const hasGw = at(b, "goodWill", i) !== null || at(b, "intangibleAssets", i) !== null;
     if (!hasGw || eq[i] === null) return null;
     return eq[i]! > 0 ? (gw / eq[i]!) * 100 : Infinity; // negatives Eigenkapital: unbegrenzt

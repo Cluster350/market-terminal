@@ -32,6 +32,12 @@ describe("Bilanzbild", () => {
     expect(s.debt).toBe(28);
     expect(splitBalance(fin({ totalAssets: [null, 90] }))).toBeNull();
   });
+  it("Goodwill nicht doppelt zählen, wenn die immateriellen Werte ihn schon enthalten", () => {
+    // 30 Sachanlagen + 15 Goodwill + 20 Immaterielle (inkl. Goodwill) = 65 > 55 Anlagevermögen
+    const s = splitBalance(fin({ intangibleAssets: [20, 19] }))!;
+    expect(s.assets.find((x) => x.key === "gw")!.value).toBe(20);
+    expect(s.assets.reduce((a, x) => a + x.value, 0)).toBeCloseTo(100);
+  });
   it("negatives Eigenkapital: kein Eigenkapital-Block, Ampeln rot", () => {
     const f = fin({ totalStockholderEquity: [-10, 32], totalLiab: [110, 58], nonCurrentLiabilitiesTotal: [90, 36] });
     const s = splitBalance(f)!;
