@@ -16,6 +16,10 @@ test("Einstellungen werden bereinigt", () => {
   assert.deepEqual(normalizeSettings({ art: "seite", page: "irgendwo" }), { art: "seite", page: "equity" });
   assert.deepEqual(normalizeSettings({ art: "unsinn" }), { art: "befehl", command: "TOP", label: "TOP" });
   assert.equal(normalizeSettings({ art: "stimmung", region: "eu" }).region, "eu");
+  // alte Vorbelegung „BRIEF“ (als Briefkurs missverständlich) wird umbenannt, eigene Beschriftungen bleiben
+  assert.deepEqual(normalizeSettings({ art: "befehl", command: "BRIEF", label: "BRIEF" }), { art: "befehl", command: "BRIEF", label: "BRIEFING", sub: "MORGEN" });
+  assert.equal(normalizeSettings({ art: "befehl", command: "BRIEF", label: "Mein Tag" }).label, "Mein Tag");
+  assert.match(render({ art: "befehl", command: "BRIEF", label: "BRIEFING", sub: "MORGEN" }, null), /MORGEN/);
 });
 
 test("Drücken: Auftrag ans Terminal", () => {

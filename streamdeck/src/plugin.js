@@ -55,7 +55,10 @@ export class Plugin {
           settings = defaultFor(payload?.coordinates);
           this.send({ event: "setSettings", context, payload: settings });
         }
-        this.keys.set(context, { settings: normalizeSettings(settings), coords: payload?.coordinates });
+        const clean = normalizeSettings(settings);
+        // bereinigt oder umbenannt (z. B. alte Vorbelegung BRIEF -> MORGEN-BRIEFING): auch dort speichern
+        if (settings.art && JSON.stringify(clean) !== JSON.stringify(settings)) this.send({ event: "setSettings", context, payload: clean });
+        this.keys.set(context, { settings: clean, coords: payload?.coordinates });
         this.draw(context, true);
         void this.poll();
         break;

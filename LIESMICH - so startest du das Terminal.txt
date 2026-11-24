@@ -82,7 +82,7 @@ Gestartet wird es mit einem Doppelklick.
   15 Tasten ziehen. Jede Taste belegt sich nach ihrer Position selbst:
     Reihe 1: DAX, S&P 500, Nasdaq 100, VIX, EUR/USD (Kurs live mit Tagesspanne Tief-Hoch)
     Reihe 2: Depot heute, Angst & Gier USA, Angst & Gier Europa, Eilmeldungen, Alarme
-    Reihe 3: Seite AKTIE, Seite MAKRO, Seite NEWS, Briefing (BRIEF), Panel maximieren
+    Reihe 3: Seite AKTIE, Seite MAKRO, Seite NEWS, Morgen-Briefing (BRIEF), Panel maximieren
 - Taste anklicken (in der Stream-Deck-Software) -> unten aendern: anderer Wert, andere Art, Befehl.
 - Druecken steuert das Terminal-Fenster, auch wenn es im Hintergrund ist. Nur lesend.
 

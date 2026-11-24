@@ -3665,7 +3665,7 @@ var LAYOUT_15 = [
   { art: "seite", page: "equity" },
   { art: "seite", page: "macro" },
   { art: "seite", page: "news" },
-  { art: "befehl", command: "BRIEF", label: "BRIEF" },
+  { art: "befehl", command: "BRIEF", label: "BRIEFING", sub: "MORGEN" },
   { art: "max" }
 ];
 var PAGE_LABEL = { equity: "AKTIE", macro: "MAKRO", screener: "SCREEN", news: "NEWS", depot: "DEPOT" };
@@ -3689,6 +3689,8 @@ function normalizeSettings(s) {
   } else if (art === "befehl") {
     out.command = String(s.command || "TOP").trim().slice(0, 80);
     out.label = String(s.label || out.command).slice(0, 12);
+    if (s.sub) out.sub = String(s.sub).slice(0, 10);
+    if (out.command.toUpperCase() === "BRIEF" && out.label === "BRIEF" && !out.sub) Object.assign(out, { label: "BRIEFING", sub: "MORGEN" });
   }
   return out;
 }
@@ -3824,7 +3826,7 @@ function render(s, data, opts = {}) {
       );
     default: {
       const label = s.label || s.command;
-      return svg(text(72, 66, 16, "#8f8f8f", "BEFEHL") + text(72, 104, fit(label, 124, 30), "#ffa028", label, "bold"), "#ff8000");
+      return svg(text(72, 66, 16, "#8f8f8f", s.sub || "BEFEHL") + text(72, 104, fit(label, 124, 30), "#ffa028", label, "bold"), "#ff8000");
     }
   }
 }
@@ -3897,7 +3899,9 @@ var Plugin = class {
           settings = defaultFor(payload?.coordinates);
           this.send({ event: "setSettings", context, payload: settings });
         }
-        this.keys.set(context, { settings: normalizeSettings(settings), coords: payload?.coordinates });
+        const clean = normalizeSettings(settings);
+        if (settings.art && JSON.stringify(clean) !== JSON.stringify(settings)) this.send({ event: "setSettings", context, payload: clean });
+        this.keys.set(context, { settings: clean, coords: payload?.coordinates });
         this.draw(context, true);
         void this.poll();
         break;

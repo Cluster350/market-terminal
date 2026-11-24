@@ -18,7 +18,7 @@ export const LAYOUT_15 = [
   { art: "seite", page: "equity" },
   { art: "seite", page: "macro" },
   { art: "seite", page: "news" },
-  { art: "befehl", command: "BRIEF", label: "BRIEF" },
+  { art: "befehl", command: "BRIEF", label: "BRIEFING", sub: "MORGEN" },
   { art: "max" },
 ];
 
@@ -47,6 +47,9 @@ export function normalizeSettings(s) {
   } else if (art === "befehl") {
     out.command = String(s.command || "TOP").trim().slice(0, 80);
     out.label = String(s.label || out.command).slice(0, 12);
+    if (s.sub) out.sub = String(s.sub).slice(0, 10);
+    // frühere Vorbelegung „BRIEF“ war als Briefkurs missverständlich
+    if (out.command.toUpperCase() === "BRIEF" && out.label === "BRIEF" && !out.sub) Object.assign(out, { label: "BRIEFING", sub: "MORGEN" });
   }
   return out;
 }
@@ -222,7 +225,7 @@ export function render(s, data, opts = {}) {
       );
     default: {
       const label = s.label || s.command;
-      return svg(text(72, 66, 16, "#8f8f8f", "BEFEHL") + text(72, 104, fit(label, 124, 30), "#ffa028", label, "bold"), "#ff8000");
+      return svg(text(72, 66, 16, "#8f8f8f", s.sub || "BEFEHL") + text(72, 104, fit(label, 124, 30), "#ffa028", label, "bold"), "#ff8000");
     }
   }
 }

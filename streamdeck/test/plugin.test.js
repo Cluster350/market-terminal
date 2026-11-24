@@ -65,6 +65,9 @@ test("Plugin mit nachgebauter Stream-Deck-Software und Terminal", async () => {
       send({ event: "willAppear", action: A, context: ctx, payload: { settings: {}, coordinates: { column, row } } });
     }
     await until(() => got.filter((m) => m.event === "setSettings").length === 4);
+    // Taste mit alter Vorbelegung „BRIEF“: wird umbenannt und gespeichert
+    send({ event: "willAppear", action: A, context: "kb", payload: { settings: { art: "befehl", command: "BRIEF", label: "BRIEF" }, coordinates: { column: 3, row: 2 } } });
+    await until(() => got.some((m) => m.event === "setSettings" && m.context === "kb" && m.payload.label === "BRIEFING" && m.payload.sub === "MORGEN"));
     assert.deepEqual(got.find((m) => m.event === "setSettings" && m.context === "k0").payload, { art: "kurs", ticker: "GDAXI.INDX", label: "DAX" });
     assert.deepEqual(got.find((m) => m.event === "setSettings" && m.context === "k6").payload, { art: "stimmung", region: "us" });
     const img = (ctx, re) => got.some((m) => m.event === "setImage" && m.context === ctx && re.test(decodeURIComponent(m.payload.image)));

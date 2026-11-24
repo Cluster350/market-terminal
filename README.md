@@ -426,7 +426,7 @@ Einrichten (einmalig, Windows):
 |---|---|---|---|---|---|
 | **Reihe 1** | DAX | S&P 500 | Nasdaq 100 | VIX | EUR/USD |
 | **Reihe 2** | Depot heute | Angst & Gier USA | Angst & Gier Europa | Eilmeldungen | Kursalarme |
-| **Reihe 3** | Seite AKTIE | Seite MAKRO | Seite NEWS | Briefing (BRIEF) | Panel maximieren |
+| **Reihe 3** | Seite AKTIE | Seite MAKRO | Seite NEWS | Morgen-Briefing (BRIEF) | Panel maximieren |
 
 - **Kurs-Tasten:** Kurs, **Tagesspanne** (Balken von Tagestief bis Tageshoch, Punkt = aktueller Kurs, Strich =
   Vortagesschluss, darunter Tief und Hoch) und Tagesveränderung (grün/rot, je kräftiger, desto größer die Bewegung),
