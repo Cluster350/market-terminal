@@ -1357,7 +1357,13 @@ class DemoProvider:
             goods = sector in ("Consumer Cyclical", "Consumer Defensive", "Industrials", "Basic Materials", "Technology")
             current_assets = assets * (0.55 if sector == "Financial Services" else r.uniform(0.3, 0.45))
             current_liab = (assets - equity) * r.uniform(0.35, 0.55)
+            fixed = assets - current_assets
+            # Aufteilung des Anlagevermögens nach Branche (feste Anteile, ändert keine Zufallsfolge)
+            heavy = sector in ("Industrials", "Energy", "Utilities", "Basic Materials", "Real Estate")
+            gw_share = {"Technology": 0.24, "Healthcare": 0.3, "Communication Services": 0.28}.get(sector, 0.12)
             return {
+                "propertyPlantEquipment": fixed * (0.55 if heavy else 0.3), "goodWill": fixed * gw_share,
+                "intangibleAssets": fixed * 0.08,
                 "cash": cash, "netReceivables": rev * 0.12, "inventory": rev * 0.08 if goods else 0.0,
                 "totalCurrentAssets": current_assets, "nonCurrentAssetsTotal": assets - current_assets,
                 "totalAssets": assets, "totalCurrentLiabilities": current_liab,

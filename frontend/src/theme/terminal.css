@@ -965,3 +965,44 @@ table.opt-chain tr.opt-atm td { border-top: 1px solid var(--label); border-botto
 .sais-tables.wide { grid-template-columns: 1.2fr 1fr; }
 .sais-table { margin-bottom: 6px; }
 .sais-table td, .sais-table th { white-space: nowrap; }
+
+/* --- FA Bilanzbild ------------------------------------------------------------------------------ */
+.bv { padding: 2px 2px 8px; }
+.bv-grid2 { display: grid; grid-template-columns: 1fr; gap: 10px 22px; }
+.bv-grid2.wide { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.bv-grid2 > section { min-width: 0; }
+.bv-span { grid-column: 1 / -1; }
+.bv-bridge { max-width: 620px; }
+.bv-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bv-chips { display: inline-flex; gap: 2px; text-transform: none; letter-spacing: 0; }
+.bv-chips button { font: inherit; font-family: var(--mono); font-size: var(--fs-xs); background: transparent; color: var(--muted); border: 1px solid var(--rule-strong); padding: 0 5px; cursor: pointer; }
+.bv-chips button[aria-pressed="true"] { color: #000; background: var(--label); border-color: var(--label); }
+.bv-chips button:disabled { opacity: .35; cursor: default; }
+.bv-svg { width: 100%; height: auto; display: block; max-width: 520px; }
+.bv-pillars { max-width: 600px; }
+.bv-lbl { fill: var(--value); }
+.bv-svg text { font-family: var(--mono); }
+.bv-head { font-size: 11px; fill: var(--label); font-weight: 600; letter-spacing: .06em; }
+.bv-in { font-size: 10px; fill: #000; font-weight: 600; pointer-events: none; }
+.bv-out { font-size: 10px; fill: var(--muted); }
+.bv-foot { font-size: 11px; fill: var(--value); }
+.bv-alarm { font-size: 10.5px; fill: var(--down); font-weight: 600; }
+.bv-axis { font-size: 10px; fill: var(--muted); }
+.bv-ratio { font-size: 10.5px; fill: var(--value); font-weight: 600; }
+.bv-grid { stroke: var(--rule); stroke-width: 1; }
+.bv-link { stroke: var(--dim); stroke-dasharray: 2 2; }
+.bv-seg { stroke: #000; stroke-width: 1; }
+.bv-cash { fill: #4dd0e1; } .bv-recv { fill: #5b8cff; } .bv-inv { fill: #9ccc65; } .bv-ppe { fill: #8a8a8a; }
+.bv-gw { fill: #c792ea; fill-opacity: .55; } .bv-gw-dash { fill: none; stroke: #c792ea; stroke-dasharray: 4 3; pointer-events: none; }
+.bv-other { fill: #4a4a4a; } .bv-cl { fill: #ff8a65; } .bv-ncl { fill: #e05252; } .bv-eq { fill: #29d17d; }
+.bv-debt { fill: #ffd166; }
+.bv-total { fill: #8a8a8a; } .bv-up { fill: var(--up); } .bv-down { fill: var(--down); }
+.bv-note { color: var(--dim); font-size: var(--fs-xs); line-height: 1.4; margin-top: 2px; }
+.bv-empty { color: var(--muted); font-size: var(--fs-s); padding: 18px 4px; }
+.bv-kpis { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.bv-kpi { display: flex; align-items: center; gap: 10px; border: 1px solid var(--rule); padding: 6px 10px 6px 0; cursor: help; }
+.bv-lamp { align-self: stretch; width: 5px; flex: none; }
+.bv-kpi-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 8px; }
+.bv-kpi-label { color: var(--value); font-size: var(--fs-s); grid-column: 1; }
+.bv-kpi-value { font-family: var(--mono); font-size: 20px; font-weight: 600; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.bv-kpi-text { color: var(--muted); font-size: var(--fs-xs); grid-column: 1; }

@@ -32,6 +32,7 @@ import {
 import { useCompany, useDividends, useEarnings, useFinancials, useHistory, useQuotes } from "../lib/queries";
 import type { Company, Earnings, StatementRow } from "../lib/types";
 import { InstrumentOverview, NotForInstrument } from "./extra";
+import { BalancePicture } from "./balance";
 import type { ScreenProps } from "./types";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -362,7 +363,7 @@ export function HP({ ticker }: ScreenProps) {
   );
 }
 
-type Stmt = "income" | "balance" | "cashflow";
+type Stmt = "income" | "balance" | "cashflow" | "picture";
 
 function periodLabel(p: string, period: "annual" | "quarterly"): string {
   if (period === "annual") return `GJ ${p.slice(0, 4)}`;
@@ -385,6 +386,7 @@ export function FA({ ticker }: ScreenProps) {
             { value: "income", label: "GuV" },
             { value: "balance", label: "Bilanz" },
             { value: "cashflow", label: "Cashflow" },
+            { value: "picture", label: "Bilanzbild" },
           ]}
           onChange={setStmt}
         />
@@ -397,11 +399,12 @@ export function FA({ ticker }: ScreenProps) {
           ]}
           onChange={setPeriod}
         />
-        {q.data && <span className="small muted">Beträge in Mio. {q.data.currency || ""}</span>}
+        {q.data && stmt !== "picture" && <span className="small muted">Beträge in Mio. {q.data.currency || ""}</span>}
       </div>
       <div className="panel-body">
         <Q q={q}>
           {(f) => {
+            if (stmt === "picture") return <BalancePicture f={f} />;
             const rows: StatementRow[] = f[stmt];
             if (!f.periods.length || !rows.length) return <Empty>Keine Finanzdaten für diesen Zeitraum.</Empty>;
             const cell = (r: StatementRow, v: number | null) =>

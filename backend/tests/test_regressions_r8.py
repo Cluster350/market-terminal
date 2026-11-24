@@ -77,3 +77,19 @@ def test_no_weights_when_portfolio_value_is_negative(client):
     assert all(s.weight == 0 for slices in a.allocation.values() for s in slices)
     a = asyncio.run(analyze(t, Portfolio(base="EUR", cash=100, positions=[Position(ticker="NWND.US", quantity=10, cost=50)])))
     assert a.rows[0].weight and a.rows[0].weight > 0
+
+
+def test_balance_rows_for_balance_picture():
+    """Bilanzbild (FA): Sachanlagen, Goodwill und immaterielle Werte kommen aus EODHD und der Demo mit."""
+    import asyncio
+
+    from app.eodhd import mapping
+    from app.providers.demo import DemoProvider
+
+    data = {"Financials": {"Balance_Sheet": {"currency_symbol": "USD", "yearly": {"2025-12-31": {
+        "totalAssets": "100", "propertyPlantAndEquipmentNet": "30", "goodWill": "15", "intangibleAssets": "5"}}}}}
+    keys = {r.key: r.values[0] for r in mapping.financials(data, "X.US", "annual").balance}
+    assert keys["propertyPlantEquipment"] == 30 and keys["goodWill"] == 15 and keys["intangibleAssets"] == 5
+    f = asyncio.run(DemoProvider().financials("NWND.US", "annual"))
+    demo = {r.key for r in f.balance}
+    assert {"propertyPlantEquipment", "goodWill", "intangibleAssets"} <= demo

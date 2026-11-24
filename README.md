@@ -389,6 +389,25 @@ Auswahlfeld erreichbar). Region **USA** oder **Europa**.
 Sehr hohe oder sehr niedrige Werte kippten früher eher ins Gegenteil – oft erst nach Monaten. STIM beschreibt die Lage,
 es ist keine Empfehlung. CSV: Gesamtwert und Index je Tag, Ränge und Werte je Baustein, Marktbreite.
 
+## Bilanzbild (FA → „Bilanzbild“)
+
+In `FA` gibt es neben GuV, Bilanz und Cashflow den Reiter **„Bilanzbild“** – die Bilanz auf einen Blick statt als Tabelle:
+
+- **Bilanzsäulen:** links Aktiva (wofür: Liquide Mittel, Forderungen, Vorräte, Sachanlagen, Goodwill & immaterielle Werte
+  – gestrichelt, weil nicht greifbar – und Sonstiges), rechts Passiva (woher: kurz- und langfristige Verbindlichkeiten,
+  Eigenkapital). Höhe = Anteil an der Bilanzsumme, Beträge daneben. Der gelbe Streifen zeigt, welcher Teil der
+  Verbindlichkeiten Kredite und Anleihen sind. Über die Jahres-Chips jedes Jahr wählbar. Negatives Eigenkapital wird
+  ausdrücklich gemeldet.
+- **Kennzahlen-Ampeln** mit Verlaufslinie: Eigenkapitalquote (solide ab 30 %), Liquidität 2. Grades (ab 1),
+  Goodwill ÷ Eigenkapital (unter 50 %) und Nettoschulden ÷ EBITDA (unter 2; im Quartal mit den letzten vier
+  Quartalen). Faustregeln für Industrie- und Handelsfirmen – Banken, Versicherer und Immobilienfirmen sind anders gebaut.
+- **Wer finanziert die Firma?** Passiva in Prozent über die Jahre (Zahl = Eigenkapitalquote).
+- **Schulden gegen Kasse** je Jahr, darüber die Jahre, in denen der operative Gewinn die Nettoschulden tilgen würde.
+- **Eigenkapital-Brücke** (jährlich): Eigenkapital des Vorjahres → Gewinn → Dividenden → Rückkäufe → Sonstiges →
+  Eigenkapital heute.
+
+Mauszeiger auf einem Teil zeigt Betrag und Erklärung; CSV liefert Kennzahlen je Jahr und die Aufteilung.
+
 ## Saisonalität (SAIS)
 
 `SAIS` (oder „Saison“, „Saisonalität“, „Season“) zeigt für den aktiven Wert – Aktie, Index, Devisen,
